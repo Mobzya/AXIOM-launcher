@@ -670,14 +670,8 @@ internal class CosmicWorld(seed: Int = 42) {
                 ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
             }
         }
-        if (cascadeBudget > 0 && e.kind == CosmicEventKind.REACTION &&
-            e.age > 2f && e.age < 7f && random.nextFloat() < .0018f) {
-            if (compact.size < 23) {
-                spawnFromCorner(burst = true)
-                ripples = (ripples + SpaceRipple(e.x, e.y)).takeLast(4)
-            }
-            cascadeBudget--
-        }
+        val chain = cascadeBudget > 0 && e.kind == CosmicEventKind.REACTION &&
+            e.age > 2f && e.age < 7f && random.nextFloat() < .0018f
         replayTimer += h
         if (replayTimer >= .1f) {
             replayBuffer.addLast(current)
@@ -686,5 +680,12 @@ internal class CosmicWorld(seed: Int = 42) {
         }
         previousBodies = current
         bodies = compact
+        if (chain) {
+            if (bodies.size < 23) {
+                spawnFromCorner(burst = true)
+                ripples = (ripples + SpaceRipple(e.x, e.y)).takeLast(4)
+            }
+            cascadeBudget--
+        }
     }
 }

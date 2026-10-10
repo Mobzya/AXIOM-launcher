@@ -28,6 +28,17 @@ class PhysicalConsistencyTest {
         assertEquals(0f, a.mass * force.first.x + b.mass * force.second.x, 1e-6f)
     }
 
+    @Test fun allocationFreeIntegratorPreservesPairMomentum() {
+        val a = body(1, .49f, .7f)
+        val b = body(2, .51f, 2.4f)
+        val ax = FloatArray(2)
+        val ay = FloatArray(2)
+        accumulateForces(a, b, 1.3f, 0, 1, ax, ay)
+        assertEquals(0f, a.mass * ax[0] + b.mass * ax[1], 1e-5f)
+        assertEquals(0f, a.mass * ay[0] + b.mass * ay[1], 1e-6f)
+        assertTrue(ax[0].isFinite() && ax[1].isFinite())
+    }
+
     @Test fun collisionConservesLinearMomentumAndDoesNotGenerateEnergy() {
         val a = body(1, .49f, 2f, .12f)
         val b = body(2, .51f, 3f, -.08f)

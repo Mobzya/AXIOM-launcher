@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 
 class MainActivity : ComponentActivity() {
     private var resumeVersion by mutableIntStateOf(0)
+    private val frameMeter by lazy { FrameMeter(window) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,8 +25,13 @@ class MainActivity : ComponentActivity() {
                     onBackground = Color.White, onSurface = Color.White,
                     primary = Color.White, onPrimary = Color.Black
                 )
-            ) { AxiomScreen(resumeVersion) }
+            ) { AxiomScreen(resumeVersion, frameMeter) }
         }
+    }
+
+    override fun onDestroy() {
+        frameMeter.stop()
+        super.onDestroy()
     }
 
     override fun onResume() {

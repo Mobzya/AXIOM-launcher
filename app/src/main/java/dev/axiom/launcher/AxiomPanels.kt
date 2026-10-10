@@ -181,6 +181,10 @@ internal fun AxiomSettings(
     onResetUniverse: () -> Unit,
     onSelectHome: () -> Unit,
     onMath: () -> Unit,
+    timeScale: Float,
+    onTimeScale: (Float) -> Unit,
+    onBinary: () -> Unit,
+    onRewind: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
     onProfiler: () -> Unit,
@@ -277,6 +281,34 @@ internal fun AxiomSettings(
         Text("Прикосновение создаёт волну, двойное нажатие — комету,\n" +
             "удерживание вызывает событие, горизонтальный жест меняет глубину.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 19.sp)
+        Spacer(Modifier.height(19.dp))
+        Text("ВРЕМЯ МИРА", color = AX_DARK, fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,letterSpacing = 2.sp)
+        Spacer(Modifier.height(11.dp))
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){
+            listOf(0f to "Ⅱ", .25f to "¼", .5f to "½",
+                1f to "1×", 2f to "2×").forEach { (speed,label) ->
+                val shape = RoundedCornerShape(9.dp)
+                Text(label,color=if(speed==timeScale) AX_BLACK else AX_WHITE,
+                    fontSize=13.sp,
+                    textAlign=androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier=Modifier.weight(1f)
+                        .background(if(speed==timeScale) AX_WHITE else AX_SURFACE,shape)
+                        .clickable { onTimeScale(speed) }
+                        .padding(vertical=12.dp))
+            }
+        }
+        Text("⟲  Повторить предыдущие 3 секунды",
+            color=AX_WHITE,fontSize=14.sp,
+            modifier=Modifier.fillMaxWidth().clickable(onClick=onRewind)
+                .padding(vertical=15.dp))
+        Text("⊙  Создать двойную систему",
+            color=AX_WHITE,fontSize=14.sp,
+            modifier=Modifier.fillMaxWidth().clickable(onClick=onBinary)
+                .padding(vertical=15.dp))
+        Text("Долгое удерживание + перетаскивание: поле притяжения; " +
+            "отпусти после движения — запуск нового тела.",
+            color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
         Spacer(Modifier.height(20.dp))
         Text("ИНСТРУМЕНТЫ", color = AX_DARK, fontSize = 10.sp,
             letterSpacing = 3.sp, fontFamily = FontFamily.Monospace)
@@ -297,7 +329,7 @@ internal fun AxiomSettings(
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onRefresh).padding(vertical = 19.dp))
         HorizontalDivider(color = AX_DIVIDER)
-        Text("∑  Математическая лаборатория", color = AX_WHITE,
+        Text("∑  Математические порталы", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onMath).padding(vertical = 17.dp))
         HorizontalDivider(color = AX_DIVIDER)

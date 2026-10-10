@@ -223,17 +223,20 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             .background(AX_BLACK)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .pointerInput(world) {
-                detectTapGestures(
-                    onTap = { point ->
-                        world.interact(
-                            point.x / size.width.toFloat().coerceAtLeast(1f),
-                            point.y / size.height.toFloat().coerceAtLeast(1f)
-                        )
-                    },
-                    onDoubleTap = { world.spawnFromCorner() },
-                    onLongPress = { world.triggerRandomEvent() }
-                )
+            .pointerInput(world, mode) {
+                // Ambient gestures must never steal touches from search or overlays.
+                if (mode == AxiomMode.HOME) {
+                    detectTapGestures(
+                        onTap = { point ->
+                            world.interact(
+                                point.x / size.width.toFloat().coerceAtLeast(1f),
+                                point.y / size.height.toFloat().coerceAtLeast(1f)
+                            )
+                        },
+                        onDoubleTap = { world.spawnFromCorner() },
+                        onLongPress = { world.triggerRandomEvent() }
+                    )
+                }
             }
             .pointerInput(mode) {
                 if (mode == AxiomMode.HOME) {

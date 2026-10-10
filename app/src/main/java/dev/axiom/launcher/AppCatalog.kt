@@ -72,3 +72,39 @@ fun searchApps(apps: List<InstalledApp>, query: String, favorites: Set<String>):
             .thenBy { it.first.label.lowercase(Locale.ROOT) }
     ).map { it.first }
 }
+
+
+/** Avoid package-manager queries on every return from another app. */
+internal object AppCatalogCache {
+    private var saved: List<InstalledApp>? = null
+    private var checkedAtMillis = 0L
+    @Synchronized fun invalidate() { checkedAtMillis = 0L }
+
+    @Synchronized fun load(context: Context): List<InstalledApp> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val cached = saved
+        if (cached != null && now - checkedAtMillis < 5 * 60 * 1000L) {
+            return cached
+        }
+        return findLaunchableApps(context).also {
+            saved = it
+            checkedAtMillis = now
+        }
+    }
+}
+
+/** Locally collected launcher actions only; does not require Usage Access permission. */
+internal object AppRecents {
+    private const val KEY = "recent_packages"
+    fun list(context: Context): List<String> =
+        context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE)
+            .getString(KEY, "")!!.split('|').filter { it.isNotBlank() }
+
+    fun record(context: Context, packageName: String) {
+        val value = (listOf(packageName) + list(context).filterNot {
+            it == packageName
+        }).take(16).joinToString("|")
+        context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE)
+            .edit().putString(KEY, value).apply()
+    }
+}

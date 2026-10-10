@@ -69,7 +69,7 @@ internal fun makeAtlasEntries(apps: List<InstalledApp>): List<AtlasEntry> {
     for (app in apps) {
         val letter = app.label.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
         if (letter != previous) {
-            result += AtlasEntry("heading:$letter", letter)
+            result += AtlasEntry("heading:$letter:${result.size}", letter)
             previous = letter
         }
         result += AtlasEntry("app:${app.packageName}/${app.className}", letter, app)
@@ -96,7 +96,7 @@ internal fun AxiomAtlas(
             "Системные" -> found.filter { it.system }
             "Сторонние" -> found.filterNot { it.system }
             else -> found
-        }
+        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
     val entries = remember(filtered) { makeAtlasEntries(filtered) }
     val positions = remember(entries) {

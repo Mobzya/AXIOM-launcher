@@ -48,7 +48,7 @@ class UniverseTest {
         assertTrue(world.bodies.all { it.x in -.24f..1.24f && it.y in -.24f..1.24f })
     }
     @Test fun mathCatalogHasSixteenThreeStageStories() {
-        assertEquals(16, MathKind.entries.size)
+        assertEquals(30, MathKind.entries.size)
         assertTrue(MathKind.entries.all { mathSteps(it).size == 3 })
     }
     @Test fun foregroundGravityMakesMeasurableDifference() {

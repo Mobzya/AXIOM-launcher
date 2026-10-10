@@ -76,6 +76,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -464,6 +466,7 @@ private fun TerminalCorner(
         modifier = modifier.size(48.dp)
             .clip(RoundedCornerShape(15.dp))
             .clickable(onClick = onClick)
+            .semantics { contentDescription = "Открыть терминал AXIOM" }
             .border(1.dp, Color(0xFF424242), RoundedCornerShape(15.dp)),
         contentAlignment = Alignment.Center
     ) {
@@ -475,7 +478,9 @@ private fun TerminalCorner(
 @Composable
 private fun SettingsCorner(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier = modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick),
+        modifier = modifier.size(48.dp).clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Настройки AXIOM" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.size(21.dp)) {

@@ -76,8 +76,8 @@ internal fun SearchSuggestions(
     Column(
         Modifier.fillMaxWidth().padding(top = 11.dp)
             .clip(shape)
-            .background(Color(0xEF111111))
-            .border(1.dp, Color(0xFF363636), shape)
+            .background(AX_SURFACE.copy(alpha = .96f))
+            .border(1.dp, AX_TILE, shape)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Text(
@@ -136,19 +136,7 @@ internal fun AxiomAppRow(
         Modifier.fillMaxWidth().height(53.dp).graphicsLayer { alpha = opacity },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier.size(32.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF252525))
-                .border(1.dp, Color(0xFF3A3A3A), RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                app.label.firstOrNull()?.uppercase() ?: "·",
-                color = AX_WHITE, fontSize = 15.sp,
-                fontWeight = FontWeight.Light
-            )
-        }
+        AxiomAppIcon(app, 32.dp)
         Text(
             app.label,
             color = AX_WHITE,
@@ -174,8 +162,8 @@ private fun AxiomChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(13.dp)
     Box(
         Modifier.clip(shape)
-            .background(if (selected) Color(0xFF363636) else Color(0xFF161616))
-            .border(1.dp, if (selected) Color(0xFF777777) else Color(0xFF333333), shape)
+            .background(if (selected) AX_TILE else AX_SURFACE)
+            .border(1.dp, if (selected) AX_DARK else AX_BORDER, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 15.dp, vertical = 10.dp)
     ) {
@@ -186,6 +174,8 @@ private fun AxiomChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 internal fun AxiomSettings(
+    themeMode: AxiomThemeMode,
+    onThemeMode: (AxiomThemeMode) -> Unit,
     gravity: Float,
     onGravity: (Float) -> Unit,
     onResetUniverse: () -> Unit,
@@ -223,7 +213,39 @@ internal fun AxiomSettings(
         Text("Откроются системные настройки. На некоторых версиях HyperOS " +
             "выбор стороннего лаунчера ограничен производителем.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
-        Spacer(Modifier.height(25.dp))
+        Spacer(Modifier.height(24.dp))
+        Text("ОФОРМЛЕНИЕ", color = AX_DARK, fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
+        Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                AxiomThemeMode.DARK to "Чёрная",
+                AxiomThemeMode.LIGHT to "Белая",
+                AxiomThemeMode.AUTO to "Авто"
+            ).forEach { (choice, label) ->
+                val selected = themeMode == choice
+                val shape = RoundedCornerShape(13.dp)
+                Text(
+                    label,
+                    color = if (selected) AX_BLACK else AX_WHITE,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f).clip(shape)
+                        .background(if (selected) AX_WHITE else AX_SURFACE)
+                        .border(1.dp, AX_BORDER, shape)
+                        .clickable { onThemeMode(choice) }
+                        .padding(vertical = 12.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+        Spacer(Modifier.height(9.dp))
+        Text("Автоматически: белая с 07:00 до 19:00, чёрная ночью. " +
+            "Используется местное время телефона.",
+            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(27.dp))
         Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
             fontWeight = FontWeight.Light)
         Spacer(Modifier.height(8.dp))
@@ -237,7 +259,7 @@ internal fun AxiomSettings(
             colors = SliderDefaults.colors(
                 thumbColor = AX_WHITE,
                 activeTrackColor = AX_WHITE,
-                inactiveTrackColor = Color(0xFF3D3D3D)
+                inactiveTrackColor = AX_BORDER
             )
         )
         Text("G = ${"%.2f".format(java.util.Locale.US, gravity)}",
@@ -265,28 +287,28 @@ internal fun AxiomSettings(
             Text("⌁  Командная консоль", color = AX_WHITE, fontSize = 17.sp)
             Text("↗", color = AX_GRAY, fontSize = 18.sp)
         }
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text("↺  Перезапустить вселенную", color = AX_WHITE, fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onResetUniverse).padding(vertical = 19.dp))
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text("⟳  Обновить список приложений", color = AX_WHITE,
             fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onRefresh).padding(vertical = 19.dp))
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text("∑  Математическая лаборатория", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onMath).padding(vertical = 17.dp))
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text("⇧  Экспортировать настройки", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onExport).padding(vertical = 17.dp))
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text("⇩  Восстановить настройки", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onImport).padding(vertical = 17.dp))
-        HorizontalDivider(color = Color(0xFF292929))
+        HorizontalDivider(color = AX_DIVIDER)
         Text(
             if (profilerEnabled) "◉  Остановить измерение кадров"
             else "◎  Измерять плавность списка",

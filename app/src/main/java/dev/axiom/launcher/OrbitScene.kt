@@ -41,7 +41,7 @@ private val ASPECT_STARS = Random(7).let { rng ->
 
 /** One persistent n-body world, drawn in custom monochrome vector sprites. */
 @Composable
-fun CosmicEnvironment(
+internal fun CosmicEnvironment(
     world: CosmicWorld,
     interacting: Boolean,
     modifier: Modifier = Modifier

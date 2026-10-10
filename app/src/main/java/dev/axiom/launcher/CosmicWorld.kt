@@ -667,7 +667,12 @@ internal class CosmicWorld(seed: Int = 42) {
                     if(target >= 0 && next[target].mass > .8f) {
                         val rock=next[target]
                         val piece=rock.mass*.18f
-                        next[target]=rock.copy(mass=rock.mass-piece)
+                        val ratio=piece/(rock.mass-piece)
+                        next[target]=rock.copy(
+                            mass=rock.mass-piece,
+                            vx=rock.vx-ratio*.055f,
+                            vy=rock.vy+ratio*.045f
+                        )
                         shard=rock.copy(
                             id=idSequence++,
                             kind=21,

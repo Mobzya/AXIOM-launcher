@@ -192,7 +192,8 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
         LabKind.LORENZ -> {
             val path=lorenzPath(4.0+a.toDouble()*18.0)
             val poly=Path()
-            path.forEachIndexed { i, pair ->
+            val reveal = ((t*70).toInt()%path.size).coerceAtLeast(25)
+            path.take(reveal).forEachIndexed { i, pair ->
                 val x=(pair.first.toFloat()+24f)/48f*w
                 val y=(pair.second.toFloat()+2f)/60f*h
                 if(i==0)poly.moveTo(x,y) else poly.lineTo(x,y)

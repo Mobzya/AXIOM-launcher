@@ -66,6 +66,11 @@ internal fun AxiomTerminal(
     currentEpisode: String,
     eventHistory: List<String>,
     onModel: (MathKind?) -> Unit,
+    onLab: (LabKind?) -> Unit,
+    onTimeScale: (Float) -> Unit,
+    onRewind: (Int) -> Boolean,
+    onSpawnBinary: () -> Unit,
+    onThemeMode: (AxiomThemeMode) -> Unit,
     onProfile: () -> Boolean,
     onEvent: (CosmicEventKind) -> Unit,
     onSurprise: () -> Unit,
@@ -111,6 +116,32 @@ internal fun AxiomTerminal(
                 val matches = searchApps(apps, parsed.name, emptySet()).take(9)
                 append(if (matches.isEmpty()) "Совпадений нет"
                     else matches.joinToString("\n") { " ↳ ${it.label}" })
+            }
+            is AxCommand.Lab -> {
+                append("Открываю лабораторию ${parsed.kind?.name ?: "WAVE"}")
+                onLab(parsed.kind)
+            }
+            is AxCommand.TimeScale -> {
+                onTimeScale(parsed.speed)
+                append("Скорость мира: ${parsed.speed}× ✓")
+            }
+            is AxCommand.Rewind -> {
+                append(if (onRewind(parsed.seconds))
+                    "Вселенная перемотана на ${parsed.seconds} секунд ✓"
+                    else "Недостаточно кадров для повтора")
+            }
+            is AxCommand.Theme -> {
+                onThemeMode(parsed.mode)
+                append("Тема: ${parsed.mode.name.lowercase()} ✓")
+            }
+            AxCommand.SpawnBinary -> {
+                onSpawnBinary()
+                append("Двойная система создана ✓")
+            }
+            AxCommand.Field -> {
+                // The actual hold-and-drag gravity brush lives on HOME.
+                append("На HOME удерживай палец и веди — появится гравитационное поле.")
+                onBack()
             }
             is AxCommand.Model -> {
                 onModel(parsed.kind)

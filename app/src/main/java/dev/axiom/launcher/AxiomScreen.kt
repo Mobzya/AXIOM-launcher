@@ -12,6 +12,19 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,7 +65,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -75,7 +87,7 @@ internal val AX_BORDER = Color(0xFF494949)
 internal val AX_GLASS = Color(0xB3181818) // True translucency, no fake system-wide blur.
 internal val AX_PANEL = Color(0xF5080808)
 
-internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS }
+internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
 
 @Composable
 fun AxiomScreen(resumeVersion: Int) {
@@ -87,11 +99,11 @@ fun AxiomScreen(resumeVersion: Int) {
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
-    var ambientLevel by remember {
-        mutableIntStateOf(prefs.getInt("ambient_level", if (prefs.getBoolean("motion", true)) 1 else 0))
+    val world = remember { CosmicWorld() }
+    var terminalInitial by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        world.updateGravity(prefs.getFloat("gravity", 1f))
     }
-    var scenePreset by remember { mutableStateOf(prefs.getString("scene_preset", "AUTO") ?: "AUTO") }
-    var entropy by remember { mutableStateOf(prefs.getBoolean("entropy", true)) }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
     }
@@ -100,12 +112,8 @@ fun AxiomScreen(resumeVersion: Int) {
     val focus = LocalFocusManager.current
     val searchFocus = remember { FocusRequester() }
     val choices = remember(apps, favorites, query) {
-        if (query.isBlank()) {
-            val saved = apps.filter { it.packageName in favorites }
-            (saved + apps.filterNot { it.packageName in favorites }).take(4)
-        } else {
-            searchApps(apps, query, favorites).take(6)
-        }
+        if (query.isBlank()) emptyList()
+        else searchApps(apps, query, favorites).take(6)
     }
 
     LaunchedEffect(resumeVersion, refresh) {
@@ -122,6 +130,7 @@ fun AxiomScreen(resumeVersion: Int) {
         mode = AxiomMode.HOME
         query = ""
         atlasQuery = ""
+        terminalInitial = ""
         keyboard?.hide()
         focus.clearFocus()
     }
@@ -150,7 +159,23 @@ fun AxiomScreen(resumeVersion: Int) {
             .background(AX_BLACK)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            // Parent-level gesture detector, so swipes across empty space work.
+            .pointerInput(world) {
+                detectTapGestures(
+                    onTap = { point ->
+                        world.disturb(
+                            point.x / size.width.toFloat().coerceAtLeast(1f),
+                            point.y / size.height.toFloat().coerceAtLeast(1f)
+                        )
+                    },
+                    onLongPress = { point ->
+                        world.disturb(
+                            point.x / size.width.toFloat().coerceAtLeast(1f),
+                            point.y / size.height.toFloat().coerceAtLeast(1f)
+                        )
+                    }
+                )
+            }
+            // Parent-level gesture detector; swiping empty space opens the atlas.
             .pointerInput(mode) {
                 if (mode == AxiomMode.HOME) {
                     var dragged = 0f
@@ -181,9 +206,7 @@ fun AxiomScreen(resumeVersion: Int) {
         )
 
         CosmicEnvironment(
-            intensity = ambientLevel,
-            preset = scenePreset,
-            entropy = entropy,
+            world = world,
             interacting = mode != AxiomMode.HOME,
             modifier = Modifier.fillMaxSize()
         )
@@ -201,11 +224,20 @@ fun AxiomScreen(resumeVersion: Int) {
                     focusRequester = searchFocus,
                     onOpen = { mode = AxiomMode.SEARCH },
                     onClose = ::close,
-                    onSubmit = { choices.firstOrNull()?.let(::openApp) }
+                    onSubmit = {
+                        if (query.trimStart().startsWith(">")) {
+                            terminalInitial = query.trim().removePrefix(">").trim()
+                            keyboard?.hide()
+                            focus.clearFocus()
+                            mode = AxiomMode.TERMINAL
+                        } else {
+                            choices.firstOrNull()?.let(::openApp)
+                        }
+                    }
                 )
 
                 AnimatedVisibility(
-                    visible = searching,
+                    visible = searching && query.isNotBlank(),
                     enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(260)) +
                         expandVertically(
                             expandFrom = Alignment.Top,
@@ -258,22 +290,34 @@ fun AxiomScreen(resumeVersion: Int) {
         }
         if (mode == AxiomMode.SETTINGS) {
             AxiomSettings(
-                ambientLevel = ambientLevel,
-                onAmbientLevel = {
-                    ambientLevel = it
-                    prefs.edit().putInt("ambient_level", it).apply()
+                gravity = world.gravity,
+                onGravity = {
+                    world.updateGravity(it)
+                    prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
-                scenePreset = scenePreset,
-                onScenePreset = {
-                    scenePreset = it
-                    prefs.edit().putString("scene_preset", it).apply()
-                },
-                entropy = entropy,
-                onEntropy = {
-                    entropy = it
-                    prefs.edit().putBoolean("entropy", it).apply()
+                onResetUniverse = { world.reset() },
+                onTerminal = {
+                    terminalInitial = ""
+                    mode = AxiomMode.TERMINAL
                 },
                 onRefresh = { refresh++; close() },
+                onBack = ::close
+            )
+        }
+        if (mode == AxiomMode.TERMINAL) {
+            AxiomTerminal(
+                initial = terminalInitial,
+                apps = apps,
+                gravity = world.gravity,
+                bodyCount = world.bodies.size,
+                onGravity = {
+                    world.updateGravity(it)
+                    prefs.edit().putFloat("gravity", world.gravity).apply()
+                },
+                onReset = { world.reset() },
+                onSpawn = { world.disturb(.50f, .41f) },
+                onLaunch = ::openApp,
+                onOpenAtlas = ::atlas,
                 onBack = ::close
             )
         }
@@ -318,7 +362,7 @@ private fun CentralSearchDock(
     onSubmit: () -> Unit
 ) {
     val height by animateDpAsState(
-        targetValue = if (expanded) 63.dp else 57.dp,
+        targetValue = if (expanded) 70.dp else 57.dp,
         animationSpec = spring(
             dampingRatio = .86f,
             stiffness = Spring.StiffnessMediumLow
@@ -326,11 +370,48 @@ private fun CentralSearchDock(
         label = "search elevation"
     )
     val shape = RoundedCornerShape(24.dp)
+    val halo by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(560),
+        label = "search luminous halo"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (expanded) 1.018f else 1f,
+        animationSpec = spring(dampingRatio = .82f,
+            stiffness = Spring.StiffnessMediumLow),
+        label = "search volume"
+    )
+    val colorEdge = Brush.horizontalGradient(
+        listOf(Color.White.copy(alpha = .15f + .22f * halo),
+            Color.White.copy(alpha = .37f + .26f * halo),
+            Color.White.copy(alpha = .13f + .31f * halo))
+    )
     Row(
-        Modifier.fillMaxWidth().height(height)
+        Modifier.fillMaxWidth()
+            .height(height)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .drawBehind {
+                val spread = 13.dp.toPx()
+                drawRoundRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = .10f * halo),
+                            Color.White.copy(alpha = .03f * halo),
+                            Color.Transparent),
+                        center = androidx.compose.ui.geometry.Offset(
+                            size.width * .5f, size.height * .5f),
+                        radius = size.width * .72f
+                    ),
+                    topLeft = androidx.compose.ui.geometry.Offset(-spread, -spread),
+                    size = androidx.compose.ui.geometry.Size(
+                        size.width + 2f * spread, size.height + 2f * spread),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                        35.dp.toPx(), 35.dp.toPx())
+                )
+            }
             .clip(shape)
-            .background(AX_GLASS)
-            .border(1.dp, if (expanded) AX_BORDER else Color(0xFF353535), shape)
+            .background(Brush.verticalGradient(
+                listOf(Color(0xD9232323), Color(0xCE0F0F0F))))
+            .border(BorderStroke(1.dp, colorEdge), shape)
             .then(if (expanded) Modifier else Modifier.clickable(onClick = onOpen))
             .padding(horizontal = 21.dp),
         verticalAlignment = Alignment.CenterVertically

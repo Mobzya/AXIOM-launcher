@@ -45,3 +45,12 @@ This prototype still requires compilation and testing on a real device. Debug AP
 4. Downward swipe from empty home area → App Atlas; filters, list and Back/close work.
 5. Change settings: Off / Quiet / Lively, four scenes and controlled entropy; verify persistence after relaunch.
 6. Check 120 Hz fluidity, touch latency, battery, keyboard, orientation and Android back navigation on Redmi.
+
+### 0.4 on-device acceptance
+- Search stays centered at rest, expands/glows, and shows **no apps until text input**.
+- Try Cyrillic/Latin queries, clear, IME Search.
+- Swipe down on empty home; test large list, alphabet rail dragging and favorites.
+- Tap empty space to perturb bodies and create new procedural objects; observe gravity and collisions.
+- In Settings: gravity slider, console access, universe reset.
+- Terminal: `help`, `ls`, `find firefox`, `calc 2*(3+4)`, `gravity 1.4`, `spawn`, `note test`.
+- Verify fluidity and keyboard/resizing on actual Redmi. Debug APKs may require uninstalling AXIOM only due to signing mismatch.

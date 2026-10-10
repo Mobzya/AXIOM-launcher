@@ -45,6 +45,25 @@ class ScienceLabTest {
             waveValue(1f,0f,.5f,2f))>.1f)
     }
 
+    @Test fun grayScottDynamicsRemainFiniteAndActuallyEvolve() {
+        val lab=ScienceLab(14)
+        lab.select(LabKind.REACTION)
+        val before=lab.reactionV.copyOf()
+        repeat(30){lab.step(.05f)}
+        assertTrue(lab.reactionV.any{it>0f})
+        assertTrue(!lab.reactionV.contentEquals(before))
+        assertTrue(lab.reactionV.all{it.isFinite() && it in 0f..1f})
+    }
+
+    @Test fun attentionIsNormalizedAndRespondsToQuery() {
+        val keys=arrayOf(doubleArrayOf(1.0,0.0),doubleArrayOf(0.0,1.0))
+        val horizontal=attentionWeights(doubleArrayOf(2.0,0.0),keys,1.0)
+        val vertical=attentionWeights(doubleArrayOf(0.0,2.0),keys,1.0)
+        assertEquals(1.0,horizontal.sum(),1e-8)
+        assertTrue(horizontal[0]>horizontal[1])
+        assertTrue(vertical[1]>vertical[0])
+    }
+
     @Test fun allTwelveExperimentsHaveFormulas() {
         val lab=ScienceLab(30)
         assertEquals(12,LabKind.entries.size)

@@ -105,20 +105,20 @@ class InteractiveUniverseTest {
 
     @Test fun pauseMakesTimeAndBodiesExactlyStill() {
         val world=CosmicWorld(9)
-        world.setTimeScale(0f)
+        world.updateTimeScale(0f)
         val before=world.bodies
         val t=world.elapsed
         repeat(80){world.step(1f/60f)}
         assertEquals(t,world.elapsed)
         assertEquals(before,world.bodies)
-        world.setTimeScale(1f)
+        world.updateTimeScale(1f)
         world.step(1f/60f)
         assertTrue(world.elapsed>t)
     }
 
     @Test fun timeScaleIsQuantizedAndReplayIsBounded() {
         val world=CosmicWorld(9)
-        world.setTimeScale(.62f)
+        world.updateTimeScale(.62f)
         assertEquals(.5f,world.timeScale)
         repeat(850){world.step(1f/60f)}
         assertTrue(world.rewind(3))

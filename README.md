@@ -1,30 +1,36 @@
-# AXIOM Launcher — 0.3 Gravity
+# AXIOM Launcher 0.4 — Luminous Gravity
 
-An experimental, strictly monochrome Android HOME launcher for Redmi Note 13 Pro 4G.
+A search-first, black-and-white Android HOME launcher designed for Redmi Note 13 Pro 4G.
 
-## Design
-- In rest: **one translucent search dock precisely centered vertically**, and a small settings control in the upper-right corner.
-- Tap search: dock springs toward the upper portion of the available screen while the on-screen keyboard opens. A semi-transparent app menu unfolds smoothly **below** the dock.
-- While the input is blank: show up to four favorites or fallback apps; while typing: fuzzy prefix/substr/transliteration matches, up to six results.
-- Swipe down across empty home-screen space: open App Atlas with alphabetical scrolling, search, favorites and filters.
-- Four astrophysical / mathematical scenes: **orbital mechanics, Lorenz attractor, neural graph and Fourier harmonics**. Auto crossfades between them slowly; manual scene selection supported.
-- Persistent options: ambient motion Off / Quiet / Lively, scene selection and smooth decorative drift ("controlled entropy").
-- All controls stay perfectly predictable; uncertainty is restricted to deterministic slow variation in decorative elements.
-- Pure black (#000000), white and neutral gray only. No neon, blue tints or app icon grids on the home screen.
+## Main UX
+- One translucent search bar centered in the idle home screen; upper-right settings control.
+- On tap, search expands with a monochrome halo and springs up to make room for the keyboard.
+- **Zero application suggestions on empty search**; as soon as you type, relevant apps reveal below the search bar with stable ranking, including Russian/Latin transliteration.
+- Search prefix `> help` and press keyboard Search to open the terminal command palette.
+- Swipe down on **empty** home-screen area for an enlarged Niagara-inspired text list with a right-side alphabet rail, inertial scrolling and center-emphasis. App Atlas offers filtering, favorites, and direct launching.
 
-## Technical
-Kotlin, Jetpack Compose, package `dev.axiom.launcher`, version 0.3.0 (versionCode 3).
-Spring-driven translation and sizing; slow crossfades and minimal draw operations. The scene dims without resetting its animation phase when opening search.
+## One living universe
+- Every object carries mass, velocity, acceleration, lifetime and a procedural vector sprite.
+- Pairwise softened gravity, momentum-aware collisions, bounces, orbital and comet visuals, occasional procedural arrivals.
+- Tap or long-press empty home-screen space to inject an impulse and generate an object.
+- **No scene presets**: independent bodies influence one another in one cohesive monochrome environment. Computation capped at 60Hz on home / 30Hz during UI interaction and 11 active bodies maximum.
+- Screen remains pure black. Physics affects *only* visual bodies; never shifts search fields or app buttons.
 
-## Compile
-Use Linux with Java 17, Android SDK 36, Gradle 8.13 or GitHub Actions.
+## Terminal
+Open via Settings → Command Console or type `> help` in search followed by Enter.
+A safe launcher command palette, **not a Linux shell**. Commands:
+`help`, `ls`, `find <name>`, `open <name>`, `calc <expr>`, `physics`, `gravity <0.25..2.2>`, `spawn`, `reset`, `battery`, `time`, `note <text>`, `notes`, `wifi`, `bluetooth`, `display`, `clear`, `exit`.
+It cannot run arbitrary shell commands or access privileged data.
+
+## Build on Linux
+Use JDK 17, Android SDK 36, Gradle 8.13 (or VS Code build task):
 
 ```bash
 bash build-linux.sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-[GitHub Actions](../../actions) tests and compiles the app, then provides artifact `AXIOM-debug-APK`.
+CI tests and produces a debug APK artifact. If Android refuses to update an older debug build due to mismatched signing keys, switch to Xiaomi's HOME app, uninstall AXIOM only (losing AXIOM-specific local preferences), then reinstall. **Do not reset or reflash your phone.**
 
-**This is still a prototype**: test gestures, typing and smoothness on the actual Redmi. System gestures are controlled by HyperOS and may not work with a third-party home launcher; AXIOM's own gestures are separate. This project does not modify firmware or require wiping the phone. If Android reports a signing-key mismatch when updating a previous debug APK, uninstall AXIOM only and reinstall the new APK (favorites and AXIOM preferences reset).
-
+## Status
+Prototype v0.4, versionCode 4; not tested for device frame time / HyperOS gestures yet. Use GitHub Actions to verify compilation. Xiaomi controls Android recents and system gesture navigation.

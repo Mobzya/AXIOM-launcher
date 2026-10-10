@@ -6,6 +6,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.TransformOrigin
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -172,74 +182,200 @@ internal fun AxiomAtlas(
             else -> matched
         }
     }
+    val index = remember(filtered) {
+        val map = linkedMapOf<String, Int>()
+        filtered.forEachIndexed { i, app ->
+            val letter = app.label.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
+            if (!map.containsKey(letter)) map[letter] = i
+        }
+        map
+    }
+    val railLetters = remember(index) {
+        val letters = index.keys.toList()
+        if (letters.size <= 21) letters
+        else List(21) { i -> letters[(i * (letters.size - 1)) / 20] }.distinct()
+    }
     val state = rememberLazyListState()
-    LaunchedEffect(filter, query) {
+    val scope = rememberCoroutineScope()
+    var lastScrubbed by remember { mutableStateOf("") }
+    val selectedLetter = filtered.getOrNull(state.firstVisibleItemIndex)
+        ?.label?.firstOrNull()?.uppercaseChar()?.toString() ?: "•"
+
+    LaunchedEffect(query, filter) {
         if (filtered.isNotEmpty()) state.scrollToItem(0)
     }
-    Column(
-        Modifier.fillMaxSize().background(AX_PANEL)
-            .padding(start = 23.dp, end = 23.dp, top = 18.dp)
-    ) {
-        var upwards by remember { mutableStateOf(0f) }
-        Row(
-            Modifier.fillMaxWidth()
-                .pointerInput(Unit) {
+
+    Box(Modifier.fillMaxSize().background(AX_PANEL)) {
+        Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 15.dp, top = 22.dp)) {
+            var swipeAmount by remember { mutableStateOf(0f) }
+            Row(
+                Modifier.fillMaxWidth().pointerInput(Unit) {
                     detectVerticalDragGestures(
-                        onDragStart = { upwards = 0f },
-                        onVerticalDrag = { change, amount ->
-                            upwards += amount
+                        onDragStart = { swipeAmount = 0f },
+                        onVerticalDrag = { change, dy ->
+                            swipeAmount += dy
                             change.consume()
                         },
-                        onDragEnd = { if (upwards < -53f) onBack() }
+                        onDragEnd = { if (swipeAmount < -55f) onBack() }
                     )
+                },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("AXIOM / INDEX", color = AX_GRAY, fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace, letterSpacing = 2.5.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Приложения", color = AX_WHITE, fontSize = 30.sp,
+                        fontWeight = FontWeight.Light, letterSpacing = -.4.sp)
                 }
-                .padding(vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text("APP ATLAS", fontSize = 13.sp, letterSpacing = 3.sp,
-                    fontFamily = FontFamily.Monospace, color = AX_WHITE)
-                Spacer(Modifier.height(6.dp))
-                Text("${filtered.size} приложений  /  свайп вверх для закрытия",
-                    fontSize = 11.sp, color = AX_GRAY)
+                Text("×", color = AX_WHITE, fontSize = 30.sp,
+                    modifier = Modifier.clickable(onClick = onBack)
+                        .padding(horizontal = 12.dp, vertical = 6.dp))
             }
-            Text("×", color = AX_WHITE, fontSize = 27.sp,
-                modifier = Modifier.clickable(onClick = onBack)
-                    .padding(horizontal = 10.dp))
-        }
-        Spacer(Modifier.height(20.dp))
-        BasicTextField(
-            value = query, onValueChange = onQuery, singleLine = true,
-            cursorBrush = SolidColor(AX_WHITE),
-            textStyle = TextStyle(color = AX_WHITE, fontSize = 16.sp),
-            modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(17.dp))
-                .background(Color(0xFF171717))
-                .border(1.dp, Color(0xFF3E3E3E), RoundedCornerShape(17.dp))
-                .padding(horizontal = 17.dp, vertical = 16.dp),
-            decorationBox = { child ->
-                Box {
-                    if (query.isEmpty()) Text("Фильтр по названию", color = AX_GRAY,
-                        fontSize = 15.sp)
-                    child()
+            Spacer(Modifier.height(20.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                cursorBrush = SolidColor(AX_WHITE),
+                textStyle = TextStyle(color = AX_WHITE, fontSize = 15.sp),
+                modifier = Modifier.fillMaxWidth()
+                    .padding(end = 8.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF181818))
+                    .border(1.dp, Color(0xFF414141), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 17.dp, vertical = 15.dp),
+                decorationBox = { child ->
+                    Box {
+                        if (query.isEmpty()) Text("Найти приложение...",
+                            color = AX_GRAY, fontSize = 15.sp)
+                        child()
+                    }
+                }
+            )
+            Spacer(Modifier.height(15.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(end = 6.dp)) {
+                items(listOf("Все", "Избранное", "Системные", "Сторонние")) { c ->
+                    AxiomChip(c, selected = filter == c) { onFilter(c) }
                 }
             }
-        )
-        Spacer(Modifier.height(17.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            items(listOf("Все", "Избранное", "Системные", "Сторонние")) { c ->
-                AxiomChip(c, selected = filter == c) { onFilter(c) }
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        if (filtered.isEmpty()) {
-            Text("Здесь пока пусто", color = AX_GRAY, fontSize = 14.sp,
-                modifier = Modifier.padding(vertical = 20.dp))
-        } else {
-            LazyColumn(Modifier.fillMaxWidth().weight(1f), state = state) {
-                items(filtered, key = { "${it.packageName}/${it.className}" }) { app ->
-                    AxiomAppRow(app, favorites, onOpen, onStar)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth().weight(1f)) {
+                if (filtered.isEmpty()) {
+                    Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Нет приложений", color = AX_GRAY, fontSize = 15.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        state = state,
+                        contentPadding = PaddingValues(top = 16.dp, bottom = 70.dp)
+                    ) {
+                        items(filtered, key = { "${it.packageName}/${it.className}" }) { app ->
+                            val letter = app.label.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
+                            val first = index[letter] == filtered.indexOf(app)
+                            Column {
+                                if (first) {
+                                    Text(letter, color = AX_DARK, fontSize = 11.sp,
+                                        letterSpacing = 2.sp, fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.padding(top = 16.dp, bottom = 9.dp))
+                                }
+                                // Read scrolling geometry only in the graphics layer.
+                                // No per-frame recomposition of the entire list.
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .height(80.dp)
+                                        .graphicsLayer {
+                                            val item = state.layoutInfo.visibleItemsInfo
+                                                .firstOrNull { it.key ==
+                                                    "${app.packageName}/${app.className}" }
+                                            val center = state.layoutInfo.viewportSize.height / 2f
+                                            val offset = if (item != null)
+                                                kotlin.math.abs(item.offset + item.size / 2f - center)
+                                            else center
+                                            val prominence = (1f - offset / (center * 1.45f))
+                                                .coerceIn(0f, 1f)
+                                            alpha = .48f + .52f * prominence
+                                            scaleX = .92f + .08f * prominence
+                                            scaleY = .94f + .06f * prominence
+                                            transformOrigin = TransformOrigin(0f, .5f)
+                                        },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        app.label, color = AX_WHITE,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        fontSize = 23.sp, fontWeight = FontWeight.Light,
+                                        letterSpacing = -.35.sp,
+                                        modifier = Modifier.weight(1f)
+                                            .clickable { onOpen(app) }
+                                            .padding(vertical = 19.dp)
+                                    )
+                                    Text(
+                                        if (app.packageName in favorites) "★" else "·",
+                                        color = if (app.packageName in favorites)
+                                            AX_WHITE else AX_DARK,
+                                        fontSize = 20.sp,
+                                        modifier = Modifier.clickable {
+                                            onStar(app.packageName)
+                                        }.padding(horizontal = 12.dp, vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    // Side alphabet: Niagara-inspired fast index, no icon grid.
+                    Column(
+                        modifier = Modifier.width(33.dp).fillMaxHeight()
+                            .pointerInput(railLetters, index) {
+                                detectDragGestures(
+                                    onDragStart = { pos ->
+                                        val i = ((pos.y / size.height.toFloat()) *
+                                            railLetters.size).toInt()
+                                            .coerceIn(0, railLetters.lastIndex)
+                                        val ch = railLetters[i]
+                                        if (ch != lastScrubbed) {
+                                            lastScrubbed = ch
+                                            index[ch]?.let { dest ->
+                                                scope.launch { state.scrollToItem(dest) }
+                                            }
+                                        }
+                                    },
+                                    onDrag = { change, _ ->
+                                        val i = ((change.position.y /
+                                            size.height.toFloat()) * railLetters.size).toInt()
+                                            .coerceIn(0, railLetters.lastIndex)
+                                        val ch = railLetters[i]
+                                        if (ch != lastScrubbed) {
+                                            lastScrubbed = ch
+                                            index[ch]?.let { dest ->
+                                                scope.launch { state.scrollToItem(dest) }
+                                            }
+                                        }
+                                        change.consume()
+                                    }
+                                )
+                            },
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        railLetters.forEach { letter ->
+                            Text(
+                                letter, color = if (letter == selectedLetter)
+                                    AX_WHITE else AX_DARK,
+                                fontSize = 10.sp,
+                                fontWeight = if (letter == selectedLetter)
+                                    FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.clickable {
+                                    index[letter]?.let { dest ->
+                                        scope.launch { state.animateScrollToItem(dest) }
+                                    }
+                                }.padding(vertical = 3.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -263,97 +399,65 @@ private fun AxiomChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 internal fun AxiomSettings(
-    ambientLevel: Int,
-    onAmbientLevel: (Int) -> Unit,
-    scenePreset: String,
-    onScenePreset: (String) -> Unit,
-    entropy: Boolean,
-    onEntropy: (Boolean) -> Unit,
+    gravity: Float,
+    onGravity: (Float) -> Unit,
+    onResetUniverse: () -> Unit,
+    onTerminal: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
         Modifier.fillMaxSize().background(AX_PANEL)
-            .padding(start = 24.dp, end = 24.dp, top = 27.dp)
+            .padding(start = 26.dp, end = 26.dp, top = 27.dp)
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("AXIOM / STUDIO", color = AX_WHITE,
-                fontSize = 13.sp, letterSpacing = 2.5.sp,
-                fontFamily = FontFamily.Monospace)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("AXIOM / CONTROL", color = AX_WHITE, fontSize = 13.sp,
+                letterSpacing = 2.sp, fontFamily = FontFamily.Monospace)
             Text("×", color = AX_WHITE, fontSize = 28.sp,
-                modifier = Modifier.clickable(onClick = onBack)
-                    .padding(horizontal = 8.dp))
+                modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp))
         }
-        Spacer(Modifier.height(38.dp))
-        Text("ФИЗИКА", color = AX_DARK, fontSize = 10.sp,
-            letterSpacing = 2.8.sp, fontFamily = FontFamily.Monospace)
-        Spacer(Modifier.height(12.dp))
-        Text("Интенсивность движения", color = AX_WHITE, fontSize = 17.sp)
+        Spacer(Modifier.height(46.dp))
+        Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
+            fontWeight = FontWeight.Light)
         Spacer(Modifier.height(8.dp))
-        Text("Интерфейс движется по пружинным законам;\n"
-                + "космическая сцена живёт отдельно от элементов управления.",
-            color = AX_GRAY, fontSize = 13.sp, lineHeight = 20.sp)
+        Text("Все объекты движутся в одной физической среде.\n" +
+            "Сила притяжения влияет на их ускорение и траектории.",
+            fontSize = 13.sp, color = AX_GRAY, lineHeight = 20.sp)
         Spacer(Modifier.height(18.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Покой", "Тихо", "Живее").forEachIndexed { i, name ->
-                AxiomChip(name, ambientLevel == i) { onAmbientLevel(i) }
-            }
-        }
-        Spacer(Modifier.height(34.dp))
-        Text("КОСМИЧЕСКАЯ СРЕДА", color = AX_DARK, fontSize = 10.sp,
-            letterSpacing = 2.8.sp, fontFamily = FontFamily.Monospace)
-        Spacer(Modifier.height(13.dp))
-        val scenes = listOf(
-            "AUTO" to "Авто",
-            "ORBIT" to "Орбиты",
-            "ATTRACTOR" to "Аттрактор",
-            "NEURAL" to "Нейросеть",
-            "WAVE" to "Волны"
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(scenes) { (id, title) ->
-                AxiomChip(title, scenePreset == id) { onScenePreset(id) }
-            }
-        }
-        Spacer(Modifier.height(23.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Контролируемая случайность",
-                    color = AX_WHITE, fontSize = 15.sp)
-                Spacer(Modifier.height(6.dp))
-                Text("Лёгкий дрейф объектов, без скачков\nили перестановки приложений",
-                    color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
-            }
-            Switch(
-                checked = entropy, onCheckedChange = onEntropy,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Black,
-                    checkedTrackColor = Color.White,
-                    uncheckedThumbColor = Color(0xFFAAAAAA),
-                    uncheckedTrackColor = Color(0xFF333333),
-                    uncheckedBorderColor = Color(0xFF666666)
-                )
+        Slider(
+            value = gravity, onValueChange = onGravity,
+            valueRange = .25f..2.2f,
+            colors = SliderDefaults.colors(
+                thumbColor = AX_WHITE,
+                activeTrackColor = AX_WHITE,
+                inactiveTrackColor = Color(0xFF3D3D3D)
             )
+        )
+        Text("G = ${"%.2f".format(java.util.Locale.US, gravity)}",
+            fontFamily = FontFamily.Monospace, color = AX_GRAY, fontSize = 12.sp)
+        Spacer(Modifier.height(35.dp))
+        Text("ИНСТРУМЕНТЫ", color = AX_DARK, fontSize = 10.sp,
+            letterSpacing = 3.sp, fontFamily = FontFamily.Monospace)
+        Spacer(Modifier.height(17.dp))
+        Row(Modifier.fillMaxWidth().clickable(onClick = onTerminal)
+            .padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("⌁  Командная консоль", color = AX_WHITE, fontSize = 17.sp)
+            Text("↗", color = AX_GRAY, fontSize = 18.sp)
         }
-        Spacer(Modifier.height(40.dp))
-        Text("БИБЛИОТЕКА", color = AX_DARK, fontSize = 10.sp,
-            letterSpacing = 2.8.sp, fontFamily = FontFamily.Monospace)
-        Spacer(Modifier.height(13.dp))
-        Text("Обновить список приложений ↗",
-            color = AX_WHITE, fontSize = 15.sp,
-            modifier = Modifier.clickable(onClick = onRefresh)
-                .padding(vertical = 14.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text("↺  Перезапустить вселенную", color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onResetUniverse).padding(vertical = 19.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text("⟳  Обновить список приложений", color = AX_WHITE,
+            fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onRefresh).padding(vertical = 19.dp))
         Spacer(Modifier.weight(1f))
-        Text("AXIOM 0.3 / GRAVITY", color = AX_DARK, fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(bottom = 28.dp))
+        Text("AXIOM 0.4  /  MASS · MOTION · INTENT", color = AX_DARK,
+            fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 24.dp))
     }
 }

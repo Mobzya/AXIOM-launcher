@@ -517,7 +517,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     mode = AxiomMode.LAB
                 },
                 timeScale = world.timeScale,
-                onTimeScale = { world.setTimeScale(it) },
+                onTimeScale = { world.updateTimeScale(it) },
                 onBinary = { world.spawnBinary() },
                 onRewind = { world.rewind(3) },
                 onExport = { exportSettings.launch("axiom-settings.json") },
@@ -558,7 +558,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     focus.clearFocus()
                     mode = AxiomMode.LAB
                 },
-                onTimeScale = { world.setTimeScale(it) },
+                onTimeScale = { world.updateTimeScale(it) },
                 onRewind = { world.rewind(it) },
                 onSpawnBinary = { world.spawnBinary() },
                 onThemeMode = { next ->

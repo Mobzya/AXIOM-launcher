@@ -68,7 +68,7 @@ internal class CosmicWorld(seed: Int = 42) {
         return result
     }
 
-    fun setGravity(value: Float) { gravity = value.coerceIn(.25f, 2.2f) }
+    fun updateGravity(value: Float) { gravity = value.coerceIn(.25f, 2.2f) }
 
     /** Advance at fixed 60Hz steps. Called from withFrameNanos, not from draw. */
     fun step(dt: Float) {

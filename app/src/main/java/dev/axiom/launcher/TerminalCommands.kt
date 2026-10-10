@@ -11,6 +11,8 @@ internal sealed class AxCommand {
     data class Open(val name: String) : AxCommand()
     data class Find(val name: String) : AxCommand()
     data class Gravity(val value: Float) : AxCommand()
+    data class Event(val kind: CosmicEventKind?) : AxCommand()
+    data class Depth(val delta: Float) : AxCommand()
     data class Calculate(val expression: String) : AxCommand()
     data class Note(val value: String) : AxCommand()
     data object Notes : AxCommand()
@@ -35,11 +37,37 @@ internal fun parseAxCommand(input: String): AxCommand {
         "help", "?", "man" -> AxCommand.Output(
             "help · ls · find <имя> · open <имя>\n" +
             "calc <выражение> · gravity <0.25..2.2>\n" +
-            "physics · spawn · reset · battery · time\n" +
+            "physics · spawn · reset · battery · time · event · depth\n" +
             "note <текст> · notes · wifi · bluetooth\n" +
             "display · notifications · clear · exit"
         )
         "ls", "apps", "atlas" -> AxCommand.Apps
+        "events", "scenarios" -> AxCommand.Output(
+            "Сценарии: meteor, neural, wave, lens, blackhole. " +
+            "Введи event <сценарий> или event для случайного."
+        )
+        "event", "scenario" -> {
+            val kind = when (arg.lowercase()) {
+                "meteor", "meteors", "comet" -> CosmicEventKind.METEORS
+                "neural", "ml", "network" -> CosmicEventKind.NEURAL
+                "wave", "fourier", "math" -> CosmicEventKind.HARMONICS
+                "lens", "gravity" -> CosmicEventKind.LENS
+                "blackhole", "singularity", "bh" -> CosmicEventKind.SINGULARITY
+                "quiet", "stop" -> CosmicEventKind.QUIET
+                "" -> null
+                else -> return AxCommand.Output("Неизвестное событие. Введи events.")
+            }
+            AxCommand.Event(kind)
+        }
+        "depth", "parallax" -> {
+            if (arg.isBlank()) AxCommand.Output("Пример: depth 0.5")
+            else {
+                val delta = arg.replace(',', '.').toFloatOrNull()
+                if (delta == null || delta !in -1f..1f)
+                    AxCommand.Output("Глубина: число от -1 до 1.")
+                else AxCommand.Depth(delta)
+            }
+        }
         "find", "search" -> if (arg.isEmpty()) AxCommand.Output("Пример: find telegram")
             else AxCommand.Find(arg)
         "open", "run" -> if (arg.isEmpty()) AxCommand.Output("Пример: open firefox")

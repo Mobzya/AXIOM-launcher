@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -167,13 +168,19 @@ fun AxiomScreen(resumeVersion: Int) {
                             point.y / size.height.toFloat().coerceAtLeast(1f)
                         )
                     },
-                    onLongPress = { point ->
-                        world.disturb(
-                            point.x / size.width.toFloat().coerceAtLeast(1f),
-                            point.y / size.height.toFloat().coerceAtLeast(1f)
-                        )
-                    }
+                    onDoubleTap = { world.spawnFromCorner() },
+                    onLongPress = { world.triggerRandomEvent() }
                 )
+            }
+            .pointerInput(mode) {
+                if (mode == AxiomMode.HOME) {
+                    detectHorizontalDragGestures { change, amount ->
+                        world.shiftPerspective(
+                            amount / size.width.toFloat().coerceAtLeast(1f) * 2f
+                        )
+                        change.consume()
+                    }
+                }
             }
             // Parent-level gesture detector; swiping empty space opens the atlas.
             .pointerInput(mode) {
@@ -296,6 +303,8 @@ fun AxiomScreen(resumeVersion: Int) {
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onResetUniverse = { world.reset() },
+                onSurprise = { world.triggerRandomEvent() },
+                currentEpisode = world.episode.kind.name,
                 onTerminal = {
                     terminalInitial = ""
                     mode = AxiomMode.TERMINAL
@@ -310,12 +319,16 @@ fun AxiomScreen(resumeVersion: Int) {
                 apps = apps,
                 gravity = world.gravity,
                 bodyCount = world.bodies.size,
+                currentEpisode = world.episode.kind.name,
+                onEvent = { world.trigger(it) },
+                onSurprise = { world.triggerRandomEvent() },
+                onDepth = { world.shiftPerspective(it) },
                 onGravity = {
                     world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onReset = { world.reset() },
-                onSpawn = { world.disturb(.50f, .41f) },
+                onSpawn = { world.spawnFromCorner() },
                 onLaunch = ::openApp,
                 onOpenAtlas = ::atlas,
                 onBack = ::close

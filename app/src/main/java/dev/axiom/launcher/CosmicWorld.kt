@@ -12,184 +12,268 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-/**
- * A compact 2D n-body toy universe in normalized screen coordinates.
- * Softened Newtonian attraction, momentum-preserving collision impulses,
- * capped velocities, elastic wall reflections and deterministic integration.
- *
- * A single universe replaces the previous scene presets. Elements can appear
- * irregularly, but the interactive UI never moves unpredictably.
- */
+/** Single cinematic world; scenarios are temporary events, not user-facing modes. */
+internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY }
+
+internal data class CosmicEpisode(
+    val kind: CosmicEventKind = CosmicEventKind.QUIET,
+    val age: Float = 0f,
+    val duration: Float = 1f,
+    val x: Float = .5f,
+    val y: Float = .37f,
+    val serial: Int = 0
+) {
+    val progress: Float get() = (age / duration).coerceIn(0f, 1f)
+    val alpha: Float get() {
+        val t = progress
+        return (min(1f, t * 5f) * min(1f, (1f - t) * 5f)).coerceIn(0f, 1f)
+    }
+}
+
 internal data class CelestialBody(
     val id: Int,
     val kind: Int,
     val mass: Float,
+    val depth: Float,
     val x: Float,
     val y: Float,
     val vx: Float,
     val vy: Float,
-    val rotation: Float,
+    val rotation: Float = 0f,
     val age: Float = 0f,
-    val lifetime: Float = 120f
+    val lifetime: Float = 58f
 )
+
+internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
 internal class CosmicWorld(seed: Int = 42) {
     private val random = Random(seed)
-    var bodies by mutableStateOf(createInitial())
+    var bodies by mutableStateOf<List<CelestialBody>>(initialBodies())
+        private set
+    var ripples by mutableStateOf<List<SpaceRipple>>(emptyList())
         private set
     var elapsed by mutableStateOf(0f)
         private set
-    var gravity by mutableStateOf(1.0f)
+    var gravity by mutableStateOf(1f)
         private set
-    var interactionSignal by mutableStateOf(0f)
+    var episode by mutableStateOf(CosmicEpisode())
         private set
-    private var nextId = 32
-    private var nextArrival = 8f
+    var depthShift by mutableStateOf(0f)
+        private set
+    private var idSequence = 50
+    private var eventSerial = 0
+    private var spawnAt = 10f
+    private var eventAt = 38f
+    private var lastBurstAt = -100f
 
-    private fun createInitial(): List<CelestialBody> {
-        val result = mutableListOf(
-            CelestialBody(0, 0, 8f, .5f, .42f, 0f, 0f, 0f, lifetime = 100000f)
+    private fun initialBodies(): List<CelestialBody> {
+        // Deliberately no permanent massive object in the center.
+        return listOf(
+            CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f, lifetime = 95f),
+            CelestialBody(2, 3, .7f, 2.2f, .83f, .28f, -.008f, .003f, .7f, lifetime = 96f),
+            CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f, lifetime = 92f),
+            CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f, lifetime = 90f)
         )
-        repeat(6) { i ->
-            val a = i * (2 * PI / 6) + .4
-            val r = .17 + (i % 3) * .065
-            val px = .5 + r * cos(a)
-            val py = .42 + r * sin(a) * .82
-            val speed = .072 + (i % 3) * .012
-            result += CelestialBody(
-                i + 1, i % 5 + 1, .6f + i % 3 * .48f,
-                px.toFloat(), py.toFloat(),
-                (-sin(a) * speed).toFloat(),
-                (cos(a) * speed * .82).toFloat(),
-                (i * .51f),
-                lifetime = 170f + i * 14f
-            )
-        }
-        return result
     }
 
     fun updateGravity(value: Float) { gravity = value.coerceIn(.25f, 2.2f) }
 
-    /** Advance at fixed 60Hz steps. Called from withFrameNanos, not from draw. */
+    /** Spawns just outside one screen corner, with a velocity toward the scene. */
+    fun spawnFromCorner(burst: Boolean = false) {
+        if (bodies.size >= 16) return
+        val corner = random.nextInt(4)
+        val spread = random.nextFloat() * .17f - .085f
+        val (x, y) = when (corner) {
+            0 -> -.09f to -.07f
+            1 -> 1.09f to -.07f
+            2 -> -.09f to 1.07f
+            else -> 1.09f to 1.07f
+        }
+        val targetX = .26f + random.nextFloat() * .48f + spread
+        val targetY = .19f + random.nextFloat() * .59f
+        val dx = targetX - x
+        val dy = targetY - y
+        val length = max(hypot(dx, dy), .05f)
+        val speed = if (burst) .17f + random.nextFloat() * .12f
+                    else .048f + random.nextFloat() * .085f
+        val depth = .65f + random.nextFloat() * 2.6f
+        val body = CelestialBody(
+            id = idSequence++,
+            kind = if (burst) 1 else 1 + random.nextInt(5),
+            mass = .30f + random.nextFloat() * 1.35f,
+            depth = depth,
+            x = x, y = y, vx = dx / length * speed,
+            vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
+            lifetime = if (burst) 20f + random.nextFloat() * 15f
+                       else 39f + random.nextFloat() * 37f
+        )
+        bodies = bodies + body
+    }
+
+    fun trigger(kind: CosmicEventKind) {
+        if (kind == CosmicEventKind.QUIET) {
+            episode = CosmicEpisode()
+            eventAt = elapsed + 32f
+            return
+        }
+        eventSerial++
+        episode = CosmicEpisode(
+            kind = kind, age = 0f,
+            duration = when (kind) {
+                CosmicEventKind.SINGULARITY -> 17f
+                CosmicEventKind.NEURAL -> 16f
+                CosmicEventKind.HARMONICS -> 17f
+                CosmicEventKind.LENS -> 13f
+                CosmicEventKind.METEORS -> 10f
+                else -> 1f
+            },
+            x = .25f + random.nextFloat() * .5f,
+            y = .20f + random.nextFloat() * .50f,
+            serial = eventSerial
+        )
+        if (kind == CosmicEventKind.METEORS) {
+            repeat(3) { spawnFromCorner(burst = true) }
+            lastBurstAt = elapsed
+        }
+    }
+
+    /** Auto-runs interesting scenes but black holes are very rare (~1% per event). */
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(100)) {
+        in 0..32 -> CosmicEventKind.METEORS
+        in 33..56 -> CosmicEventKind.NEURAL
+        in 57..77 -> CosmicEventKind.HARMONICS
+        in 78..98 -> CosmicEventKind.LENS
+        else -> CosmicEventKind.SINGULARITY
+    }
+
+    fun disturb(x: Float, y: Float) {
+        val px = x.coerceIn(0f, 1f)
+        val py = y.coerceIn(0f, 1f)
+        ripples = (ripples + SpaceRipple(px, py)).takeLast(4)
+        bodies = bodies.map { b ->
+            val dx = b.x - px
+            val dy = b.y - py
+            val distance = max(hypot(dx, dy), .04f)
+            val kick = (.022f / (distance + .065f)).coerceAtMost(.14f)
+            b.copy(vx = b.vx + dx / distance * kick / sqrt(b.mass),
+                vy = b.vy + dy / distance * kick / sqrt(b.mass))
+        }
+    }
+
+    fun shiftPerspective(dx: Float) {
+        depthShift = (depthShift + dx).coerceIn(-1f, 1f)
+    }
+
+    fun reset() {
+        bodies = initialBodies()
+        ripples = emptyList()
+        elapsed = 0f
+        episode = CosmicEpisode()
+        depthShift = 0f
+        spawnAt = 10f
+        eventAt = 38f
+        lastBurstAt = -100f
+    }
+
+    /** Symplectic-style velocity integration, soft gravity, no mandatory center. */
     fun step(dt: Float) {
-        val h = dt.coerceIn(.005f, .034f)
+        val h = dt.coerceIn(.004f, .034f)
         elapsed += h
-        interactionSignal = (interactionSignal - h * .95f).coerceAtLeast(0f)
+        depthShift *= (1f - .5f * h)
+        ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
+
+        val oldEpisode = episode
+        if (oldEpisode.kind != CosmicEventKind.QUIET) {
+            if (oldEpisode.age + h >= oldEpisode.duration) {
+                episode = CosmicEpisode()
+                eventAt = elapsed + 24f + random.nextFloat() * 48f
+            } else episode = oldEpisode.copy(age = oldEpisode.age + h)
+        } else if (elapsed >= eventAt) {
+            trigger(chooseEvent())
+            eventAt = elapsed + 110f
+        }
+
+        if (elapsed >= spawnAt) {
+            spawnFromCorner()
+            spawnAt = elapsed + 7f + random.nextFloat() * 15f
+        }
+        if (episode.kind == CosmicEventKind.METEORS &&
+            elapsed - lastBurstAt > 1.8f && episode.age < 6.5f) {
+            spawnFromCorner(burst = true)
+            lastBurstAt = elapsed
+        }
+
         val current = bodies
         val n = current.size
         val ax = FloatArray(n)
         val ay = FloatArray(n)
-        val velX = FloatArray(n) { current[it].vx }
-        val velY = FloatArray(n) { current[it].vy }
 
-        // Pairwise softened forces: F = G m1 m2 r / (r² + ε²)^(3/2).
-        for (i in 0 until n) {
-            for (j in i + 1 until n) {
-                val a = current[i]
-                val b = current[j]
-                val dx = b.x - a.x
-                val dy = b.y - a.y
-                val r2 = dx * dx + dy * dy
-                val softened = r2 + .0038f
-                val factor = (.00065f * gravity / (softened * sqrt(softened)))
-                    .coerceAtMost(3.2f)
-                ax[i] += factor * b.mass * dx
-                ay[i] += factor * b.mass * dy
-                ax[j] -= factor * a.mass * dx
-                ay[j] -= factor * a.mass * dy
-
-                // Soft collision: keep small objects from stacking at the center.
-                val collisionDistance = if (a.kind == 0 || b.kind == 0) .043f else .027f
-                if (r2 > .000001f && r2 < collisionDistance * collisionDistance) {
-                    val distance = sqrt(r2)
-                    val nx = dx / distance
-                    val ny = dy / distance
-                    val relative = (velX[j] - velX[i]) * nx +
-                        (velY[j] - velY[i]) * ny
-                    if (relative < 0f) {
-                        val impulse = -(1f + .67f) * relative /
-                            (1f / a.mass + 1f / b.mass)
-                        velX[i] -= impulse * nx / a.mass
-                        velY[i] -= impulse * ny / a.mass
-                        velX[j] += impulse * nx / b.mass
-                        velY[j] += impulse * ny / b.mass
-                    }
-                    val repel = (collisionDistance - distance) * 2.1f
-                    ax[i] -= nx * repel
-                    ay[i] -= ny * repel
-                    ax[j] += nx * repel
-                    ay[j] += ny * repel
-                }
+        // Softened inverse-square attraction, scaled by real normalized depth.
+        for (i in 0 until n) for (j in i + 1 until n) {
+            val a = current[i]
+            val b = current[j]
+            val dx = b.x - a.x
+            val dy = b.y - a.y
+            val radius2 = dx * dx + dy * dy + .012f
+            val grav = (.000035f * gravity /
+                (radius2 * sqrt(radius2))).coerceAtMost(.2f)
+            val planeCoupling = 1f / (1f + kotlin.math.abs(a.depth - b.depth))
+            ax[i] += grav * b.mass * dx * planeCoupling
+            ay[i] += grav * b.mass * dy * planeCoupling
+            ax[j] -= grav * a.mass * dx * planeCoupling
+            ay[j] -= grav * a.mass * dy * planeCoupling
+            val separation = sqrt(dx * dx + dy * dy)
+            if (separation > .001f && separation < .023f &&
+                kotlin.math.abs(a.depth - b.depth) < .55f) {
+                val repel = (.023f - separation) * .8f
+                ax[i] -= dx / separation * repel
+                ay[i] -= dy / separation * repel
+                ax[j] += dx / separation * repel
+                ay[j] += dy / separation * repel
             }
         }
 
-        val updated = ArrayList<CelestialBody>(n + 1)
+        // Singularity bends trajectories only during the exceptional episode.
+        val e = episode
+        if (e.kind == CosmicEventKind.SINGULARITY) {
+            for (i in current.indices) {
+                val b = current[i]
+                val dx = e.x - b.x
+                val dy = e.y - b.y
+                val d2 = dx * dx + dy * dy + .009f
+                val strength = (.0019f * e.alpha / (d2 * sqrt(d2))).coerceAtMost(.65f)
+                ax[i] += strength * (dx - .33f * dy)
+                ay[i] += strength * (dy + .33f * dx)
+            }
+        } else if (e.kind == CosmicEventKind.LENS) {
+            for (i in current.indices) {
+                val b = current[i]
+                val dx = e.x - b.x
+                val dy = e.y - b.y
+                val d2 = dx * dx + dy * dy + .08f
+                ax[i] += -.0034f * e.alpha * dy / d2
+                ay[i] += .0034f * e.alpha * dx / d2
+            }
+        }
+
+        val next = ArrayList<CelestialBody>(n)
         for (i in current.indices) {
             val b = current[i]
-            // The nucleus is heavy but not pinned: it reacts subtly to other masses.
-            var vx = (velX[i] + ax[i].coerceIn(-1.3f, 1.3f) * h) * .9995f
-            var vy = (velY[i] + ay[i].coerceIn(-1.3f, 1.3f) * h) * .9995f
+            var vx = (b.vx + ax[i].coerceIn(-.8f, .8f) * h) * (1f - .0009f * h)
+            var vy = (b.vy + ay[i].coerceIn(-.8f, .8f) * h) * (1f - .0009f * h)
             val speed = hypot(vx, vy)
-            if (speed > .35f) {
-                vx *= .35f / speed
-                vy *= .35f / speed
+            if (speed > .38f) {
+                vx *= .38f / speed; vy *= .38f / speed
             }
-            var x = b.x + vx * h
-            var y = b.y + vy * h
-            if (x < .07f) { x = .07f; vx = kotlin.math.abs(vx) * .79f }
-            if (x > .93f) { x = .93f; vx = -kotlin.math.abs(vx) * .79f }
-            if (y < .09f) { y = .09f; vy = kotlin.math.abs(vy) * .79f }
-            if (y > .88f) { y = .88f; vy = -kotlin.math.abs(vy) * .79f }
+            val nx = b.x + vx * h
+            val ny = b.y + vy * h
             val age = b.age + h
-            if (b.id == 0 || age < b.lifetime) {
-                updated += b.copy(x = x, y = y, vx = vx, vy = vy,
-                    rotation = b.rotation + (.18f + .08f / b.mass) * h,
-                    age = age)
+            // Corner-launched sprites cross the screen and leave. No hard wall bouncing.
+            if (age < b.lifetime && nx in -.24f..1.24f && ny in -.24f..1.24f) {
+                next += b.copy(x = nx, y = ny, vx = vx, vy = vy,
+                    rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
-        if (elapsed > nextArrival && updated.size < 11) {
-            updated += createBody(random.nextFloat() * .7f + .15f,
-                random.nextFloat() * .54f + .15f)
-            nextArrival = elapsed + 7.5f + random.nextFloat() * 12f
-        } else if (elapsed > nextArrival) {
-            nextArrival = elapsed + 9f
-        }
-        bodies = updated
-    }
-
-    private fun createBody(x: Float, y: Float): CelestialBody {
-        val a = random.nextFloat() * 2f * PI.toFloat()
-        val speed = .025f + random.nextFloat() * .07f
-        return CelestialBody(
-            id = nextId++, kind = 1 + random.nextInt(5),
-            mass = .5f + random.nextFloat() * 1.8f,
-            x = x.coerceIn(.08f, .92f), y = y.coerceIn(.10f, .86f),
-            vx = cos(a) * speed, vy = sin(a) * speed,
-            rotation = a, lifetime = 45f + random.nextFloat() * 100f
-        )
-    }
-
-    /** Touch the empty canvas: emit a body and push neighbors away. */
-    fun disturb(x: Float, y: Float) {
-        val pointX = x.coerceIn(.05f, .95f)
-        val pointY = y.coerceIn(.05f, .93f)
-        val next = bodies.map { b ->
-            val dx = b.x - pointX
-            val dy = b.y - pointY
-            val distance = max(hypot(dx, dy), .035f)
-            val push = (.022f / (distance + .075f)).coerceAtMost(.13f)
-            b.copy(vx = b.vx + dx / distance * push / sqrt(b.mass),
-                vy = b.vy + dy / distance * push / sqrt(b.mass))
-        }.toMutableList()
-        if (next.size < 11) next += createBody(pointX, pointY)
         bodies = next
-        interactionSignal = 1f
-    }
-
-    fun reset() {
-        bodies = createInitial()
-        elapsed = 0f
-        interactionSignal = 0f
-        nextArrival = 8f
     }
 }

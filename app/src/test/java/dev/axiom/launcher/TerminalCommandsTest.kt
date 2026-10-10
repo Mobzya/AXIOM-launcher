@@ -13,6 +13,15 @@ class TerminalCommandsTest {
         assertTrue(parseAxCommand("gravity 100") is AxCommand.Output)
         assertTrue(parseAxCommand("sudo reboot") is AxCommand.Output)
     }
+    @Test fun cinematicEventCommands() {
+        assertEquals(CosmicEventKind.SINGULARITY,
+            (parseAxCommand("event blackhole") as AxCommand.Event).kind)
+        assertEquals(CosmicEventKind.NEURAL,
+            (parseAxCommand("event neural") as AxCommand.Event).kind)
+        assertTrue(parseAxCommand("event unknown") is AxCommand.Output)
+        assertEquals(.5f, (parseAxCommand("depth 0.5") as AxCommand.Depth).delta)
+    }
+
     @Test fun arithmeticSupportsParenthesesAndPower() {
         assertEquals(14.0, arithmetic("2 * (3+4)"), 1e-9)
         assertEquals(64.0, arithmetic("2^6"), 1e-9)
@@ -32,6 +41,23 @@ class UniverseTest {
         assertTrue(world.bodies.size in 1..11)
         assertTrue(world.bodies.all { it.x in .07f.. .93f && it.y in .09f.. .88f })
     }
+    @Test fun bodiesArriveFromCorners() {
+        val world = CosmicWorld(19)
+        val prior = world.bodies.size
+        world.spawnFromCorner()
+        assertEquals(prior + 1, world.bodies.size)
+        val incoming = world.bodies.last()
+        assertTrue(incoming.x < 0f || incoming.x > 1f ||
+            incoming.y < 0f || incoming.y > 1f)
+    }
+    @Test fun rareEpisodeCanBeTriggeredAndExpires() {
+        val world = CosmicWorld(19)
+        world.trigger(CosmicEventKind.SINGULARITY)
+        assertEquals(CosmicEventKind.SINGULARITY, world.episode.kind)
+        repeat(600) { world.step(1f / 30f) }
+        assertTrue(world.episode.kind != CosmicEventKind.SINGULARITY)
+    }
+
     @Test fun tapChangesMomentum() {
         val world = CosmicWorld(17)
         val before = world.bodies.map { it.vx }

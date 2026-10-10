@@ -1,7 +1,16 @@
-# AXIOM 0.7 — Fluid Foundations
+# AXIOM 0.8 — Final Polish
 
 Minimalist, strictly black-and-white Android HOME launcher with a living
 procedural mathematical universe (Redmi Note 13 Pro 4G / HyperOS).
+
+## Final polish / audited defects
+- A discreet, touch-friendly **>_ terminal button** lives at the upper-left of HOME; the search stays centered and settings remain in the upper-right.
+- A mildly denser cosmos: upper limit **21 objects** (previously 18), with bounded spawn intervals. Avoids the old visually empty stretches without excessive CPU usage.
+- The optional performance profiler now samples and computes percentiles on a **background thread**, then posts only occasional UI updates.
+- Removed unused legacy Atlas implementation, retaining the optimized Fluid Index.
+- Ambient touch gestures are enabled **only** on HOME; search, keyboard and overlay controls do not trigger physical effects.
+- JSON restore strictly rejects malformed arrays and continues to limit input size; it does not touch other Android app data.
+- Remaining device validation: HyperOS navigation gestures, frame pacing, battery drain and OEM keyboard differences.
 
 ## What changed
 ### Phase 1: responsive search and navigation

@@ -46,11 +46,22 @@ internal data class CelestialBody(
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
+internal data class CosmicRemnant(
+    val kind: CosmicEventKind, val x: Float, val y: Float,
+    val age: Float = 0f, val lifetime: Float = 38f
+)
+
 internal class CosmicWorld(seed: Int = 42) {
     private val random = Random(seed)
     var bodies by mutableStateOf<List<CelestialBody>>(initialBodies())
         private set
     var ripples by mutableStateOf<List<SpaceRipple>>(emptyList())
+        private set
+    var previousBodies by mutableStateOf(bodies)
+        private set
+    var remnants by mutableStateOf<List<CosmicRemnant>>(emptyList())
+        private set
+    var mathPinned by mutableStateOf(false)
         private set
     var elapsed by mutableStateOf(0f)
         private set
@@ -65,6 +76,7 @@ internal class CosmicWorld(seed: Int = 42) {
     private var spawnAt = 10f
     private var eventAt = 38f
     private var lastBurstAt = -100f
+    private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
     var mathMoment by mutableStateOf(MathMoment())
         private set
@@ -127,6 +139,7 @@ internal class CosmicWorld(seed: Int = 42) {
             return
         }
         eventSerial++
+        tunneled.clear()
         eventHistory = (eventHistory + kind.name).takeLast(10)
         episode = CosmicEpisode(
             kind = kind, age = 0f,
@@ -164,6 +177,7 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     fun summonMath(requested: MathKind? = null) {
+        mathPinned = false
         nextMathAt = elapsed + 23f
         mathMoment = MathMoment(
             kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
@@ -173,6 +187,22 @@ internal class CosmicWorld(seed: Int = 42) {
             y = if (random.nextBoolean()) .18f else .63f,
             seed = random.nextInt()
         )
+    }
+
+    /**
+     * Touching a live mathematical construction advances its derivation.
+     * Touching elsewhere produces a local impulse.
+     */
+    fun interact(x: Float, y: Float) {
+        val m = mathMoment
+        if (m.active && x in (m.x - .04f)..(m.x + .43f) &&
+            y in (m.y - .04f)..(m.y + .32f)) {
+            mathPinned = true
+            val next = ((m.progress * 3f).toInt() + 1).coerceAtMost(2)
+            mathMoment = m.copy(age = (next / 3f + .04f) * m.duration)
+            return
+        }
+        disturb(x, y)
     }
 
     fun disturb(x: Float, y: Float) {
@@ -200,13 +230,17 @@ internal class CosmicWorld(seed: Int = 42) {
 
     fun reset() {
         bodies = initialBodies()
+        previousBodies = bodies
         ripples = emptyList()
+        remnants = emptyList()
+        mathPinned = false
         elapsed = 0f
         episode = CosmicEpisode()
         depthShift = 0f
         spawnAt = 10f
         eventAt = 38f
         lastBurstAt = -100f
+        tunneled.clear()
         mathMoment = MathMoment()
         selectedBody = null
         eventHistory = emptyList()
@@ -222,7 +256,9 @@ internal class CosmicWorld(seed: Int = 42) {
         if (inspectAge > 4.5f && selectedBody != null) selectedBody = null
         depthShift *= (1f - .5f * h)
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
-        if (mathMoment.active) {
+        remnants = remnants.map { it.copy(age = it.age + h) }
+            .filter { it.age < it.lifetime }
+        if (mathMoment.active && !mathPinned) {
             val age = mathMoment.age + h
             mathMoment = if (age > mathMoment.duration) MathMoment()
                          else mathMoment.copy(age = age)
@@ -233,6 +269,17 @@ internal class CosmicWorld(seed: Int = 42) {
         val oldEpisode = episode
         if (oldEpisode.kind != CosmicEventKind.QUIET) {
             if (oldEpisode.age + h >= oldEpisode.duration) {
+                if (oldEpisode.kind in listOf(
+                    CosmicEventKind.SINGULARITY, CosmicEventKind.NOVA,
+                    CosmicEventKind.PULSAR, CosmicEventKind.WORMHOLE)) {
+                    remnants = (remnants + CosmicRemnant(
+                        oldEpisode.kind, oldEpisode.x, oldEpisode.y,
+                        lifetime = if (oldEpisode.kind == CosmicEventKind.SINGULARITY)
+                            65f else 32f
+                    )).takeLast(4)
+                    // Scattering is a lasting physical consequence of the episode.
+                    repeat(2) { spawnFromCorner(burst = true) }
+                }
                 episode = CosmicEpisode()
                 eventAt = elapsed + 24f + random.nextFloat() * 48f
             } else episode = oldEpisode.copy(age = oldEpisode.age + h)
@@ -313,9 +360,14 @@ internal class CosmicWorld(seed: Int = 42) {
                 val d2 = dx * dx + dy * dy + .026f
                 when (e.kind) {
                     CosmicEventKind.NOVA -> {
-                        val impulse = if (e.age < 2.5f) .022f else .003f
-                        ax[i] += impulse * e.alpha * dx / d2
-                        ay[i] += impulse * e.alpha * dy / d2
+                        // Shock front interacts with a body when the expanding ring reaches it.
+                        val ringRadius = .03f + .38f * e.progress
+                        val separation = sqrt(dx*dx + dy*dy)
+                        val shell = (1f - kotlin.math.abs(separation-ringRadius) / .07f)
+                            .coerceIn(0f, 1f)
+                        val impulse = .035f * shell * e.alpha / (separation + .08f)
+                        ax[i] += impulse * dx / (separation + .02f)
+                        ay[i] += impulse * dy / (separation + .02f)
                     }
                     CosmicEventKind.PULSAR -> {
                         val pulse = .5f + .5f * sin(e.age * 5f)
@@ -335,6 +387,20 @@ internal class CosmicWorld(seed: Int = 42) {
             }
         }
 
+        // Rare singularity remnants continue to bend paths after the event ends.
+        for (remnant in remnants) {
+            if (remnant.kind != CosmicEventKind.SINGULARITY) continue
+            val strength = (1f - remnant.age/remnant.lifetime).coerceIn(0f, 1f)
+            for (i in current.indices) {
+                val dx = remnant.x-current[i].x
+                val dy = remnant.y-current[i].y
+                val d2 = dx*dx + dy*dy + .022f
+                val lens = .00045f * strength / (d2 * sqrt(d2))
+                ax[i] += lens*(dx-.21f*dy)
+                ay[i] += lens*(dy+.21f*dx)
+            }
+        }
+
         val next = ArrayList<CelestialBody>(n)
         for (i in current.indices) {
             val b = current[i]
@@ -344,8 +410,24 @@ internal class CosmicWorld(seed: Int = 42) {
             if (speed > .38f) {
                 vx *= .38f / speed; vy *= .38f / speed
             }
-            val nx = b.x + vx * h
-            val ny = b.y + vy * h
+            var nx = b.x + vx * h
+            var ny = b.y + vy * h
+            if (e.kind == CosmicEventKind.WORMHOLE &&
+                e.alpha > .30f && b.id !in tunneled) {
+                val left = e.x - .17f
+                val right = e.x + .17f
+                val fromLeft = hypot(nx-left, ny-e.y) < .043f
+                val fromRight = hypot(nx-right, ny-e.y) < .043f
+                if (fromLeft || fromRight) {
+                    // Conserves speed but changes location and direction.
+                    // Each body may transit once per episode.
+                    nx = if (fromLeft) right + .057f else left - .057f
+                    ny = e.y + (ny-e.y) * .7f
+                    vx = -vx
+                    tunneled += b.id
+                    ripples = (ripples + SpaceRipple(nx,ny)).takeLast(4)
+                }
+            }
             val age = b.age + h
             // Corner-launched sprites cross the screen and leave. No hard wall bouncing.
             if (age < b.lifetime && nx in -.24f..1.24f && ny in -.24f..1.24f) {
@@ -353,6 +435,36 @@ internal class CosmicWorld(seed: Int = 42) {
                     rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
-        bodies = next
+        // Very slow close encounters may coalesce instead of indefinitely colliding.
+        val compact = ArrayList<CelestialBody>(next.size)
+        val consumed = HashSet<Int>()
+        for (i in next.indices) {
+            if (next[i].id in consumed) continue
+            val a = next[i]
+            val partner = ((i+1) until next.size).firstOrNull { j ->
+                val b = next[j]
+                b.id !in consumed &&
+                kotlin.math.abs(a.depth-b.depth) < .4f &&
+                hypot(a.x-b.x,a.y-b.y) < .012f &&
+                hypot(a.vx-b.vx,a.vy-b.vy) < .018f
+            }
+            if (partner == null) compact += a
+            else {
+                val b = next[partner]
+                val combinedMass = a.mass + b.mass
+                compact += a.copy(
+                    mass = combinedMass.coerceAtMost(7f),
+                    x = (a.x*a.mass+b.x*b.mass)/combinedMass,
+                    y = (a.y*a.mass+b.y*b.mass)/combinedMass,
+                    vx = (a.vx*a.mass+b.vx*b.mass)/combinedMass,
+                    vy = (a.vy*a.mass+b.vy*b.mass)/combinedMass,
+                    lifetime = maxOf(a.lifetime,b.lifetime)+12f
+                )
+                consumed += b.id
+                ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
+            }
+        }
+        previousBodies = current
+        bodies = compact
     }
 }

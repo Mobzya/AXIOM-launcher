@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.PaddingValues
@@ -65,6 +67,7 @@ internal fun SearchSuggestions(
     favorites: Set<String>,
     maxHeight: Dp,
     showHint: Boolean,
+    specialResult: String? = null,
     onOpen: (InstalledApp) -> Unit,
     onStar: (String) -> Unit,
     onAtlas: () -> Unit
@@ -85,7 +88,11 @@ internal fun SearchSuggestions(
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(start = 7.dp, bottom = 9.dp)
         )
-        if (results.isEmpty()) {
+        if (specialResult != null) {
+            Text(specialResult, color = AX_WHITE, fontSize = 15.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 15.dp))
+        } else if (results.isEmpty()) {
             Text("Нет совпадений", color = AX_GRAY, fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 14.dp))
         } else {
@@ -97,7 +104,7 @@ internal fun SearchSuggestions(
                 }
             }
         }
-        Box(
+        if (specialResult == null) Box(
             Modifier.fillMaxWidth().padding(top = 7.dp)
                 .clip(RoundedCornerShape(13.dp))
                 .clickable(onClick = onAtlas)
@@ -163,7 +170,7 @@ internal fun AxiomAppRow(
 }
 
 @Composable
-internal fun AxiomAtlas(
+internal fun LegacyAxiomAtlas(
     apps: List<InstalledApp>,
     favorites: Set<String>,
     query: String,
@@ -396,6 +403,12 @@ internal fun AxiomSettings(
     gravity: Float,
     onGravity: (Float) -> Unit,
     onResetUniverse: () -> Unit,
+    onMath: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onProfiler: () -> Unit,
+    profilerEnabled: Boolean,
+    profilerSummary: String,
     onSurprise: () -> Unit,
     currentEpisode: String,
     onTerminal: () -> Unit,
@@ -404,6 +417,7 @@ internal fun AxiomSettings(
 ) {
     Column(
         Modifier.fillMaxSize().background(AX_PANEL)
+            .verticalScroll(rememberScrollState())
             .padding(start = 26.dp, end = 26.dp, top = 27.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
@@ -464,8 +478,32 @@ internal fun AxiomSettings(
             fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onRefresh).padding(vertical = 19.dp))
-        Spacer(Modifier.weight(1f))
-        Text("AXIOM 0.5  /  DEPTH · CHAOS · CINEMA", color = AX_DARK,
+        HorizontalDivider(color = Color(0xFF292929))
+        Text("∑  Математическая лаборатория", color = AX_WHITE,
+            fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onMath).padding(vertical = 17.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text("⇧  Экспортировать настройки", color = AX_WHITE,
+            fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onExport).padding(vertical = 17.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text("⇩  Восстановить настройки", color = AX_WHITE,
+            fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onImport).padding(vertical = 17.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text(
+            if (profilerEnabled) "◉  Остановить измерение кадров"
+            else "◎  Измерять плавность списка",
+            color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onProfiler).padding(vertical = 17.dp)
+        )
+        if (profilerEnabled) {
+            Text(profilerSummary, color = AX_GRAY, fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace)
+        }
+        Spacer(Modifier.height(36.dp))
+        Text("AXIOM 0.7  /  FLUID · CONSEQUENCE · INTELLIGENCE", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

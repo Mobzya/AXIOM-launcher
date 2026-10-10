@@ -3,6 +3,8 @@ package dev.axiom.launcher
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -64,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -92,7 +95,7 @@ internal val AX_PANEL = Color(0xF5080808)
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
 
 @Composable
-fun AxiomScreen(resumeVersion: Int) {
+internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE) }
     var apps by remember { mutableStateOf(emptyList<InstalledApp>()) }
@@ -110,16 +113,50 @@ fun AxiomScreen(resumeVersion: Int) {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
     }
 
+    val exportSettings = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                it.write(AxiomBackup.export(context))
+            } ?: error("Нет доступа для записи")
+        }.onSuccess {
+            Toast.makeText(context, "Настройки AXIOM сохранены", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Не удалось экспортировать", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val importSettings = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) runCatching {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: error("Нет доступа к файлу")
+            val json = input.bufferedReader().use { it.readText() }
+            AxiomBackup.import(context, json)
+        }.onSuccess {
+            favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
+            world.updateGravity(prefs.getFloat("gravity", 1f))
+            refresh++
+            Toast.makeText(context, "Настройки AXIOM восстановлены", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Файл настроек не подходит", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val searchFocus = remember { FocusRequester() }
     val choices = remember(apps, favorites, query) {
-        if (query.isBlank()) emptyList()
+        if (query.isBlank() || query.startsWith(">") || query.startsWith("!") ||
+            query.startsWith("=")) emptyList()
         else searchApps(apps, query, favorites).take(6)
     }
 
     LaunchedEffect(resumeVersion, refresh) {
-        apps = withContext(Dispatchers.IO) { findLaunchableApps(context) }
+        val latest = withContext(Dispatchers.IO) { AppCatalogCache.load(context) }
+        // Keeping the same snapshot avoids rebuilding the entire Atlas on resume.
+        if (apps != latest) apps = latest
     }
     LaunchedEffect(mode) {
         if (mode == AxiomMode.SEARCH) {
@@ -144,6 +181,7 @@ fun AxiomScreen(resumeVersion: Int) {
     fun openApp(app: InstalledApp) {
         try {
             dev.axiom.launcher.openApp(context, app)
+            AppRecents.record(context, app.packageName)
             close()
         } catch (_: Exception) {
             Toast.makeText(context, "Не удалось запустить ${app.label}", Toast.LENGTH_SHORT).show()
@@ -153,6 +191,18 @@ fun AxiomScreen(resumeVersion: Int) {
     fun star(pkg: String) {
         favorites = if (pkg in favorites) favorites - pkg else favorites + pkg
         prefs.edit().putStringSet("favorites", favorites).apply()
+    }
+    val inlineResult = remember(query) {
+        val input = query.trim()
+        when {
+            input.startsWith("=") -> runCatching {
+                "= " + "%.9g".format(java.util.Locale.US,
+                    arithmetic(input.removePrefix("=").trim()))
+            }.getOrElse { "Проверь математическое выражение" }
+            input.startsWith(">") || input.startsWith("!") ->
+                "↵ Открыть командную консоль"
+            else -> null
+        }
     }
     BackHandler(mode != AxiomMode.HOME) { close() }
 
@@ -164,7 +214,7 @@ fun AxiomScreen(resumeVersion: Int) {
             .pointerInput(world) {
                 detectTapGestures(
                     onTap = { point ->
-                        world.disturb(
+                        world.interact(
                             point.x / size.width.toFloat().coerceAtLeast(1f),
                             point.y / size.height.toFloat().coerceAtLeast(1f)
                         )
@@ -248,7 +298,8 @@ fun AxiomScreen(resumeVersion: Int) {
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .offset(y = dockTop)
+                    // Defer the animated position to the layout phase, not composition.
+                    .offset { IntOffset(0, dockTop.roundToPx()) }
                     .padding(horizontal = 24.dp)
             ) {
                 CentralSearchDock(
@@ -259,14 +310,24 @@ fun AxiomScreen(resumeVersion: Int) {
                     onOpen = { mode = AxiomMode.SEARCH },
                     onClose = ::close,
                     onSubmit = {
-                        if (query.trimStart().startsWith(">")) {
-                            terminalInitial = query.trim().removePrefix(">").trim()
+                        if (query.trimStart().startsWith(">") ||
+                            query.trimStart().startsWith("!")) {
+                            terminalInitial = query.trim().removePrefix(">")
+                                .removePrefix("!").trim()
                             keyboard?.hide()
                             focus.clearFocus()
                             mode = AxiomMode.TERMINAL
-                        } else {
-                            choices.firstOrNull()?.let(::openApp)
-                        }
+                        } else if (query.trimStart().startsWith("=")) {
+                            val result = inlineResult
+                            if (result != null && result.startsWith("= ")) {
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                                    "AXIOM result", result.removePrefix("= ")))
+                                Toast.makeText(context, "Результат скопирован",
+                                    Toast.LENGTH_SHORT).show()
+                            }
+                        } else choices.firstOrNull()?.let(::openApp)
                     }
                 )
 
@@ -291,6 +352,7 @@ fun AxiomScreen(resumeVersion: Int) {
                         favorites = favorites,
                         maxHeight = suggestionLimit,
                         showHint = query.isBlank(),
+                        specialResult = inlineResult,
                         onOpen = ::openApp,
                         onStar = ::star,
                         onAtlas = ::atlas
@@ -319,7 +381,8 @@ fun AxiomScreen(resumeVersion: Int) {
                 onFilter = { atlasFilter = it },
                 onBack = ::close,
                 onOpen = ::openApp,
-                onStar = ::star
+                onStar = ::star,
+                metrics = if (meter.enabled) meter.summary else null
             )
         }
         if (mode == AxiomMode.SETTINGS) {
@@ -330,13 +393,24 @@ fun AxiomScreen(resumeVersion: Int) {
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onResetUniverse = { world.reset() },
+                onMath = { world.summonMath(); close() },
+                onExport = { exportSettings.launch("axiom-settings.json") },
+                onImport = { importSettings.launch(arrayOf("application/json",
+                    "text/plain")) },
+                onProfiler = { meter.toggle() },
+                profilerEnabled = meter.enabled,
+                profilerSummary = meter.summary,
                 onSurprise = { world.triggerRandomEvent() },
                 currentEpisode = world.episode.kind.name,
                 onTerminal = {
                     terminalInitial = ""
                     mode = AxiomMode.TERMINAL
                 },
-                onRefresh = { refresh++; close() },
+                onRefresh = {
+                    AppCatalogCache.invalidate()
+                    refresh++
+                    close()
+                },
                 onBack = ::close
             )
         }
@@ -349,6 +423,7 @@ fun AxiomScreen(resumeVersion: Int) {
                 currentEpisode = world.episode.kind.name,
                 eventHistory = world.eventHistory,
                 onModel = { world.summonMath(it) },
+                onProfile = { meter.toggle() },
                 onEvent = { world.trigger(it) },
                 onSurprise = { world.triggerRandomEvent() },
                 onDepth = { world.shiftPerspective(it) },

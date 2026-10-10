@@ -27,3 +27,9 @@ Android docs:
 https://developer.android.com/develop/ui/compose/performance
 https://developer.android.com/develop/ui/compose/lists
 https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+
+## AXIOM 0.9 acceptance checks
+- Check physics regression suite for force symmetry, collision momentum and no concurrent lesson/episode.
+- Try long mathematical formulas on the actual Redmi portrait display.
+- Confirm Home chooser allows AXIOM; if blocked by HyperOS, do not bypass via root or system app deletion.
+- Test Home / back / rotation / search keyboard before daily-driver use.

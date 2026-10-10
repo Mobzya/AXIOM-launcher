@@ -1,5 +1,9 @@
 package dev.axiom.launcher
 
+import android.content.Context
+import android.os.BatteryManager
+import android.os.PowerManager
+import androidx.compose.ui.platform.LocalContext
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloatAsState
@@ -72,11 +76,20 @@ internal fun CosmicEnvironment(
             typeface = Typeface.create("monospace", Typeface.NORMAL)
         }
     }
+    // Automatically respect Android's power saver and a critically low battery.
+    val context = LocalContext.current
+    val reducedPower = remember(context, interacting) {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val battery = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val capacity = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        pm.isPowerSaveMode || capacity in 0..15
+    }
     // Paint at display refresh rate, but integrate physics at stable 60/30 Hz.
     // Interpolation makes motion continuous on 90/120-Hz displays.
     var frameMix by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(world, interacting) {
-        val targetNanos = if (interacting) 33_333_333L else 16_666_667L
+    LaunchedEffect(world, interacting, reducedPower) {
+        val slow = interacting || reducedPower
+        val targetNanos = if (slow) 33_333_333L else 16_666_667L
         var previous = withFrameNanos { it }
         var accumulator = 0L
         while (coroutineContext.isActive) {
@@ -84,11 +97,16 @@ internal fun CosmicEnvironment(
             accumulator = (accumulator + (now - previous).coerceIn(0L, 70_000_000L))
                 .coerceAtMost(targetNanos * 2L)
             previous = now
-            if (accumulator >= targetNanos) {
+            val stepped = accumulator >= targetNanos
+            if (stepped) {
                 accumulator -= targetNanos
-                world.step(if (interacting) 1f / 30f else 1f / 60f)
+                world.step(if (slow) 1f / 30f else 1f / 60f)
             }
-            frameMix = (accumulator.toFloat() / targetNanos.toFloat()).coerceIn(0f, 1f)
+            // Avoid extra display-rate redraws when Android requests battery saving.
+            if (!reducedPower || stepped) {
+                frameMix = (accumulator.toFloat() / targetNanos.toFloat())
+                    .coerceIn(0f, 1f)
+            }
         }
     }
 

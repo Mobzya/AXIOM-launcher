@@ -155,8 +155,8 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
             }
         }
         LabKind.JULIA -> {
-            val cr=-.8+a*.8
-            val ci=-.3+b*.6
+            val cr=-.8f+a*.8f
+            val ci=-.3f+b*.6f
             val step=7.dp.toPx()
             val nx=(w/step).toInt().coerceAtMost(84)
             val ny=(h/step).toInt().coerceAtMost(100)
@@ -190,7 +190,7 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
                 Offset(w*.88f,h*.5f),style=Stroke(.8.dp.toPx()))
         }
         LabKind.LORENZ -> {
-            val path=lorenzPath(4.0+a*18.0)
+            val path=lorenzPath(4.0+a.toDouble()*18.0)
             val poly=Path()
             path.forEachIndexed { i, pair ->
                 val x=(pair.first.toFloat()+24f)/48f*w

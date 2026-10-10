@@ -52,7 +52,9 @@ internal object AppIconStore {
             try { pm.getApplicationIcon(app.packageName) }
             catch (_: PackageManager.NameNotFoundException) { return null }
         } catch (_: RuntimeException) {
-            return null
+            // Some OEM launchable activities don't expose their own drawable.
+            try { pm.getApplicationIcon(app.packageName) }
+            catch (_: RuntimeException) { return null }
         }
         return runCatching {
             val size = 112

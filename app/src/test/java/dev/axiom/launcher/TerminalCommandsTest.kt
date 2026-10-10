@@ -27,7 +27,7 @@ class TerminalCommandsTest {
 class UniverseTest {
     @Test fun physicsBodiesStayBounded() {
         val world = CosmicWorld(7)
-        world.setGravity(1.5f)
+        world.updateGravity(1.5f)
         repeat(300) { world.step(1f / 60f) }
         assertTrue(world.bodies.size in 1..11)
         assertTrue(world.bodies.all { it.x in .07f.. .93f && it.y in .09f.. .88f })

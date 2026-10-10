@@ -628,7 +628,17 @@ internal class CosmicWorld(seed: Int = 42) {
             val age = b.age + h
             // Corner-launched sprites cross the screen and leave. No hard wall bouncing.
             if (age < b.lifetime && nx in -.24f..1.24f && ny in -.24f..1.24f) {
+                val evolved = if(b.age < b.lifetime*.63f &&
+                    age >= b.lifetime*.63f) when(b.kind){
+                        2 -> 7    // rubble crystallizes
+                        3 -> 10   // satellite orbit becomes gyro-ring
+                        4 -> 11   // neural microcluster forms lattice
+                        8 -> 22   // spiral becomes epicyclic remnant
+                        9 -> 16   // pulsar turns into photon filament
+                        else -> b.kind
+                    } else b.kind
                 next += b.copy(x = nx, y = ny, vx = vx, vy = vy,
+                    kind = evolved,
                     rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
@@ -640,6 +650,39 @@ internal class CosmicWorld(seed: Int = 42) {
             val velocities = collide(a, b)
             next[i] = a.copy(vx = velocities.avx, vy = velocities.avy)
             next[j] = b.copy(vx = velocities.bvx, vy = velocities.bvy)
+        }
+        // A fast impact can split one rocky object into two lighter shards.
+        // Total mass of the affected asteroid is conserved, and creation is capped.
+        var shard: CelestialBody? = null
+        if(next.size < 23) {
+            collision@ for(i in next.indices) for(j in i+1 until next.size) {
+                val a=next[i]
+                val b=next[j]
+                val d=hypot(a.x-b.x,a.y-b.y)
+                val dv=hypot(a.vx-b.vx,a.vy-b.vy)
+                if(d < .027f && dv > .13f &&
+                    kotlin.math.abs(a.depth-b.depth)<.48f) {
+                    val target=if(a.kind in listOf(2,7,21)) i
+                        else if(b.kind in listOf(2,7,21)) j else -1
+                    if(target >= 0 && next[target].mass > .8f) {
+                        val rock=next[target]
+                        val piece=rock.mass*.18f
+                        next[target]=rock.copy(mass=rock.mass-piece)
+                        shard=rock.copy(
+                            id=idSequence++,
+                            kind=21,
+                            mass=piece,
+                            x=(rock.x+.012f).coerceIn(-.23f,1.23f),
+                            y=(rock.y-.008f).coerceIn(-.23f,1.23f),
+                            vx=(rock.vx+.055f).coerceIn(-.38f,.38f),
+                            vy=(rock.vy-.045f).coerceIn(-.38f,.38f),
+                            age=0f,
+                            lifetime=28f
+                        )
+                        break@collision
+                    }
+                }
+            }
         }
         val compact = ArrayList<CelestialBody>(next.size)
         val consumed = HashSet<Int>()
@@ -679,6 +722,7 @@ internal class CosmicWorld(seed: Int = 42) {
             replayTimer = 0f
         }
         previousBodies = current
+        if(shard != null && compact.size < 23) compact.add(shard)
         bodies = compact
         if (chain) {
             if (bodies.size < 23) {

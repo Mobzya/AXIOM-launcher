@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -70,7 +71,9 @@ internal fun CosmicEnvironment(
             typeface = Typeface.create("monospace", Typeface.NORMAL)
         }
     }
-    // Fixed stepping, independent of UI animations and drawing.
+    // Paint at display refresh rate, but integrate physics at stable 60/30 Hz.
+    // Interpolation makes motion continuous on 90/120-Hz displays.
+    var frameMix by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(world, interacting) {
         val targetNanos = if (interacting) 33_333_333L else 16_666_667L
         var previous = withFrameNanos { it }
@@ -84,6 +87,7 @@ internal fun CosmicEnvironment(
                 accumulator -= targetNanos
                 world.step(if (interacting) 1f / 30f else 1f / 60f)
             }
+            frameMix = (accumulator.toFloat() / targetNanos.toFloat()).coerceIn(0f, 1f)
         }
     }
 
@@ -116,14 +120,19 @@ internal fun CosmicEnvironment(
         }
 
         val scene = world.episode
+        val mix = frameMix
+        val oldBodies = world.previousBodies
         world.bodies.sortedByDescending { it.depth }.forEach { b ->
+            val old = oldBodies.firstOrNull { it.id == b.id } ?: b
+            val visualX = old.x + (b.x - old.x) * mix
+            val visualY = old.y + (b.y - old.y) * mix
             val factor = (1f / b.depth).coerceIn(.38f, 1.45f)
             val fadeIn = (b.age / 1.8f).coerceIn(0f, 1f)
             val fadeOut = ((b.lifetime - b.age) / 3f).coerceIn(0f, 1f)
             val opacity = dim * (.20f + .57f * factor) * fadeIn * fadeOut
             val origin = Offset(
-                (b.x + perspective * .026f * factor) * size.width,
-                b.y * size.height)
+                (visualX + perspective * .026f * factor) * size.width,
+                visualY * size.height)
             drawBody(b, origin, unit * factor, opacity, t)
         }
 
@@ -133,6 +142,30 @@ internal fun CosmicEnvironment(
         }
 
         drawMathMoment(world.mathMoment, dim, paint)
+
+        world.remnants.forEach { remnant ->
+            val life = (1f - remnant.age / remnant.lifetime).coerceIn(0f, 1f)
+            val c = Offset(remnant.x * size.width, remnant.y * size.height)
+            when (remnant.kind) {
+                CosmicEventKind.NOVA -> {
+                    drawCircle(White.copy(alpha = dim * life * .24f),
+                        unit * (.09f + .19f * remnant.age / remnant.lifetime),
+                        c, style = Stroke(.7.dp.toPx()))
+                }
+                CosmicEventKind.SINGULARITY -> {
+                    drawCircle(White.copy(alpha = dim * life * .19f),
+                        unit * .055f, c, style = Stroke(.65.dp.toPx()))
+                    drawCircle(White.copy(alpha = dim * life * .08f),
+                        unit * .11f, c, style = Stroke(.65.dp.toPx()))
+                }
+                CosmicEventKind.WORMHOLE, CosmicEventKind.PULSAR -> {
+                    drawCircle(White.copy(alpha = dim * life * .13f),
+                        unit * (.028f + .11f * (1f-life)), c,
+                        style = Stroke(.65.dp.toPx()))
+                }
+                else -> Unit
+            }
+        }
 
         world.ripples.forEach { ripple ->
             val life = (1f - ripple.age / 1.7f).coerceIn(0f, 1f)

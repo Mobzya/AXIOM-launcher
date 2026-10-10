@@ -95,7 +95,7 @@ internal val AX_PANEL = Color(0xF5080808)
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
 
 @Composable
-fun AxiomScreen(resumeVersion: Int) {
+internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE) }
     var apps by remember { mutableStateOf(emptyList<InstalledApp>()) }
@@ -381,7 +381,8 @@ fun AxiomScreen(resumeVersion: Int) {
                 onFilter = { atlasFilter = it },
                 onBack = ::close,
                 onOpen = ::openApp,
-                onStar = ::star
+                onStar = ::star,
+                metrics = if (meter.enabled) meter.summary else null
             )
         }
         if (mode == AxiomMode.SETTINGS) {
@@ -396,6 +397,9 @@ fun AxiomScreen(resumeVersion: Int) {
                 onExport = { exportSettings.launch("axiom-settings.json") },
                 onImport = { importSettings.launch(arrayOf("application/json",
                     "text/plain")) },
+                onProfiler = { meter.toggle() },
+                profilerEnabled = meter.enabled,
+                profilerSummary = meter.summary,
                 onSurprise = { world.triggerRandomEvent() },
                 currentEpisode = world.episode.kind.name,
                 onTerminal = {
@@ -419,6 +423,7 @@ fun AxiomScreen(resumeVersion: Int) {
                 currentEpisode = world.episode.kind.name,
                 eventHistory = world.eventHistory,
                 onModel = { world.summonMath(it) },
+                onProfile = { meter.toggle() },
                 onEvent = { world.trigger(it) },
                 onSurprise = { world.triggerRandomEvent() },
                 onDepth = { world.shiftPerspective(it) },

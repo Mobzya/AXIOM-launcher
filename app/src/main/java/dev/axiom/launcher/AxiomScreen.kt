@@ -362,6 +362,19 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
 
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
+            TerminalCorner(
+                modifier = Modifier.align(Alignment.TopStart)
+                    .padding(top = 11.dp, start = 19.dp),
+                onClick = {
+                    terminalInitial = ""
+                    keyboard?.hide()
+                    focus.clearFocus()
+                    mode = AxiomMode.TERMINAL
+                }
+            )
+        }
+
+        if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             SettingsCorner(
                 Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 19.dp)
             ) {
@@ -438,6 +451,24 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 onBack = ::close
             )
         }
+    }
+}
+
+/** Small, accessible terminal entry point. Kept away from the centered dock. */
+@Composable
+private fun TerminalCorner(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier.size(48.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick)
+            .border(1.dp, Color(0xFF424242), RoundedCornerShape(15.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(">_", color = AX_WHITE, fontFamily = FontFamily.Monospace,
+            fontSize = 16.sp, letterSpacing = 0.sp)
     }
 }
 

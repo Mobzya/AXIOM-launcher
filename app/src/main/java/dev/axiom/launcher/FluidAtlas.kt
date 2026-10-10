@@ -87,7 +87,8 @@ internal fun AxiomAtlas(
     onFilter: (String) -> Unit,
     onBack: () -> Unit,
     onOpen: (InstalledApp) -> Unit,
-    onStar: (String) -> Unit
+    onStar: (String) -> Unit,
+    metrics: String? = null
 ) {
     val context = LocalContext.current
     val recentPackages = remember(apps) { AppRecents.list(context) }
@@ -152,6 +153,10 @@ internal fun AxiomAtlas(
             Text("×", color = AX_WHITE, fontSize = 28.sp,
                 modifier = Modifier.clickable(onClick = onBack)
                     .padding(start = 18.dp, end = 15.dp, top = 7.dp, bottom = 7.dp))
+        }
+        if (metrics != null) {
+            Text(metrics, color = AX_GRAY, fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(14.dp))
         val searchShape = RoundedCornerShape(16.dp)

@@ -1,46 +1,36 @@
-# AXIOM 0.5 — Emergent Universe
+# AXIOM Launcher 0.6 — Kinetic Intelligence
 
-An experimental strictly monochrome Android HOME launcher. Designed for Redmi Note 13 Pro 4G.
+A minimalist monochrome Android HOME launcher, designed for Redmi Note 13 Pro 4G (Kotlin + Jetpack Compose).
 
-## UX (preserved)
-The homescreen stays nearly empty: centered translucent search with soft white halo; suggested apps **only after typing**. Swipe down on empty space to enter Niagara-inspired large-text app index with fast alphabet scrub. Top-right settings includes console, gravity control and a trigger for one random event.
+## Search & catalog
+- True-black, near-empty home with one centered translucent search. It expands with a subdued white halo; suggestions appear **only after typing**.
+- Downward swipe on empty home space enters a Niagara-inspired large-text alphabetical app catalog.
+- **Catalog performance fix:** removes O(n²) item indexing and expensive per-item LazyList geometry scans; coalesces rail scrubbing requests to prevent scroll-command pileups.
+- Favorites, filters, launcher app discovery, safe command palette, and persistent gravity preferences remain.
 
-## One living universe, but many emergent stories
-- **Depth:** three layers of sparse stars, parallax, depth-scaled animated vector sprites.
-- **Cross-screen travel:** objects originate beyond random screen corners, drift, bend under softened inter-body gravity, and depart; there is no mandatory central attractor, no hard wall bounces.
-- **Procedural sprites:** comet streaks, wireframe asteroids, orbital satellites, neural clusters, traveling mathematical sine fragments.
-- **Automatic episodes** every ~24–72 seconds after the initial event: meteor shower, neural propagation, Fourier harmonics, spacetime gravitational lens. Each produces its **own geometry and physics**, rather than simply displaying a formula.
-- **Very rare singularity:** approximately 1% probability per automatically selected episode; a black event horizon, faint accretion disk and lensed trajectories, present briefly then gone. For testing, console command `event blackhole` can intentionally launch it.
-- **Interactions:** tap empty space for a shockwave and momentum impulse; double tap to launch a comet from a corner; long press for a surprise event; horizontal drag for parallax depth, downward swipe for full app index.
-- **Performance:** maximum 16 simultaneous bodies, O(n²) softened gravity only for that small set; fixed 60Hz physics at home and 30Hz behind the UI, vector graphics with no network textures and no heavy blur. This is a frame-rate target, not a measured guarantee on the Redmi.
+## Restored celestial interactions
+- Softer but stronger pairwise gravity (roughly 7.4× base force, smaller softening term) and depth-aware interactions, capped accelerations and velocities to avoid violent clumping.
+- Up to 18 active bodies. 12 **procedural sprite families** (comets, wireframe crystals, orbital systems, neural signals, wave fragments, binary stars, gyro rings, rotating lattices, pulsars, micro-galaxies and shock rings).
+- New physical cinematic encounters: **nova shockwave, pulsar, wormhole, nebula flow**, plus existing meteor showers, gravitational lens and very rare black hole (~1% of automatically selected events). The auto director no longer chooses ML/Fourier episodes.
+- Objects enter from random offscreen corners; layered stars, parallax and velocity-driven trails.
+- Tap a visible object to inspect its mass, speed and depth for 4.5 seconds; tap empty space for a ripple; double tap for a new body; long press for a random cinematic episode; horizontal drag adjusts parallax.
 
-## Terminal
-Open through Settings → Command Console or use `> help` then Search from the central dock.
+## Mathematical ambient moments (independent of events)
+16 unobtrusive microvisualizations, intermittently appearing at varying locations with **three coherent, curated formula transformation frames each**. Animated graphics and the staged formulas evolve together. Current catalog:
+gradient descent, backpropagation, self-attention, matrices, Fourier decomposition, Bayes, sigmoid, convolution, information entropy, eigenvalues, quadratic roots, Mandelbrot iteration, PCA, ReLU, diffusion and residual networks.
 
-Try:
-```text
-events
-event meteor
-event neural
-event wave
-event lens
-event blackhole
-event
-depth 0.5
-gravity 1.1
-spawn
-physics
-calc (5+3)^2
-```
-This is a SAFE command palette, not a Linux shell, and cannot execute arbitrary shell commands.
+The formula transformations are **authored demonstrations**, not a general-purpose symbolic algebra system or ML inference engine. This means the equations correspond to their illustrated concept, but no on-device neural network is being trained.
 
-## Build and install
-JDK 17 + Android SDK 36 + Gradle 8.13. GitHub Actions tests and produces the debug APK.
+Terminal commands include `models`, `model attention`, `model fourier`, `model` (random), `timeline`, `event nova`, `event pulsar`, `event wormhole`, `event nebula`, `gravity 1.5`, `physics`, `spawn`, `calc`, `find`, `open` and more. The terminal does **not** execute arbitrary Android shell commands.
+
+## Build
+JDK 17, Android SDK Platform 36, Gradle 8.13:
+
 ```bash
 bash build-linux.sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
-**No root, factory reset or firmware replacement.** Debug APK signatures may vary; if an update signature fails, switch to Xiaomi launcher and uninstall AXIOM only (resets AXIOM's preferences), then install.
 
-## Limitations
-Prototype only: real frame times, battery consumption, touch gestures on HyperOS and visual quality need real device validation. The physics is stylized, not an astronomical N-body accuracy solver.
+Automated GitHub Actions workflow runs unit tests and produces a debug APK artifact.
+
+**Safety:** no root, ROM, factory reset or bootloader unlock. HyperOS may restrict system-level gesture navigation with external launchers. Debug APK signing mismatches may require uninstalling **only AXIOM** before reinstalling (AXIOM's preferences will reset). Frame rates and battery consumption require testing on the Redmi; compilation cannot establish actual 120 FPS. Scenes use capped, stylized physics rather than astronomical simulation.

@@ -213,11 +213,15 @@ fun AxiomScreen(resumeVersion: Int) {
             label = "physical dock translation"
         )
 
-        CosmicEnvironment(
-            world = world,
-            interacting = mode != AxiomMode.HOME,
-            modifier = Modifier.fillMaxSize()
-        )
+        // Atlas/terminal/settings cover the background: stop all physics drawing
+        // and frame updates while those screens are visible to protect scroll latency.
+        if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
+            CosmicEnvironment(
+                world = world,
+                interacting = mode != AxiomMode.HOME,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Tapping a nearby entity opens a tiny, self-dismissing scientific inspector.
         val inspected = world.selectedBody

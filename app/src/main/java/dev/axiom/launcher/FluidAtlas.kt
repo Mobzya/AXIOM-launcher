@@ -91,7 +91,10 @@ internal fun AxiomAtlas(
 ) {
     val context = LocalContext.current
     val recentPackages = remember(apps) { AppRecents.list(context) }
-    val filtered = remember(apps, query, favorites, filter, recentPackages) {
+    var workspaceWork by remember { mutableStateOf(AppSpaces.load(context, "work")) }
+    var workspaceTools by remember { mutableStateOf(AppSpaces.load(context, "tools")) }
+    val filtered = remember(apps, query, favorites, filter, recentPackages,
+        workspaceWork, workspaceTools) {
         val found = if (query.isBlank()) apps else searchApps(apps, query, favorites)
         if (filter == "Недавние") {
             val rank = recentPackages.withIndex().associate { it.value to it.index }
@@ -102,6 +105,8 @@ internal fun AxiomAtlas(
                 "Избранное" -> found.filter { it.packageName in favorites }
                 "Системные" -> found.filter { it.system }
                 "Сторонние" -> found.filterNot { it.system }
+                "Работа" -> found.filter { it.packageName in workspaceWork }
+                "Инструменты" -> found.filter { it.packageName in workspaceTools }
                 else -> found
             }
             chosen.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
@@ -171,7 +176,8 @@ internal fun AxiomAtlas(
             contentPadding = PaddingValues(end = 11.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(listOf("Все", "Недавние", "Избранное", "Системные", "Сторонние"),
+            items(listOf("Все", "Недавние", "Избранное", "Работа",
+                "Инструменты", "Системные", "Сторонние"),
                 key = { it }, contentType = { "filter" }) { name ->
                 val selected = filter == name
                 val chip = RoundedCornerShape(11.dp)
@@ -233,8 +239,29 @@ internal fun AxiomAtlas(
             onDismissRequest = { details = null },
             containerColor = Color(0xFF161616),
             title = { Text(app.label, color = AX_WHITE) },
-            text = { Text("Открыть приложение или перейти к сведениям Android.",
-                color = AX_GRAY) },
+            text = {
+                Column {
+                    Text("Зажатие приложения открывает его действия.",
+                        color = AX_GRAY, fontSize = 13.sp)
+                    Spacer(Modifier.height(13.dp))
+                    Text(
+                        if (app.packageName in workspaceWork) "✓ Убрать из Работы"
+                        else "+ Добавить в Работу",
+                        color = AX_WHITE,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            workspaceWork = AppSpaces.toggle(context, "work", app.packageName)
+                        }.padding(vertical = 11.dp)
+                    )
+                    Text(
+                        if (app.packageName in workspaceTools) "✓ Убрать из Инструментов"
+                        else "+ Добавить в Инструменты",
+                        color = AX_WHITE,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            workspaceTools = AppSpaces.toggle(context, "tools", app.packageName)
+                        }.padding(vertical = 11.dp)
+                    )
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { details = null; onOpen(app) }) {
                     Text("Открыть", color = AX_WHITE)

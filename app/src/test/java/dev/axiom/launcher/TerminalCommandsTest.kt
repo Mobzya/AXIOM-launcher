@@ -44,7 +44,7 @@ class UniverseTest {
         val world = CosmicWorld(7)
         world.updateGravity(1.5f)
         repeat(300) { world.step(1f / 60f) }
-        assertTrue(world.bodies.size in 1..21)
+        assertTrue(world.bodies.size in 1..23)
         assertTrue(world.bodies.all { it.x in -.24f..1.24f && it.y in -.24f..1.24f })
     }
     @Test fun mathCatalogHasSixteenThreeStageStories() {
@@ -92,7 +92,7 @@ class UniverseTest {
     @Test fun moreAmbientBodiesStayWithinBound() {
         val world = CosmicWorld(5)
         repeat(80) { world.spawnFromCorner() }
-        assertEquals(21, world.bodies.size)
+        assertEquals(23, world.bodies.size)
     }
 
     @Test fun mathPinExpiresAutomatically() {

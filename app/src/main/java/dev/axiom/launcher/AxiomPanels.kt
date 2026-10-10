@@ -406,6 +406,9 @@ internal fun AxiomSettings(
     onMath: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onProfiler: () -> Unit,
+    profilerEnabled: Boolean,
+    profilerSummary: String,
     onSurprise: () -> Unit,
     currentEpisode: String,
     onTerminal: () -> Unit,
@@ -487,6 +490,18 @@ internal fun AxiomSettings(
         Text("⇩  Восстановить настройки", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onImport).padding(vertical = 17.dp))
+        HorizontalDivider(color = Color(0xFF292929))
+        Text(
+            if (profilerEnabled) "◉  Остановить измерение кадров"
+            else "◎  Измерять плавность списка",
+            color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onProfiler).padding(vertical = 17.dp)
+        )
+        if (profilerEnabled) {
+            Text(profilerSummary, color = AX_GRAY, fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace)
+        }
         Spacer(Modifier.height(36.dp))
         Text("AXIOM 0.7  /  FLUID · CONSEQUENCE · INTELLIGENCE", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,

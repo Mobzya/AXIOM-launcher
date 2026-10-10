@@ -113,7 +113,7 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     val a = moment.opacity * dim * .72f
     val px = moment.x * size.width
     val py = moment.y * size.height
-    val scale = size.width * .18f
+    val scale = minOf(size.width * .18f, size.height * .11f)
     val wave = moment.age * .6f
     val center = Offset(px + scale * .6f, py + scale * .4f)
 

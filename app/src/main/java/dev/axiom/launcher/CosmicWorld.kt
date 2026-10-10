@@ -68,6 +68,11 @@ internal class CosmicWorld(seed: Int = 42) {
     private var nextMathAt = 13f
     var mathMoment by mutableStateOf(MathMoment())
         private set
+    var selectedBody by mutableStateOf<CelestialBody?>(null)
+        private set
+    var eventHistory by mutableStateOf<List<String>>(emptyList())
+        private set
+    private var inspectAge = 0f
 
     private fun initialBodies(): List<CelestialBody> {
         // Deliberately no permanent massive object in the center.
@@ -122,6 +127,7 @@ internal class CosmicWorld(seed: Int = 42) {
             return
         }
         eventSerial++
+        eventHistory = (eventHistory + kind.name).takeLast(10)
         episode = CosmicEpisode(
             kind = kind, age = 0f,
             duration = when (kind) {
@@ -157,10 +163,10 @@ internal class CosmicWorld(seed: Int = 42) {
         else -> CosmicEventKind.SINGULARITY
     }
 
-    fun summonMath() {
+    fun summonMath(requested: MathKind? = null) {
         nextMathAt = elapsed + 23f
         mathMoment = MathMoment(
-            kind = MathKind.entries[random.nextInt(MathKind.entries.size)],
+            kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
             age = 0f,
             duration = 9.2f + random.nextFloat() * 3f,
             x = .10f + random.nextFloat() * .27f,
@@ -173,6 +179,11 @@ internal class CosmicWorld(seed: Int = 42) {
         val px = x.coerceIn(0f, 1f)
         val py = y.coerceIn(0f, 1f)
         ripples = (ripples + SpaceRipple(px, py)).takeLast(4)
+        val closest = bodies.minByOrNull { hypot(it.x - px, it.y - py) }
+        selectedBody = closest?.takeIf {
+            hypot(it.x - px, it.y - py) < .072f
+        }
+        inspectAge = 0f
         bodies = bodies.map { b ->
             val dx = b.x - px
             val dy = b.y - py
@@ -197,6 +208,9 @@ internal class CosmicWorld(seed: Int = 42) {
         eventAt = 38f
         lastBurstAt = -100f
         mathMoment = MathMoment()
+        selectedBody = null
+        eventHistory = emptyList()
+        inspectAge = 0f
         nextMathAt = 13f
     }
 
@@ -204,6 +218,8 @@ internal class CosmicWorld(seed: Int = 42) {
     fun step(dt: Float) {
         val h = dt.coerceIn(.004f, .034f)
         elapsed += h
+        inspectAge += h
+        if (inspectAge > 4.5f && selectedBody != null) selectedBody = null
         depthShift *= (1f - .5f * h)
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
         if (mathMoment.active) {

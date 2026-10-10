@@ -194,50 +194,7 @@ internal fun CosmicEnvironment(
                         unit * (.09f + .19f * remnant.age / remnant.lifetime),
                         c, style = Stroke(.7.dp.toPx()))
                 }
-                CosmicEventKind.ENCOUNTER -> {
-            for(i in 0..1){
-                val shift=(if(i==0)-1f else 1f)*
-                    unit*(.22f-.11f*ep.progress)
-                val p=center+Offset(shift,unit*.04f*sin(ep.age*.65f+i))
-                drawCircle(White.copy(alpha=a*.30f),
-                    unit*.045f,p,style=Stroke(.75.dp.toPx()))
-                drawCircle(White.copy(alpha=a*.5f),
-                    2.dp.toPx(),p)
-            }
-        }
-        CosmicEventKind.FILAMENT -> {
-            for(k in 0..6){
-                val path=Path()
-                for(i in 0..36){
-                    val u=i/36f
-                    val x=center.x+(u-.5f)*unit*.92f
-                    val y=center.y+(k-3f)*unit*.028f+
-                        sin(u*TAU*2.4f+ep.age*.3f+k*.47f)*unit*.048f
-                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
-                }
-                drawPath(path,White.copy(alpha=a*(.07f+k*.014f)),
-                    style=Stroke(.65.dp.toPx()))
-            }
-        }
-        CosmicEventKind.RADIATION, CosmicEventKind.RING_WAVE,
-        CosmicEventKind.REACTION -> {
-            val shells=if(ep.kind==CosmicEventKind.REACTION)8 else 4
-            for(k in 0 until shells){
-                val r=unit*(.03f+ep.progress*.38f+k*.028f)
-                drawCircle(White.copy(alpha=(a*(.24f-k*.022f))
-                    .coerceIn(0f,1f)),r,center,
-                    style=Stroke(.75.dp.toPx()))
-            }
-            if(ep.kind==CosmicEventKind.REACTION){
-                repeat(12){i->
-                    val phi=i*TAU/12+ep.age*.25f
-                    val rad=unit*(.06f+.19f*ep.progress)
-                    drawCircle(White.copy(alpha=a*.5f),1.5.dp.toPx(),
-                        center+Offset(cos(phi)*rad,sin(phi)*rad))
-                }
-            }
-        }
-        CosmicEventKind.SINGULARITY -> {
+CosmicEventKind.SINGULARITY -> {
                     drawCircle(White.copy(alpha = dim * life * .19f),
                         unit * .055f, c, style = Stroke(.65.dp.toPx()))
                     drawCircle(White.copy(alpha = dim * life * .08f),
@@ -683,7 +640,50 @@ private fun DrawScope.drawEpisode(
                     style=Stroke(.65.dp.toPx()))
             }
         }
-        CosmicEventKind.SINGULARITY -> {
+        CosmicEventKind.ENCOUNTER -> {
+            for(i in 0..1){
+                val shift=(if(i==0)-1f else 1f)*
+                    unit*(.22f-.11f*ep.progress)
+                val p=center+Offset(shift,unit*.04f*sin(ep.age*.65f+i))
+                drawCircle(White.copy(alpha=a*.30f),
+                    unit*.045f,p,style=Stroke(.75.dp.toPx()))
+                drawCircle(White.copy(alpha=a*.5f),
+                    2.dp.toPx(),p)
+            }
+        }
+        CosmicEventKind.FILAMENT -> {
+            for(k in 0..6){
+                val path=Path()
+                for(i in 0..36){
+                    val u=i/36f
+                    val x=center.x+(u-.5f)*unit*.92f
+                    val y=center.y+(k-3f)*unit*.028f+
+                        sin(u*TAU*2.4f+ep.age*.3f+k*.47f)*unit*.048f
+                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+                }
+                drawPath(path,White.copy(alpha=a*(.07f+k*.014f)),
+                    style=Stroke(.65.dp.toPx()))
+            }
+        }
+        CosmicEventKind.RADIATION, CosmicEventKind.RING_WAVE,
+        CosmicEventKind.REACTION -> {
+            val shells=if(ep.kind==CosmicEventKind.REACTION)8 else 4
+            for(k in 0 until shells){
+                val r=unit*(.03f+ep.progress*.38f+k*.028f)
+                drawCircle(White.copy(alpha=(a*(.24f-k*.022f))
+                    .coerceIn(0f,1f)),r,center,
+                    style=Stroke(.75.dp.toPx()))
+            }
+            if(ep.kind==CosmicEventKind.REACTION){
+                repeat(12){i->
+                    val phi=i*TAU/12+ep.age*.25f
+                    val rad=unit*(.06f+.19f*ep.progress)
+                    drawCircle(White.copy(alpha=a*.5f),1.5.dp.toPx(),
+                        center+Offset(cos(phi)*rad,sin(phi)*rad))
+                }
+            }
+        }
+                CosmicEventKind.SINGULARITY -> {
             // Extremely rare gravitational lensing: dark center, light photon ring,
             // two accretion ellipses and spiralling polar tracer particles.
             val radius = unit * (.037f + .004f * sin(ep.age * .36f))

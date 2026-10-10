@@ -64,6 +64,8 @@ internal fun AxiomTerminal(
     gravity: Float,
     bodyCount: Int,
     currentEpisode: String,
+    eventHistory: List<String>,
+    onModel: (MathKind?) -> Unit,
     onEvent: (CosmicEventKind) -> Unit,
     onSurprise: () -> Unit,
     onDepth: (Float) -> Unit,
@@ -109,6 +111,14 @@ internal fun AxiomTerminal(
                 append(if (matches.isEmpty()) "Совпадений нет"
                     else matches.joinToString("\n") { " ↳ ${it.label}" })
             }
+            is AxCommand.Model -> {
+                onModel(parsed.kind)
+                append("Математическая сцена: ${parsed.kind?.name ?: "случайная"}  ✓")
+            }
+            AxCommand.Timeline -> append(
+                if (eventHistory.isEmpty()) "Событий пока нет"
+                else eventHistory.takeLast(8).joinToString("\n", prefix = "TIMELINE:\n")
+            )
             is AxCommand.Event -> {
                 if (parsed.kind == null) onSurprise() else onEvent(parsed.kind)
                 append("Сценарий: ${parsed.kind?.name ?: "случайный"}  ✓")
@@ -233,7 +243,7 @@ internal fun AxiomTerminal(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("help", "events", "physics", "spawn").forEach { c ->
+            listOf("help", "models", "physics", "spawn").forEach { c ->
                 Text(
                     c, color = Color(0xFFAFAFAF), fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,

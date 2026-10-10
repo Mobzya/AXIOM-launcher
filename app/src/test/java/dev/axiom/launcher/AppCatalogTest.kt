@@ -21,6 +21,15 @@ class AppCatalogTest {
         assertEquals("Termux", result.first().label)
     }
 
+    @Test fun favoritesWinTies() {
+        val result = searchApps(apps, "te", setOf("com.termux"))
+        assertEquals("Termux", result.first().label)
+    }
+
+    @Test fun unmatchedSearchReturnsEmpty() {
+        assertTrue(searchApps(apps, "qqqqqq", emptySet()).isEmpty())
+    }
+
     @Test fun englishTransliterationFindsRussianApp() {
         val result = searchApps(apps, "kalk", emptySet())
         assertTrue(result.any { it.packageName == "com.calc" })

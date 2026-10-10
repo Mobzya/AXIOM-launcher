@@ -1,29 +1,30 @@
-# AXIOM Launcher — 0.2 Monochrome
+# AXIOM Launcher — 0.3 Gravity
 
-Minimalist Android home launcher for Redmi Note 13 Pro 4G, written in Kotlin and Jetpack Compose.
+An experimental, strictly monochrome Android HOME launcher for Redmi Note 13 Pro 4G.
 
-## What changed in 0.2
-- Strict black, white and neutral gray UI (no navy or blue shades)
-- Quiet home screen: just a translucent search dock, upper-right settings control and a sparse ambient astronomy scene
-- Dock grows gently on tap and opens the keyboard; matching applications appear immediately **below** the dock
-- Swipe **down on empty home-screen space** to open App Atlas; scroll/search/filter all installed launchable apps
-- Swipe **up on the Atlas header** or tap × to close; Android Back closes panels
-- Slow monochrome orbits, occasional fly-bys, transient gradient-descent formulas and a tiny ML graph
-- Ambient levels: Off / Quiet / Lively; ambient animation stops during search or menus
-- Simplified scene rendering using 2 GPU-drawn ellipses instead of constructing hundreds of path points on every frame
-- Favorites and ambient settings persist locally, refresh of installed apps on return to launcher
-- Existing package name `dev.axiom.launcher`; versionCode 2
+## Design
+- In rest: **one translucent search dock precisely centered vertically**, and a small settings control in the upper-right corner.
+- Tap search: dock springs toward the upper portion of the available screen while the on-screen keyboard opens. A semi-transparent app menu unfolds smoothly **below** the dock.
+- While the input is blank: show up to four favorites or fallback apps; while typing: fuzzy prefix/substr/transliteration matches, up to six results.
+- Swipe down across empty home-screen space: open App Atlas with alphabetical scrolling, search, favorites and filters.
+- Four astrophysical / mathematical scenes: **orbital mechanics, Lorenz attractor, neural graph and Fourier harmonics**. Auto crossfades between them slowly; manual scene selection supported.
+- Persistent options: ambient motion Off / Quiet / Lively, scene selection and smooth decorative drift ("controlled entropy").
+- All controls stay perfectly predictable; uncertainty is restricted to deterministic slow variation in decorative elements.
+- Pure black (#000000), white and neutral gray only. No neon, blue tints or app icon grids on the home screen.
 
-## Compile and install
-Use JDK 17, Android SDK 36 and Gradle 8.13 with VS Code, or download the debug APK from GitHub Actions (a successful workflow produces the `AXIOM-debug-APK` artifact).
+## Technical
+Kotlin, Jetpack Compose, package `dev.axiom.launcher`, version 0.3.0 (versionCode 3).
+Spring-driven translation and sizing; slow crossfades and minimal draw operations. The scene dims without resetting its animation phase when opening search.
+
+## Compile
+Use Linux with Java 17, Android SDK 36, Gradle 8.13 or GitHub Actions.
 
 ```bash
 bash build-linux.sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-**Important:** GitHub Actions debug builds may use a different signing key from your previous build. If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, uninstall **only AXIOM** then install the new APK. This clears AXIOM favorites/settings but does **not** wipe your phone.
+[GitHub Actions](../../actions) tests and compiles the app, then provides artifact `AXIOM-debug-APK`.
 
-No root, bootloader unlock or factory reset needed. Xiaomi HyperOS may restrict gesture navigation when a third-party HOME app is selected. No machine learning inference, system-wide blur or widget hosting is implemented yet.
+**This is still a prototype**: test gestures, typing and smoothness on the actual Redmi. System gestures are controlled by HyperOS and may not work with a third-party home launcher; AXIOM's own gestures are separate. This project does not modify firmware or require wiping the phone. If Android reports a signing-key mismatch when updating a previous debug APK, uninstall AXIOM only and reinstall the new APK (favorites and AXIOM preferences reset).
 
-**Testing:** Search and UI behavior still require validation on the actual Redmi; GitHub Actions verifies compilation and search unit tests.

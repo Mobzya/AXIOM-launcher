@@ -37,3 +37,11 @@ This prototype still requires compilation and testing on a real device. Debug AP
 - Scroll and use the Atlas filters; swipe up on its header or tap × to close.
 - Settings (small top-right gear): Off / Quiet / Lively ambience and refresh apps.
 - If the debug APK can't update your existing copy due to signature mismatch, use `adb uninstall dev.axiom.launcher` before reinstalling; AXIOM settings will reset.
+
+## AXIOM 0.3 acceptance checks
+1. Idle screen contains only the centered search and a settings control (plus sparse ambient scene).
+2. Tap dock → spring relocation, keyboard and results dropdown below it.
+3. Search by Cyrillic and Latin text, tap result → correct app launches.
+4. Downward swipe from empty home area → App Atlas; filters, list and Back/close work.
+5. Change settings: Off / Quiet / Lively, four scenes and controlled entropy; verify persistence after relaunch.
+6. Check 120 Hz fluidity, touch latency, battery, keyboard, orientation and Android back navigation on Redmi.

@@ -66,6 +66,7 @@ internal fun AxiomTerminal(
     currentEpisode: String,
     eventHistory: List<String>,
     onModel: (MathKind?) -> Unit,
+    onProfile: () -> Boolean,
     onEvent: (CosmicEventKind) -> Unit,
     onSurprise: () -> Unit,
     onDepth: (Float) -> Unit,
@@ -151,6 +152,12 @@ internal fun AxiomTerminal(
             AxCommand.Clear -> lines = emptyList()
             AxCommand.Home -> onBack()
             AxCommand.Apps -> onOpenAtlas()
+            AxCommand.Metrics -> {
+                val enabled = onProfile()
+                append(if (enabled) "Frame profiler enabled. Открой каталог и прокрути.\n" +
+                    "В верхней части списка появятся P50/P95/P99."
+                else "Frame profiler disabled.")
+            }
             AxCommand.Physics -> append(
                 "UNIVERSE / LIVE\nТела: $bodyCount\nГравитация: " +
                 "${"%.2f".format(Locale.US, gravity)}\n" +

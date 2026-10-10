@@ -209,7 +209,28 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
             drawCircle(ink.copy(alpha=.8f),9.dp.toPx(),end)
             drawCircle(ink.copy(alpha=.95f),3.dp.toPx(),anchor)
         }
-        LabKind.PCA, LabKind.ATTENTION -> {
+        LabKind.ATTENTION -> {
+            val keys=arrayOf(
+                doubleArrayOf(1.0,0.0),
+                doubleArrayOf(.5,.7),
+                doubleArrayOf(-.3,.9),
+                doubleArrayOf(-.8,-.2),
+                doubleArrayOf(.1,-.7)
+            )
+            val scores=attentionWeights(
+                doubleArrayOf(a.toDouble()*2-1,b.toDouble()*2-1),
+                keys,.25+a.toDouble()*2)
+            for(i in keys.indices){
+                val x=(i+.5f)/keys.size*w
+                val y=(.27f+.43f*(1f-scores[i].toFloat()))*h
+                val p=Offset(x,y)
+                drawLine(ink.copy(alpha=(scores[i]*.72).toFloat()),
+                    middle,p,1.dp.toPx())
+                drawCircle(ink.copy(alpha=.3f+scores[i].toFloat()*.55f),
+                    (3+scores[i].toFloat()*14).dp.toPx(),p)
+            }
+        }
+        LabKind.PCA -> {
             val theta=(a*PI).toFloat()
             for(i in 0..39) {
                 val x=((i*37%43)/43f-.5f)*w*.8f
@@ -222,13 +243,22 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
                 drawCircle(ink.copy(alpha=opacity),2.3.dp.toPx(),middle+rotated)
             }
         }
-        LabKind.REACTION, LabKind.DIFFUSION -> {
-            for(y in 0..23)for(x in 0..34) {
+        LabKind.REACTION -> {
+            val cw=w/lab.columns
+            val ch=h/lab.rows
+            lab.reactionV.forEachIndexed { i, value ->
+                if(value>.02f){
+                    drawRect(ink.copy(alpha=(value*.85f).coerceIn(0f,.85f)),
+                        Offset((i%lab.columns)*cw,(i/lab.columns)*ch),
+                        androidx.compose.ui.geometry.Size(cw*.94f,ch*.94f))
+                }
+            }
+        }
+        LabKind.DIFFUSION -> {
+            for(y in 0..23)for(x in 0..34){
                 val u=x/34f
                 val v=y/24f
-                val pattern=sin((u*17f+t*(.23f+a)))*cos(v*(12f+b*15f)-t*.14f)
-                val q=if(lab.kind==LabKind.DIFFUSION) sin((u+v+t*.02f)*19f)
-                    else pattern
+                val q=sin((u+v+t*.02f)*19f)
                 if(q>.15f)drawCircle(ink.copy(alpha=(q*.4f).coerceIn(0f,.5f)),
                     2.2.dp.toPx(),Offset(u*w,v*h))
             }

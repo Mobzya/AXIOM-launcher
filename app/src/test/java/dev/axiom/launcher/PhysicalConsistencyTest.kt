@@ -80,6 +80,13 @@ class PhysicalConsistencyTest {
         }
     }
 
+    @Test fun matrixLessonMatchesItsArithmetic() {
+        val steps = mathSteps(MathKind.MATRIX)
+        assertTrue(steps.first().contains("2; 4"))
+        assertEquals("1·2 + 3·4", steps[1])
+        assertEquals("14", steps[2])
+    }
+
     @Test fun longRunningUniverseRemainsFiniteAndDensityBounded() {
         val world = CosmicWorld(22)
         world.updateGravity(2.2f)

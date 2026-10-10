@@ -1,36 +1,72 @@
-# AXIOM Launcher 0.6 — Kinetic Intelligence
+# AXIOM 0.7 — Fluid Foundations
 
-A minimalist monochrome Android HOME launcher, designed for Redmi Note 13 Pro 4G (Kotlin + Jetpack Compose).
+Minimalist, strictly black-and-white Android HOME launcher with a living
+procedural mathematical universe (Redmi Note 13 Pro 4G / HyperOS).
 
-## Search & catalog
-- True-black, near-empty home with one centered translucent search. It expands with a subdued white halo; suggestions appear **only after typing**.
-- Downward swipe on empty home space enters a Niagara-inspired large-text alphabetical app catalog.
-- **Catalog performance fix:** removes O(n²) item indexing and expensive per-item LazyList geometry scans; coalesces rail scrubbing requests to prevent scroll-command pileups.
-- Favorites, filters, launcher app discovery, safe command palette, and persistent gravity preferences remain.
+## What changed
+### Phase 1: responsive search and navigation
+- **Fluid Index** replaces the old heavy app atlas: stable lazy-list keys,
+  explicit heading/row content types, no scroll-state reads in all rows.
+- Private local **Recents**, Favorites, **Work** and **Tools** filters.
+  Long-press an app in the index to assign it to a workspace or view Android app info.
+- Alphabet rail provides direct letter navigation and fine group scrubbing.
+- PackageManager lookup cached for up to five minutes; explicit Refresh clears it.
+- Search stays in the center when inactive, blooms in white on focus, shows results
+  only after typing, and moves with spring physics.
+- Search shortcuts: `=2*(3+4)` displays a calculator result and Enter copies it;
+  `>help` or `!note hello` opens the safe built-in terminal.
 
-## Restored celestial interactions
-- Softer but stronger pairwise gravity (roughly 7.4× base force, smaller softening term) and depth-aware interactions, capped accelerations and velocities to avoid violent clumping.
-- Up to 18 active bodies. 12 **procedural sprite families** (comets, wireframe crystals, orbital systems, neural signals, wave fragments, binary stars, gyro rings, rotating lattices, pulsars, micro-galaxies and shock rings).
-- New physical cinematic encounters: **nova shockwave, pulsar, wormhole, nebula flow**, plus existing meteor showers, gravitational lens and very rare black hole (~1% of automatically selected events). The auto director no longer chooses ML/Fourier episodes.
-- Objects enter from random offscreen corners; layered stars, parallax and velocity-driven trails.
-- Tap a visible object to inspect its mass, speed and depth for 4.5 seconds; tap empty space for a ripple; double tap for a new body; long press for a random cinematic episode; horizontal drag adjusts parallax.
+### Phase 2: continuous motion and consequence-based space
+- World physics integrates at fixed 60/30 Hz and **interpolates positions** for
+  smooth display rendering at higher refresh rates (device frame rate varies).
+- Existing softened n-body gravity, collisions and depth parallax remain.
+- Nova fronts interact with orbiting bodies, wormholes actually transfer some
+  objects, slow close encounters can merge, and exceptional events leave drifting
+  remnants rather than vanishing without consequence.
+- Pure monochrome vector graphics; no heavy full-screen blur or animated video.
+- Universe stops updating while Atlas, Settings and Terminal are open.
 
-## Mathematical ambient moments (independent of events)
-16 unobtrusive microvisualizations, intermittently appearing at varying locations with **three coherent, curated formula transformation frames each**. Animated graphics and the staged formulas evolve together. Current catalog:
-gradient descent, backpropagation, self-attention, matrices, Fourier decomposition, Bayes, sigmoid, convolution, information entropy, eigenvalues, quadratic roots, Mandelbrot iteration, PCA, ReLU, diffusion and residual networks.
+### Phase 3: mathematical visualizations
+- 16 ambient ML/math demonstrations already present, now with **glyph-aware
+  transformations**: common equation fragments remain steady while terms are
+  removed/inserted and the shared suffix glides into place.
+- Tap a currently appearing mathematical visualization to pin/advance its
+  equation; Settings → Math Lab starts a new visualization.
+- This is *authored mathematical demonstration*, **not** neural-network
+  inference, training, or a general computer algebra system.
 
-The formula transformations are **authored demonstrations**, not a general-purpose symbolic algebra system or ML inference engine. This means the equations correspond to their illustrated concept, but no on-device neural network is being trained.
+### Phase 4: useful launcher utilities
+- Safe terminal for local app search, launch, expressions, notes, scenes, gravity,
+  math models, and an optional `fps` profiling command.
+- Settings supports JSON backup/restore of favorites, Work/Tools collections
+  and physics preferences using Android's document chooser.
+- Optional **in-app frame meter** shows P50/P95/P99 window frame durations over
+  the catalog so profiling can start **without a Linux computer or root**.
 
-Terminal commands include `models`, `model attention`, `model fourier`, `model` (random), `timeline`, `event nova`, `event pulsar`, `event wormhole`, `event nebula`, `gravity 1.5`, `physics`, `spawn`, `calc`, `find`, `open` and more. The terminal does **not** execute arbitrary Android shell commands.
+## How to install
+The GitHub Actions build publishes **two different test artifacts**:
+1. `AXIOM-debug-APK`: fast-to-build developer/debug APK.
+2. `AXIOM-optimized-test-APK`: R8-minified, non-debuggable, **test-key-signed**
+   APK for a more meaningful scrolling comparison.
 
-## Build
+Use the **optimized-test APK** when evaluating scroll smoothness. Neither
+build is a production release and neither measures real Redmi frame times
+inside CI. See [performance/README.md](performance/README.md).
+
+### Local build on Linux (optional)
 JDK 17, Android SDK Platform 36, Gradle 8.13:
-
 ```bash
 bash build-linux.sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Automated GitHub Actions workflow runs unit tests and produces a debug APK artifact.
+## Safety and limitations
+No root, bootloader unlock, factory reset, cloud data collection or privileged
+shell access. HyperOS can restrict system navigation gestures for third-party
+HOME apps. App-specific Baseline Profiles and actual on-device Macrobenchmarks
+still require an Android emulator/device and are **not yet generated**.
 
-**Safety:** no root, ROM, factory reset or bootloader unlock. HyperOS may restrict system-level gesture navigation with external launchers. Debug APK signing mismatches may require uninstalling **only AXIOM** before reinstalling (AXIOM's preferences will reset). Frame rates and battery consumption require testing on the Redmi; compilation cannot establish actual 120 FPS. Scenes use capped, stylized physics rather than astronomical simulation.
+GitHub Actions' debug/test signatures may differ across runners. If you get
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, temporarily select the stock launcher
+and uninstall **only AXIOM**, then install the newer package. Doing so resets
+AXIOM preferences; the JSON export/import can restore them.

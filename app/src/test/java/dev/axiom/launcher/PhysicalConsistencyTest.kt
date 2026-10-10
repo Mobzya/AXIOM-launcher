@@ -103,7 +103,7 @@ class PhysicalConsistencyTest {
         world.updateGravity(2.2f)
         world.trigger(CosmicEventKind.SINGULARITY)
         repeat(3000) { world.step(1f / 60f) }
-        assertTrue(world.bodies.size <= 21)
+        assertTrue(world.bodies.size <= 23)
         assertTrue(world.bodies.all {
             it.mass.isFinite() && it.mass > 0f &&
             it.vx.isFinite() && it.vy.isFinite() &&

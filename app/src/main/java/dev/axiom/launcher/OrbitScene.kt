@@ -167,11 +167,11 @@ internal fun CosmicEnvironment(
             drawEpisode(scene, t, dim, unit, paint)
         }
 
-        if (!interacting && scene.kind == CosmicEventKind.QUIET) {
-            drawMathMoment(world.mathMoment, dim, paint)
-        }
-
         world.remnants.forEach { remnant ->
+            val hidden = lesson != null &&
+                remnant.x in (lesson.x - .17f)..(lesson.x + .52f) &&
+                remnant.y in (lesson.y - .17f)..(lesson.y + .40f)
+            if (hidden) return@forEach
             val life = (1f - remnant.age / remnant.lifetime).coerceIn(0f, 1f)
             val c = Offset(remnant.x * size.width, remnant.y * size.height)
             when (remnant.kind) {
@@ -196,6 +196,10 @@ internal fun CosmicEnvironment(
         }
 
         world.ripples.forEach { ripple ->
+            val hidden = lesson != null &&
+                ripple.x in (lesson.x - .16f)..(lesson.x + .50f) &&
+                ripple.y in (lesson.y - .16f)..(lesson.y + .38f)
+            if (hidden) return@forEach
             val life = (1f - ripple.age / 1.7f).coerceIn(0f, 1f)
             drawCircle(
                 White.copy(alpha = life * life * dim * .27f),
@@ -204,6 +208,10 @@ internal fun CosmicEnvironment(
                 style = Stroke(1.dp.toPx())
             )
         }
+        if (!interacting && scene.kind == CosmicEventKind.QUIET) {
+            drawMathMoment(world.mathMoment, dim, paint)
+        }
+
     }
 }
 

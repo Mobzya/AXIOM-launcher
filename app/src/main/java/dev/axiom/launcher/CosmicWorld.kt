@@ -76,6 +76,7 @@ internal class CosmicWorld(seed: Int = 42) {
     private var spawnAt = 10f
     private var eventAt = 38f
     private var lastBurstAt = -100f
+    private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
     var mathMoment by mutableStateOf(MathMoment())
         private set
@@ -138,6 +139,7 @@ internal class CosmicWorld(seed: Int = 42) {
             return
         }
         eventSerial++
+        tunneled.clear()
         eventHistory = (eventHistory + kind.name).takeLast(10)
         episode = CosmicEpisode(
             kind = kind, age = 0f,
@@ -238,6 +240,7 @@ internal class CosmicWorld(seed: Int = 42) {
         spawnAt = 10f
         eventAt = 38f
         lastBurstAt = -100f
+        tunneled.clear()
         mathMoment = MathMoment()
         selectedBody = null
         eventHistory = emptyList()
@@ -357,9 +360,14 @@ internal class CosmicWorld(seed: Int = 42) {
                 val d2 = dx * dx + dy * dy + .026f
                 when (e.kind) {
                     CosmicEventKind.NOVA -> {
-                        val impulse = if (e.age < 2.5f) .022f else .003f
-                        ax[i] += impulse * e.alpha * dx / d2
-                        ay[i] += impulse * e.alpha * dy / d2
+                        // Shock front interacts with a body when the expanding ring reaches it.
+                        val ringRadius = .03f + .38f * e.progress
+                        val separation = sqrt(dx*dx + dy*dy)
+                        val shell = (1f - kotlin.math.abs(separation-ringRadius) / .07f)
+                            .coerceIn(0f, 1f)
+                        val impulse = .035f * shell * e.alpha / (separation + .08f)
+                        ax[i] += impulse * dx / (separation + .02f)
+                        ay[i] += impulse * dy / (separation + .02f)
                     }
                     CosmicEventKind.PULSAR -> {
                         val pulse = .5f + .5f * sin(e.age * 5f)
@@ -379,6 +387,20 @@ internal class CosmicWorld(seed: Int = 42) {
             }
         }
 
+        // Rare singularity remnants continue to bend paths after the event ends.
+        for (remnant in remnants) {
+            if (remnant.kind != CosmicEventKind.SINGULARITY) continue
+            val strength = (1f - remnant.age/remnant.lifetime).coerceIn(0f, 1f)
+            for (i in current.indices) {
+                val dx = remnant.x-current[i].x
+                val dy = remnant.y-current[i].y
+                val d2 = dx*dx + dy*dy + .022f
+                val lens = .00045f * strength / (d2 * sqrt(d2))
+                ax[i] += lens*(dx-.21f*dy)
+                ay[i] += lens*(dy+.21f*dx)
+            }
+        }
+
         val next = ArrayList<CelestialBody>(n)
         for (i in current.indices) {
             val b = current[i]
@@ -388,8 +410,24 @@ internal class CosmicWorld(seed: Int = 42) {
             if (speed > .38f) {
                 vx *= .38f / speed; vy *= .38f / speed
             }
-            val nx = b.x + vx * h
-            val ny = b.y + vy * h
+            var nx = b.x + vx * h
+            var ny = b.y + vy * h
+            if (e.kind == CosmicEventKind.WORMHOLE &&
+                e.alpha > .30f && b.id !in tunneled) {
+                val left = e.x - .17f
+                val right = e.x + .17f
+                val fromLeft = hypot(nx-left, ny-e.y) < .043f
+                val fromRight = hypot(nx-right, ny-e.y) < .043f
+                if (fromLeft || fromRight) {
+                    // Conserves speed but changes location and direction.
+                    // Each body may transit once per episode.
+                    nx = if (fromLeft) right + .057f else left - .057f
+                    ny = e.y + (ny-e.y) * .7f
+                    vx = -vx
+                    tunneled += b.id
+                    ripples = (ripples + SpaceRipple(nx,ny)).takeLast(4)
+                }
+            }
             val age = b.age + h
             // Corner-launched sprites cross the screen and leave. No hard wall bouncing.
             if (age < b.lifetime && nx in -.24f..1.24f && ny in -.24f..1.24f) {
@@ -397,7 +435,36 @@ internal class CosmicWorld(seed: Int = 42) {
                     rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
+        // Very slow close encounters may coalesce instead of indefinitely colliding.
+        val compact = ArrayList<CelestialBody>(next.size)
+        val consumed = HashSet<Int>()
+        for (i in next.indices) {
+            if (next[i].id in consumed) continue
+            val a = next[i]
+            val partner = ((i+1) until next.size).firstOrNull { j ->
+                val b = next[j]
+                b.id !in consumed &&
+                kotlin.math.abs(a.depth-b.depth) < .4f &&
+                hypot(a.x-b.x,a.y-b.y) < .012f &&
+                hypot(a.vx-b.vx,a.vy-b.vy) < .018f
+            }
+            if (partner == null) compact += a
+            else {
+                val b = next[partner]
+                val combinedMass = a.mass + b.mass
+                compact += a.copy(
+                    mass = combinedMass.coerceAtMost(7f),
+                    x = (a.x*a.mass+b.x*b.mass)/combinedMass,
+                    y = (a.y*a.mass+b.y*b.mass)/combinedMass,
+                    vx = (a.vx*a.mass+b.vx*b.mass)/combinedMass,
+                    vy = (a.vy*a.mass+b.vy*b.mass)/combinedMass,
+                    lifetime = maxOf(a.lifetime,b.lifetime)+12f
+                )
+                consumed += b.id
+                ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
+            }
+        }
         previousBodies = current
-        bodies = next
+        bodies = compact
     }
 }

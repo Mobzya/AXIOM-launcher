@@ -119,6 +119,8 @@ internal fun CosmicEnvironment(
 
         // 3-layer star volume. Greater z means further / dimmer / slower motion.
         starLayers.forEachIndexed { i, star ->
+            // White daytime mode keeps the same physics but a cleaner sky.
+            if (AxiomColors.palette.light && i % 3 == 0) return@forEachIndexed
             val z = star.z
             var px = ((star.x + .005f * t / z + perspective * .027f / z) % 1.04f)
             var py = star.y + .009f * sin(t * .055f + i) / z

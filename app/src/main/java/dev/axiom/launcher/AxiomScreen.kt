@@ -1,6 +1,8 @@
 package dev.axiom.launcher
 
 import android.content.Context
+import android.app.Activity
+import androidx.core.view.WindowCompat
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -55,6 +57,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -86,13 +89,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
-internal val AX_BLACK = Color.Black
-internal val AX_WHITE = Color(0xFFF8F8F8)
-internal val AX_GRAY = Color(0xFF989898)
-internal val AX_DARK = Color(0xFF575757)
-internal val AX_BORDER = Color(0xFF494949)
-internal val AX_GLASS = Color(0xB3181818) // True translucency, no fake system-wide blur.
-internal val AX_PANEL = Color(0xF5080808)
+internal val AX_BLACK get() = AxiomColors.palette.background
+internal val AX_WHITE get() = AxiomColors.palette.ink
+internal val AX_GRAY get() = AxiomColors.palette.muted
+internal val AX_DARK get() = AxiomColors.palette.faint
+internal val AX_BORDER get() = AxiomColors.palette.border
+internal val AX_GLASS get() = AxiomColors.palette.glass
+internal val AX_PANEL get() = AxiomColors.palette.panel
+internal val AX_SURFACE get() = AxiomColors.palette.surface
+internal val AX_TILE get() = AxiomColors.palette.tile
+internal val AX_DIVIDER get() = AxiomColors.palette.divider
+internal val AX_HINT get() = AxiomColors.palette.hint
 
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
 
@@ -100,6 +107,31 @@ internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
 internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE) }
+    var themeMode by remember {
+        mutableStateOf(modeFromPreference(prefs.getString("theme_mode", "DARK")))
+    }
+    val currentPalette = AxiomColors.palette
+    LaunchedEffect(themeMode) {
+        while (true) {
+            AxiomColors.apply(themeMode)
+            if (themeMode != AxiomThemeMode.AUTO) break
+            // No background service; refresh automatic light/dark when UI is alive.
+            delay(30_000)
+        }
+    }
+    SideEffect {
+        (context as? Activity)?.window?.let { window ->
+            @Suppress("DEPRECATION")
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = if (currentPalette.light)
+                android.graphics.Color.WHITE else android.graphics.Color.BLACK
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightStatusBars = currentPalette.light
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightNavigationBars = currentPalette.light
+        }
+    }
     var apps by remember { mutableStateOf(emptyList<InstalledApp>()) }
     var refresh by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(AxiomMode.HOME) }
@@ -149,6 +181,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }.onSuccess {
             favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
             world.updateGravity(prefs.getFloat("gravity", 1f))
+            themeMode = modeFromPreference(prefs.getString("theme_mode", "DARK"))
             refresh++
             Toast.makeText(context, "Настройки AXIOM восстановлены", Toast.LENGTH_SHORT).show()
         }.onFailure {
@@ -294,8 +327,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             Column(
                 Modifier.align(Alignment.BottomStart)
                     .padding(start = 23.dp, bottom = 56.dp)
-                    .background(Color(0xDD131313), RoundedCornerShape(14.dp))
-                    .border(1.dp, Color(0xFF343434), RoundedCornerShape(14.dp))
+                    .background(AX_SURFACE.copy(alpha = .92f), RoundedCornerShape(14.dp))
+                    .border(1.dp, AX_BORDER, RoundedCornerShape(14.dp))
                     .padding(horizontal = 14.dp, vertical = 11.dp)
             ) {
                 Text("OBJECT  /  ${inspected.id}", color = AX_GRAY,
@@ -415,6 +448,12 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
         if (mode == AxiomMode.SETTINGS) {
             AxiomSettings(
+                themeMode = themeMode,
+                onThemeMode = { next ->
+                    themeMode = next
+                    AxiomColors.apply(next)
+                    prefs.edit().putString("theme_mode", next.name).apply()
+                },
                 gravity = world.gravity,
                 onGravity = {
                     world.updateGravity(it)
@@ -491,7 +530,7 @@ private fun TerminalCorner(
             .clip(RoundedCornerShape(15.dp))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "Открыть терминал AXIOM" }
-            .border(1.dp, Color(0xFF424242), RoundedCornerShape(15.dp)),
+            .border(1.dp, AX_BORDER, RoundedCornerShape(15.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(">_", color = AX_WHITE, fontFamily = FontFamily.Monospace,
@@ -559,9 +598,9 @@ private fun CentralSearchDock(
         label = "search volume"
     )
     val colorEdge = Brush.horizontalGradient(
-        listOf(Color.White.copy(alpha = .15f + .22f * halo),
-            Color.White.copy(alpha = .37f + .26f * halo),
-            Color.White.copy(alpha = .13f + .31f * halo))
+        listOf(AX_WHITE.copy(alpha = .15f + .22f * halo),
+            AX_WHITE.copy(alpha = .37f + .26f * halo),
+            AX_WHITE.copy(alpha = .13f + .31f * halo))
     )
     Row(
         Modifier.fillMaxWidth()
@@ -571,8 +610,8 @@ private fun CentralSearchDock(
                 val spread = 13.dp.toPx()
                 drawRoundRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = .10f * halo),
-                            Color.White.copy(alpha = .03f * halo),
+                        colors = listOf(AX_WHITE.copy(alpha = .10f * halo),
+                            AX_WHITE.copy(alpha = .03f * halo),
                             Color.Transparent),
                         center = androidx.compose.ui.geometry.Offset(
                             size.width * .5f, size.height * .5f),
@@ -587,7 +626,7 @@ private fun CentralSearchDock(
             }
             .clip(shape)
             .background(Brush.verticalGradient(
-                listOf(Color(0xD9232323), Color(0xCE0F0F0F))))
+                listOf(AX_GLASS, AX_SURFACE.copy(alpha = .90f))))
             .border(BorderStroke(1.dp, colorEdge), shape)
             .then(if (expanded) Modifier else Modifier.clickable(onClick = onOpen))
             .padding(horizontal = 21.dp),
@@ -613,7 +652,7 @@ private fun CentralSearchDock(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Light,
                 letterSpacing = .4.sp,
-                color = Color(0xFFD3D3D3)
+                color = AX_HINT
             )
         } else {
             BasicTextField(

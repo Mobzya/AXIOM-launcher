@@ -163,7 +163,7 @@ internal fun AxiomAppRow(
 }
 
 @Composable
-internal fun AxiomAtlas(
+internal fun LegacyAxiomAtlas(
     apps: List<InstalledApp>,
     favorites: Set<String>,
     query: String,

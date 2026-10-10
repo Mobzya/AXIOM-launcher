@@ -281,13 +281,26 @@ internal fun AxiomTerminal(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("help", "models", "physics", "spawn").forEach { c ->
-                Text(
-                    c, color = AX_GRAY, fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable { execute(c) }
-                        .padding(horizontal = 6.dp, vertical = 9.dp)
+            val suggestions = if(command.isBlank()) listOf(
+                "help", "labs", "physics", "spawn"
+            ) else {
+                val options = listOf(
+                    "lab wave","lab neural","lab life","lab julia",
+                    "lab lorenz","lab pendulum","lab reaction",
+                    "speed 0.5","speed 1","pause","resume",
+                    "rewind 3","spawn binary","theme auto",
+                    "event encounter","event reaction","model transformer"
                 )
+                options.filter { it.startsWith(command.trim(),ignoreCase=true) }
+                    .take(4)
+            }
+            suggestions.forEach { hint ->
+                Text(hint, color = AX_GRAY, fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.clickable {
+                        if(command.isBlank()) execute(hint)
+                        else command = hint
+                    }.padding(horizontal = 4.dp,vertical = 9.dp))
             }
         }
         Row(

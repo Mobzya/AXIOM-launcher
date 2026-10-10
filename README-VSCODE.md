@@ -30,3 +30,10 @@ GitHub Actions builds on pushes to main and from the manual **Run workflow** but
 
 ## Notes
 This prototype still requires compilation and testing on a real device. Debug APKs use environment-dependent signatures; to change signing keys you may have to uninstall AXIOM first (only its app data will be lost). HyperOS may disable full-screen system gestures when a third-party HOME app is selected.
+
+## Testing 0.2
+- Tap search: the compact dock should expand, show keyboard and list matches below.
+- Swipe down from an empty portion of the home screen: App Atlas appears.
+- Scroll and use the Atlas filters; swipe up on its header or tap × to close.
+- Settings (small top-right gear): Off / Quiet / Lively ambience and refresh apps.
+- If the debug APK can't update your existing copy due to signature mismatch, use `adb uninstall dev.axiom.launcher` before reinstalling; AXIOM settings will reset.

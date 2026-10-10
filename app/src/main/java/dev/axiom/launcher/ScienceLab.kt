@@ -98,19 +98,19 @@ internal class ScienceLab(seed: Int = 19) {
 
     fun formula(): String = when (kind) {
         LabKind.WAVE -> "f(x)=%.2f sin(%.2f x - t)".formatUS(
-            0.2 + parameter * 1.8, 1.0 + secondParameter * 7.0)
+            0.2f + parameter * 1.8f, 1.0f + secondParameter * 7.0f)
         LabKind.NEURAL -> "ŷ=%.4f   L=%.5f".formatUS(neural.output, neural.error)
         LabKind.LIFE -> "cell(t+1) = B3 / S23  ·  %d alive".format(cells.count { it })
         LabKind.JULIA -> "zₙ₊₁=zₙ²+(%.2f%+.2fi)".formatUS(
-            -0.8 + parameter*.8, -.3+secondParameter*.6)
-        LabKind.LORENZ -> "dx/dt=σ(y-x)  σ=%.1f".formatUS(4.0 + parameter*18.0)
-        LabKind.PENDULUM -> "θ''=-(g/L)sin θ, L=%.2f".formatUS(.3+parameter*2.5)
+            -.8f + parameter*.8f, -.3f+secondParameter*.6f)
+        LabKind.LORENZ -> "dx/dt=σ(y-x)  σ=%.1f".formatUS(4.0f + parameter*18.0f)
+        LabKind.PENDULUM -> "θ''=-(g/L)sin θ, L=%.2f".formatUS(.3f+parameter*2.5f)
         LabKind.REACTION -> "∂u/∂t=Dᵤ∇²u-uv²+F(1-u)"
         LabKind.FOURIER -> "f=sin(x)+%.2f sin(3x)".formatUS(parameter)
-        LabKind.ATTENTION -> "softmax(QKᵀ/√d), T=%.2f".formatUS(.25+parameter*2)
-        LabKind.GRADIENT -> "∂(x-a)²/∂x = 2(x-%.2f)".formatUS(1+parameter*3)
+        LabKind.ATTENTION -> "softmax(QKᵀ/√d), T=%.2f".formatUS(.25f+parameter*2)
+        LabKind.GRADIENT -> "∂(x-a)²/∂x = 2(x-%.2f)".formatUS(1f+parameter*3)
         LabKind.DIFFUSION -> "xₜ=√ᾱx₀+√(1-ᾱ)ε  ᾱ=%.2f".formatUS(parameter)
-        LabKind.PCA -> "projection = x·v, θ=%.2f".formatUS(parameter*PI)
+        LabKind.PCA -> "projection = x·v, θ=%.2f".formatUS(parameter*PI.toFloat())
     }
 }
 

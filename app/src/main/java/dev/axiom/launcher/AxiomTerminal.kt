@@ -8,6 +8,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +68,11 @@ internal fun AxiomTerminal(
     currentEpisode: String,
     eventHistory: List<String>,
     onModel: (MathKind?) -> Unit,
+    onLab: (LabKind?) -> Unit,
+    onTimeScale: (Float) -> Unit,
+    onRewind: (Int) -> Boolean,
+    onSpawnBinary: () -> Unit,
+    onThemeMode: (AxiomThemeMode) -> Unit,
     onProfile: () -> Boolean,
     onEvent: (CosmicEventKind) -> Unit,
     onSurprise: () -> Unit,
@@ -111,6 +118,32 @@ internal fun AxiomTerminal(
                 val matches = searchApps(apps, parsed.name, emptySet()).take(9)
                 append(if (matches.isEmpty()) "Совпадений нет"
                     else matches.joinToString("\n") { " ↳ ${it.label}" })
+            }
+            is AxCommand.Lab -> {
+                append("Открываю лабораторию ${parsed.kind?.name ?: "WAVE"}")
+                onLab(parsed.kind)
+            }
+            is AxCommand.TimeScale -> {
+                onTimeScale(parsed.speed)
+                append("Скорость мира: ${parsed.speed}× ✓")
+            }
+            is AxCommand.Rewind -> {
+                append(if (onRewind(parsed.seconds))
+                    "Вселенная перемотана на ${parsed.seconds} секунд ✓"
+                    else "Недостаточно кадров для повтора")
+            }
+            is AxCommand.Theme -> {
+                onThemeMode(parsed.mode)
+                append("Тема: ${parsed.mode.name.lowercase()} ✓")
+            }
+            AxCommand.SpawnBinary -> {
+                onSpawnBinary()
+                append("Двойная система создана ✓")
+            }
+            AxCommand.Field -> {
+                // The actual hold-and-drag gravity brush lives on HOME.
+                append("На HOME удерживай палец и веди — появится гравитационное поле.")
+                onBack()
             }
             is AxCommand.Model -> {
                 onModel(parsed.kind)
@@ -247,16 +280,29 @@ internal fun AxiomTerminal(
             }
         }
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("help", "models", "physics", "spawn").forEach { c ->
-                Text(
-                    c, color = AX_GRAY, fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable { execute(c) }
-                        .padding(horizontal = 6.dp, vertical = 9.dp)
+            val suggestions = if(command.isBlank()) listOf(
+                "help", "labs", "physics", "spawn"
+            ) else {
+                val options = listOf(
+                    "lab wave","lab neural","lab life","lab julia",
+                    "lab lorenz","lab pendulum","lab reaction",
+                    "speed 0.5","speed 1","pause","resume",
+                    "rewind 3","spawn binary","theme auto",
+                    "event encounter","event reaction","model transformer"
                 )
+                options.filter { it.startsWith(command.trim(),ignoreCase=true) }
+                    .take(4)
+            }
+            suggestions.forEach { hint ->
+                Text(hint, color = AX_GRAY, fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.clickable {
+                        if(command.isBlank()) execute(hint)
+                        else command = hint
+                    }.padding(horizontal = 4.dp,vertical = 9.dp))
             }
         }
         Row(

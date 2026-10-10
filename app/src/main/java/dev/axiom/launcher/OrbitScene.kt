@@ -119,9 +119,21 @@ internal fun CosmicEnvironment(
 
         // 3-layer star volume. Greater z means further / dimmer / slower motion.
         starLayers.forEachIndexed { i, star ->
+            // White daytime mode keeps the same physics but a cleaner sky.
+            if (AxiomColors.palette.light && i % 3 == 0) return@forEachIndexed
             val z = star.z
-            val px = ((star.x + .005f * t / z + perspective * .027f / z) % 1.04f)
-            val py = star.y + .009f * sin(t * .055f + i) / z
+            var px = ((star.x + .005f * t / z + perspective * .027f / z) % 1.04f)
+            var py = star.y + .009f * sin(t * .055f + i) / z
+            if (world.episode.kind in listOf(CosmicEventKind.LENS,
+                    CosmicEventKind.SINGULARITY)) {
+                val ep = world.episode
+                val dx = px-ep.x
+                val dy = py-ep.y
+                val d2 = dx*dx+dy*dy+.035f
+                val lens = .0009f*ep.alpha/d2
+                px += lens*dx
+                py += lens*dy
+            }
             val shimmer = .82f + .18f * sin(t * (.18f + i % 3 * .025f) + i)
             val opacity = ((.17f + .24f / z) * shimmer * dim).coerceIn(0f, .54f)
             drawCircle(White.copy(alpha = opacity),
@@ -182,7 +194,7 @@ internal fun CosmicEnvironment(
                         unit * (.09f + .19f * remnant.age / remnant.lifetime),
                         c, style = Stroke(.7.dp.toPx()))
                 }
-                CosmicEventKind.SINGULARITY -> {
+CosmicEventKind.SINGULARITY -> {
                     drawCircle(White.copy(alpha = dim * life * .19f),
                         unit * .055f, c, style = Stroke(.65.dp.toPx()))
                     drawCircle(White.copy(alpha = dim * life * .08f),
@@ -210,6 +222,16 @@ internal fun CosmicEnvironment(
                 style = Stroke(1.dp.toPx())
             )
         }
+        world.brushPoint?.let { brush ->
+            val c=Offset(brush.x*size.width,brush.y*size.height)
+            val radius=unit*(.07f+world.brushMass*.02f)
+            drawCircle(White.copy(alpha=dim*.30f),radius,c,
+                style=Stroke(1.dp.toPx()))
+            drawCircle(White.copy(alpha=dim*.14f),radius*1.7f,c,
+                style=Stroke(.65.dp.toPx()))
+            drawCircle(White.copy(alpha=dim*.76f),3.dp.toPx(),c)
+        }
+
         if (!interacting && scene.kind == CosmicEventKind.QUIET) {
             drawMathMoment(world.mathMoment, dim, paint)
         }
@@ -341,6 +363,94 @@ private fun DrawScope.drawBody(
                     radius*.27f,p)
                 if(j<5)drawLine(White.copy(alpha=a*.25f),p,
                     c+nodes[j+1]*radius,.65.dp.toPx())
+            }
+        }
+        in 13..22 -> {
+            // Additional procedurally drawn astro/math entities. No textures.
+            val family = b.kind - 13
+            when (family) {
+                0 -> { // Planet transit and atmospheric ring
+                    drawCircle(White.copy(alpha=a*.17f),radius*3.2f,c,
+                        style=Stroke(.8.dp.toPx()))
+                    drawCircle(White.copy(alpha=a*.68f),radius*.95f,c)
+                    drawCircle(AX_BLACK.copy(alpha=.98f),radius*.43f,
+                        c+Offset(cos(time*.15f)*radius,sin(time*.15f)*radius*.3f))
+                }
+                1,2 -> { // Radial stellar flare / sixfold snowflake
+                    val rays=if(family==1)8 else 6
+                    for(i in 0 until rays) {
+                        val theta=i*TAU/rays+b.rotation
+                        val ray=Offset(cos(theta),sin(theta))*radius*
+                            (if(family==1)3.8f else 2.3f)
+                        drawLine(White.copy(alpha=a*.45f),c,c+ray,.7.dp.toPx())
+                        if(family==2)
+                            drawCircle(White.copy(alpha=a*.45f),radius*.25f,c+ray)
+                    }
+                }
+                3 -> { // Photon's dashed path
+                    for(i in 0..7){
+                        val u=i/8f
+                        val p=c+Offset((u-.5f)*radius*8f,
+                            sin(u*TAU*3+b.rotation)*radius*.75f)
+                        drawCircle(White.copy(alpha=a*(.18f+u*.6f)),
+                            radius*.13f,p)
+                    }
+                }
+                4 -> { // Double helix
+                    for(chain in 0..1) {
+                        val curve=Path()
+                        for(i in 0..28) {
+                            val u=i/28f
+                            val p=c+Offset((u-.5f)*radius*6f,
+                                sin(u*TAU*1.5f+b.rotation+chain*PI.toFloat())*
+                                radius*.9f)
+                            if(i==0)curve.moveTo(p.x,p.y)
+                            else curve.lineTo(p.x,p.y)
+                        }
+                        drawPath(curve,White.copy(alpha=a*.5f),
+                            style=Stroke(.7.dp.toPx()))
+                    }
+                }
+                5 -> { // Turbine / rotating satellite
+                    for(i in 0..3) {
+                        val phi=i*TAU/4+b.rotation*1.8f
+                        val start=c+Offset(cos(phi),sin(phi))*radius
+                        val end=c+Offset(cos(phi+.25f),sin(phi+.25f))*radius*3.1f
+                        drawLine(White.copy(alpha=a*.54f),start,end,.7.dp.toPx())
+                    }
+                }
+                6,7 -> { // Crystalline hex grid / orbital flower
+                    val petals=if(family==6)6 else 9
+                    for(i in 0 until petals){
+                        val phi=i*TAU/petals+b.rotation*.35f
+                        val point=c+Offset(cos(phi),sin(phi))*radius*2.5f
+                        drawLine(White.copy(alpha=a*.28f),c,point,.65.dp.toPx())
+                        drawCircle(White.copy(alpha=a*.5f),
+                            radius*(if(family==6).3f else .55f),point,
+                            style=Stroke(.6.dp.toPx()))
+                    }
+                }
+                8 -> { // Tumbling rubble cluster
+                    for(i in 0..5){
+                        val phi=i*2.4f+b.rotation
+                        val r=radius*(.65f+i*.32f)
+                        drawCircle(White.copy(alpha=a*(.28f+i*.07f)),
+                            radius*(.16f+(i%3)*.07f),
+                            c+Offset(cos(phi)*r,sin(phi)*r))
+                    }
+                }
+                else -> { // Epicycloid orbit
+                    val path=Path()
+                    for(i in 0..38) {
+                        val u=i/38f*TAU
+                        val p=c+Offset(
+                            (cos(u)*2f+.45f*cos(u*5f+b.rotation))*radius,
+                            (sin(u)*2f-.45f*sin(u*5f+b.rotation))*radius)
+                        if(i==0)path.moveTo(p.x,p.y)else path.lineTo(p.x,p.y)
+                    }
+                    drawPath(path,White.copy(alpha=a*.5f),
+                        style=Stroke(.7.dp.toPx()))
+                }
             }
         }
         12 -> { // Double shock ring with opposite phase.
@@ -530,7 +640,50 @@ private fun DrawScope.drawEpisode(
                     style=Stroke(.65.dp.toPx()))
             }
         }
-        CosmicEventKind.SINGULARITY -> {
+        CosmicEventKind.ENCOUNTER -> {
+            for(i in 0..1){
+                val shift=(if(i==0)-1f else 1f)*
+                    unit*(.22f-.11f*ep.progress)
+                val p=center+Offset(shift,unit*.04f*sin(ep.age*.65f+i))
+                drawCircle(White.copy(alpha=a*.30f),
+                    unit*.045f,p,style=Stroke(.75.dp.toPx()))
+                drawCircle(White.copy(alpha=a*.5f),
+                    2.dp.toPx(),p)
+            }
+        }
+        CosmicEventKind.FILAMENT -> {
+            for(k in 0..6){
+                val path=Path()
+                for(i in 0..36){
+                    val u=i/36f
+                    val x=center.x+(u-.5f)*unit*.92f
+                    val y=center.y+(k-3f)*unit*.028f+
+                        sin(u*TAU*2.4f+ep.age*.3f+k*.47f)*unit*.048f
+                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+                }
+                drawPath(path,White.copy(alpha=a*(.07f+k*.014f)),
+                    style=Stroke(.65.dp.toPx()))
+            }
+        }
+        CosmicEventKind.RADIATION, CosmicEventKind.RING_WAVE,
+        CosmicEventKind.REACTION -> {
+            val shells=if(ep.kind==CosmicEventKind.REACTION)8 else 4
+            for(k in 0 until shells){
+                val r=unit*(.03f+ep.progress*.38f+k*.028f)
+                drawCircle(White.copy(alpha=(a*(.24f-k*.022f))
+                    .coerceIn(0f,1f)),r,center,
+                    style=Stroke(.75.dp.toPx()))
+            }
+            if(ep.kind==CosmicEventKind.REACTION){
+                repeat(12){i->
+                    val phi=i*TAU/12+ep.age*.25f
+                    val rad=unit*(.06f+.19f*ep.progress)
+                    drawCircle(White.copy(alpha=a*.5f),1.5.dp.toPx(),
+                        center+Offset(cos(phi)*rad,sin(phi)*rad))
+                }
+            }
+        }
+                CosmicEventKind.SINGULARITY -> {
             // Extremely rare gravitational lensing: dark center, light photon ring,
             // two accretion ellipses and spiralling polar tracer particles.
             val radius = unit * (.037f + .004f * sin(ep.age * .36f))

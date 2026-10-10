@@ -13,6 +13,12 @@ internal sealed class AxCommand {
     data class Gravity(val value: Float) : AxCommand()
     data class Event(val kind: CosmicEventKind?) : AxCommand()
     data class Model(val kind: MathKind?) : AxCommand()
+    data class Lab(val kind: LabKind?) : AxCommand()
+    data class TimeScale(val speed: Float) : AxCommand()
+    data class Rewind(val seconds: Int) : AxCommand()
+    data class Theme(val mode: AxiomThemeMode) : AxCommand()
+    data object SpawnBinary : AxCommand()
+    data object Field : AxCommand()
     data object Timeline : AxCommand()
     data class Depth(val delta: Float) : AxCommand()
     data class Calculate(val expression: String) : AxCommand()
@@ -40,11 +46,52 @@ internal fun parseAxCommand(input: String): AxCommand {
         "help", "?", "man" -> AxCommand.Output(
             "help · ls · find <имя> · open <имя>\n" +
             "calc <выражение> · gravity <0.25..2.2>\n" +
-            "physics · fps · spawn · reset · battery · time · event · depth\n" +
+            "physics · fps · spawn · binary · reset · battery · clock\n" +
+            "speed <0|.25|.5|1|2> · pause · resume · rewind [1..8]\n" +
+            "lab <wave|neural|life|julia|lorenz|pendulum|...>\n" +
+            "theme <dark|light|auto> · field · event · depth\n" +
             "note <текст> · notes · wifi · bluetooth\n" +
             "display · notifications · clear · exit"
         )
         "ls", "apps", "atlas" -> AxCommand.Apps
+        "labs", "experiments" -> AxCommand.Output(
+            "Лаборатории: " + LabKind.entries.joinToString(", ") {
+                it.name.lowercase()
+            } + "\nПример: lab neural"
+        )
+        "lab", "portal", "experiment" -> {
+            val kind = if(arg.isBlank()) null else LabKind.entries.firstOrNull {
+                it.name.equals(arg, ignoreCase=true)
+            }
+            if(arg.isNotBlank() && kind == null)
+                AxCommand.Output("Неизвестный эксперимент. Введи labs.")
+            else AxCommand.Lab(kind)
+        }
+        "speed", "timescale" -> {
+            val v = arg.replace(',', '.').toFloatOrNull()
+            if (v == null || v !in 0f..2f || !v.isFinite())
+                AxCommand.Output("Укажи скорость 0..2. Пример: speed 0.5")
+            else AxCommand.TimeScale(v)
+        }
+        "pause", "freeze" -> AxCommand.TimeScale(0f)
+        "play", "resume" -> AxCommand.TimeScale(1f)
+        "rewind" -> {
+            val seconds = if(arg.isBlank()) 3 else arg.toIntOrNull()
+            if(seconds == null || seconds !in 1..8)
+                AxCommand.Output("Повтор доступен на 1–8 секунд")
+            else AxCommand.Rewind(seconds)
+        }
+        "theme", "appearance" -> {
+            val next = when(arg.lowercase()){
+                "dark", "black", "night" -> AxiomThemeMode.DARK
+                "light", "white", "day" -> AxiomThemeMode.LIGHT
+                "auto", "automatic" -> AxiomThemeMode.AUTO
+                else -> return AxCommand.Output("Пример: theme auto | dark | light")
+            }
+            AxCommand.Theme(next)
+        }
+        "binary", "double-star" -> AxCommand.SpawnBinary
+        "field", "brush" -> AxCommand.Field
         "models", "maths" -> AxCommand.Output(
             "16 визуализаций: " + MathKind.entries.joinToString(" · ") {
                 it.name.lowercase()
@@ -62,7 +109,8 @@ internal fun parseAxCommand(input: String): AxCommand {
         }
         "timeline", "history" -> AxCommand.Timeline
         "events", "scenarios" -> AxCommand.Output(
-            "Сценарии: meteor, lens, nova, pulsar, wormhole, nebula, blackhole. " +
+            "Сценарии: meteor, lens, nova, pulsar, wormhole, nebula, " +
+            "encounter, filament, radiation, ring, reaction, blackhole. " +
             "Введи event <сценарий> или event для случайного."
         )
         "event", "scenario" -> {
@@ -75,6 +123,11 @@ internal fun parseAxCommand(input: String): AxCommand {
                 "pulsar" -> CosmicEventKind.PULSAR
                 "wormhole", "portal" -> CosmicEventKind.WORMHOLE
                 "nebula", "cloud" -> CosmicEventKind.NEBULA
+                "encounter", "binary" -> CosmicEventKind.ENCOUNTER
+                "filament", "thread" -> CosmicEventKind.FILAMENT
+                "radiation", "burst" -> CosmicEventKind.RADIATION
+                "ring", "ringwave" -> CosmicEventKind.RING_WAVE
+                "reaction", "cascade" -> CosmicEventKind.REACTION
                 "blackhole", "singularity", "bh" -> CosmicEventKind.SINGULARITY
                 "quiet", "stop" -> CosmicEventKind.QUIET
                 "" -> null
@@ -111,9 +164,13 @@ internal fun parseAxCommand(input: String): AxCommand {
         "exit", "home", "quit", "cd" -> AxCommand.Home
         "physics", "status" -> AxCommand.Physics
         "fps", "metrics", "profile" -> AxCommand.Metrics
-        "spawn", "create" -> AxCommand.Spawn
+        "spawn", "create" ->
+            if (arg.lowercase() in listOf("binary","pair","double"))
+                AxCommand.SpawnBinary else AxCommand.Spawn
         "reset", "restart" -> AxCommand.Reset
-        "time", "date" -> AxCommand.Clock
+        "clock", "date" -> AxCommand.Clock
+        "time" -> if(arg.isBlank()) AxCommand.Clock
+                  else parseAxCommand("speed $arg")
         "battery" -> AxCommand.Battery
         "wifi", "bluetooth", "display", "notifications", "settings" ->
             AxCommand.AndroidSettings(command)

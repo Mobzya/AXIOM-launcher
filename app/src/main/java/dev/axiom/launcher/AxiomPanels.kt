@@ -503,7 +503,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM 0.7  /  FLUID · CONSEQUENCE · INTELLIGENCE", color = AX_DARK,
+        Text("AXIOM 0.8  /  FLUID · CONSEQUENCE · INTELLIGENCE", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

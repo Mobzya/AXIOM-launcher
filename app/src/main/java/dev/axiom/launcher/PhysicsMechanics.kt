@@ -56,6 +56,37 @@ internal data class CollisionVelocities(
     val bvx: Float, val bvy: Float
 )
 
+/** Writes directly into preallocated force arrays. No per-pair allocation in the
+ * 60Hz physics loop, preserving responsive Android UI while enforcing symmetry.
+ */
+internal fun accumulateForces(
+    a: CelestialBody, b: CelestialBody, gravity: Float,
+    i: Int, j: Int, ax: FloatArray, ay: FloatArray
+) {
+    val dx = b.x - a.x
+    val dy = b.y - a.y
+    val r2 = dx * dx + dy * dy + .0035f
+    val coupling = 1f / (1f + .55f * kotlin.math.abs(a.depth - b.depth))
+    val coefficient = (.00026f * gravity * coupling / (r2 * sqrt(r2)))
+        .coerceAtMost(1.15f)
+    ax[i] += coefficient * b.mass * dx
+    ay[i] += coefficient * b.mass * dy
+    ax[j] -= coefficient * a.mass * dx
+    ay[j] -= coefficient * a.mass * dy
+
+    val d = hypot(dx, dy)
+    if (d >= .000001f && d < .023f &&
+        kotlin.math.abs(a.depth - b.depth) < .55f) {
+        val pressure = (.023f - d) * .8f
+        val fx = pressure * dx / d
+        val fy = pressure * dy / d
+        ax[i] -= fx / a.mass
+        ay[i] -= fy / a.mass
+        ax[j] += fx / b.mass
+        ay[j] += fy / b.mass
+    }
+}
+
 /** Impulse collision. Conserves pair linear momentum; e<=1 dissipates energy. */
 internal fun collide(
     a: CelestialBody, b: CelestialBody,

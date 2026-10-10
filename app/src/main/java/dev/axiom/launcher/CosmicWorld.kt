@@ -275,7 +275,7 @@ internal class CosmicWorld(seed: Int = 42) {
         }
     }
 
-    fun setTimeScale(next: Float) {
+    fun updateTimeScale(next: Float) {
         require(next.isFinite())
         timeScale = when {
             next <= .01f -> 0f

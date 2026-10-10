@@ -22,6 +22,7 @@ internal sealed class AxCommand {
     data object Home : AxCommand()
     data object Apps : AxCommand()
     data object Physics : AxCommand()
+    data object Metrics : AxCommand()
     data object Spawn : AxCommand()
     data object Reset : AxCommand()
     data object Clock : AxCommand()
@@ -39,7 +40,7 @@ internal fun parseAxCommand(input: String): AxCommand {
         "help", "?", "man" -> AxCommand.Output(
             "help · ls · find <имя> · open <имя>\n" +
             "calc <выражение> · gravity <0.25..2.2>\n" +
-            "physics · spawn · reset · battery · time · event · depth\n" +
+            "physics · fps · spawn · reset · battery · time · event · depth\n" +
             "note <текст> · notes · wifi · bluetooth\n" +
             "display · notifications · clear · exit"
         )
@@ -109,6 +110,7 @@ internal fun parseAxCommand(input: String): AxCommand {
         "clear", "cls" -> AxCommand.Clear
         "exit", "home", "quit", "cd" -> AxCommand.Home
         "physics", "status" -> AxCommand.Physics
+        "fps", "metrics", "profile" -> AxCommand.Metrics
         "spawn", "create" -> AxCommand.Spawn
         "reset", "restart" -> AxCommand.Reset
         "time", "date" -> AxCommand.Clock

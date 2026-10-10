@@ -421,6 +421,17 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onResetUniverse = { world.reset() },
+                onSelectHome = {
+                    runCatching {
+                        context.startActivity(android.content.Intent(
+                            android.provider.Settings.ACTION_HOME_SETTINGS
+                        ))
+                    }.onFailure {
+                        context.startActivity(android.content.Intent(
+                            android.provider.Settings.ACTION_SETTINGS
+                        ))
+                    }
+                },
                 onMath = { world.summonMath(); close() },
                 onExport = { exportSettings.launch("axiom-settings.json") },
                 onImport = { importSettings.launch(arrayOf("application/json",

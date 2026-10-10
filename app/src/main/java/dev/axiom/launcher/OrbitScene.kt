@@ -39,7 +39,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
-private val White = Color.White
+private val White get() = AX_WHITE
 private const val TAU = (2.0 * PI).toFloat()
 private data class DeepStar(val x: Float, val y: Float, val z: Float, val radius: Float)
 private val starLayers = Random(824).let { rng ->
@@ -111,6 +111,8 @@ internal fun CosmicEnvironment(
     }
 
     Canvas(modifier) {
+        paint.color = if (AxiomColors.palette.light) android.graphics.Color.BLACK
+            else android.graphics.Color.WHITE
         val t = world.elapsed
         val unit = min(size.width, size.height)
         val perspective = world.depthShift
@@ -552,10 +554,10 @@ private fun DrawScope.drawEpisode(
                     max(0f, sin(theta)))),
                     if (i % 4 == 0) 1.7.dp.toPx() else .95.dp.toPx(), p)
             }
-            drawCircle(Color.Black, radius, center)
+            drawCircle(AX_BLACK, radius, center)
             drawCircle(White.copy(alpha = a * .82f),
                 radius * 1.08f, center, style = Stroke(1.1.dp.toPx()))
-            drawCircle(Color.Black, radius * .97f, center)
+            drawCircle(AX_BLACK, radius * .97f, center)
             formula("rₛ = 2GM/c²   // EVENT HORIZON",
                 Offset(size.width * .13f,size.height * .74f),
                 a * .39f, paint)

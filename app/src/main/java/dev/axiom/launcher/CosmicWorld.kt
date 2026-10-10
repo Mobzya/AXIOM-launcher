@@ -85,6 +85,7 @@ internal class CosmicWorld(seed: Int = 42) {
     var eventHistory by mutableStateOf<List<String>>(emptyList())
         private set
     private var inspectAge = 0f
+    private var pinnedFor = 0f
 
     private fun initialBodies(): List<CelestialBody> {
         // Deliberately no permanent massive object in the center.
@@ -102,7 +103,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     fun spawnFromCorner(burst: Boolean = false) {
-        if (bodies.size >= 18) return
+        if (bodies.size >= 21) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -178,6 +179,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
     fun summonMath(requested: MathKind? = null) {
         mathPinned = false
+        pinnedFor = 0f
         nextMathAt = elapsed + 23f
         mathMoment = MathMoment(
             kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
@@ -198,6 +200,7 @@ internal class CosmicWorld(seed: Int = 42) {
         if (m.active && x in (m.x - .04f)..(m.x + .43f) &&
             y in (m.y - .04f)..(m.y + .32f)) {
             mathPinned = true
+            pinnedFor = 0f
             val next = ((m.progress * 3f).toInt() + 1).coerceAtMost(2)
             mathMoment = m.copy(age = (next / 3f + .04f) * m.duration)
             return
@@ -234,6 +237,7 @@ internal class CosmicWorld(seed: Int = 42) {
         ripples = emptyList()
         remnants = emptyList()
         mathPinned = false
+        pinnedFor = 0f
         elapsed = 0f
         episode = CosmicEpisode()
         depthShift = 0f
@@ -253,6 +257,10 @@ internal class CosmicWorld(seed: Int = 42) {
         val h = dt.coerceIn(.004f, .034f)
         elapsed += h
         inspectAge += h
+        if (mathPinned) {
+            pinnedFor += h
+            if (pinnedFor > 14f) mathPinned = false
+        }
         if (inspectAge > 4.5f && selectedBody != null) selectedBody = null
         depthShift *= (1f - .5f * h)
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
@@ -290,7 +298,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
         if (elapsed >= spawnAt) {
             spawnFromCorner()
-            spawnAt = elapsed + 5f + random.nextFloat() * 11f
+            spawnAt = elapsed + 4.5f + random.nextFloat() * 9f
         }
         if (episode.kind == CosmicEventKind.METEORS &&
             elapsed - lastBurstAt > 1.8f && episode.age < 6.5f) {

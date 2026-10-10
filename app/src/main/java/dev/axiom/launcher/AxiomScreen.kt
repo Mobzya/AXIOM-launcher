@@ -76,6 +76,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -132,7 +134,17 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         if (uri != null) runCatching {
             val input = context.contentResolver.openInputStream(uri)
                 ?: error("Нет доступа к файлу")
-            val json = input.bufferedReader().use { it.readText() }
+            val json = input.bufferedReader().use { reader ->
+                val buffer = CharArray(4096)
+                val text = StringBuilder()
+                while (true) {
+                    val n = reader.read(buffer)
+                    if (n < 0) break
+                    require(text.length + n <= 400_000) { "Файл настроек слишком большой" }
+                    text.append(buffer, 0, n)
+                }
+                text.toString()
+            }
             AxiomBackup.import(context, json)
         }.onSuccess {
             favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
@@ -211,17 +223,20 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             .background(AX_BLACK)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .pointerInput(world) {
-                detectTapGestures(
-                    onTap = { point ->
-                        world.interact(
-                            point.x / size.width.toFloat().coerceAtLeast(1f),
-                            point.y / size.height.toFloat().coerceAtLeast(1f)
-                        )
-                    },
-                    onDoubleTap = { world.spawnFromCorner() },
-                    onLongPress = { world.triggerRandomEvent() }
-                )
+            .pointerInput(world, mode) {
+                // Ambient gestures must never steal touches from search or overlays.
+                if (mode == AxiomMode.HOME) {
+                    detectTapGestures(
+                        onTap = { point ->
+                            world.interact(
+                                point.x / size.width.toFloat().coerceAtLeast(1f),
+                                point.y / size.height.toFloat().coerceAtLeast(1f)
+                            )
+                        },
+                        onDoubleTap = { world.spawnFromCorner() },
+                        onLongPress = { world.triggerRandomEvent() }
+                    )
+                }
             }
             .pointerInput(mode) {
                 if (mode == AxiomMode.HOME) {
@@ -362,6 +377,19 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
 
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
+            TerminalCorner(
+                modifier = Modifier.align(Alignment.TopStart)
+                    .padding(top = 11.dp, start = 19.dp),
+                onClick = {
+                    terminalInitial = ""
+                    keyboard?.hide()
+                    focus.clearFocus()
+                    mode = AxiomMode.TERMINAL
+                }
+            )
+        }
+
+        if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             SettingsCorner(
                 Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 19.dp)
             ) {
@@ -441,10 +469,31 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     }
 }
 
+/** Small, accessible terminal entry point. Kept away from the centered dock. */
+@Composable
+private fun TerminalCorner(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier.size(48.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Открыть терминал AXIOM" }
+            .border(1.dp, Color(0xFF424242), RoundedCornerShape(15.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(">_", color = AX_WHITE, fontFamily = FontFamily.Monospace,
+            fontSize = 16.sp, letterSpacing = 0.sp)
+    }
+}
+
 @Composable
 private fun SettingsCorner(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier = modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick),
+        modifier = modifier.size(48.dp).clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Настройки AXIOM" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.size(21.dp)) {

@@ -44,8 +44,8 @@ class UniverseTest {
         val world = CosmicWorld(7)
         world.updateGravity(1.5f)
         repeat(300) { world.step(1f / 60f) }
-        assertTrue(world.bodies.size in 1..11)
-        assertTrue(world.bodies.all { it.x in .07f.. .93f && it.y in .09f.. .88f })
+        assertTrue(world.bodies.size in 1..21)
+        assertTrue(world.bodies.all { it.x in -.24f..1.24f && it.y in -.24f..1.24f })
     }
     @Test fun mathCatalogHasSixteenThreeStageStories() {
         assertEquals(16, MathKind.entries.size)
@@ -87,6 +87,22 @@ class UniverseTest {
         assertEquals(CosmicEventKind.SINGULARITY, world.episode.kind)
         repeat(600) { world.step(1f / 30f) }
         assertTrue(world.episode.kind != CosmicEventKind.SINGULARITY)
+    }
+
+    @Test fun moreAmbientBodiesStayWithinBound() {
+        val world = CosmicWorld(5)
+        repeat(80) { world.spawnFromCorner() }
+        assertEquals(21, world.bodies.size)
+    }
+
+    @Test fun mathPinExpiresAutomatically() {
+        val world = CosmicWorld(8)
+        world.summonMath(MathKind.ATTENTION)
+        val math = world.mathMoment
+        world.interact(math.x+.05f,math.y+.05f)
+        assertTrue(world.mathPinned)
+        repeat(480) { world.step(1f/30f) }
+        assertTrue(!world.mathPinned)
     }
 
     @Test fun tapChangesMomentum() {

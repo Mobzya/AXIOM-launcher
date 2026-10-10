@@ -47,12 +47,17 @@ internal object AxiomBackup {
         }
         require(json.optInt("version") == 1) { "Неподдерживаемая версия формата" }
         fun packages(key: String): Set<String> {
-            val array = json.optJSONArray(key) ?: JSONArray()
+            val array = json.optJSONArray(key)
+                ?: error("Повреждённый раздел настроек: $key")
             require(array.length() <= 300) { "Слишком много элементов" }
-            return (0 until array.length()).map { array.getString(it) }
-                .filter { it.length in 2..200 && it.all { ch ->
+            return (0 until array.length()).map {
+                require(array.get(it) is String) { "Неверный формат пакета" }
+                val name = array.getString(it)
+                require(name.length in 2..200 && name.all { ch ->
                     ch.isLetterOrDigit() || ch in "._-"
-                } }.toSet()
+                }) { "Некорректное имя приложения" }
+                name
+            }.toSet()
         }
         val favorites = packages("favorites")
         val work = packages("work")

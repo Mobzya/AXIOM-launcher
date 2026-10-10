@@ -134,7 +134,17 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         if (uri != null) runCatching {
             val input = context.contentResolver.openInputStream(uri)
                 ?: error("Нет доступа к файлу")
-            val json = input.bufferedReader().use { it.readText() }
+            val json = input.bufferedReader().use { reader ->
+                val buffer = CharArray(4096)
+                val text = StringBuilder()
+                while (true) {
+                    val n = reader.read(buffer)
+                    if (n < 0) break
+                    require(text.length + n <= 400_000) { "Файл настроек слишком большой" }
+                    text.append(buffer, 0, n)
+                }
+                text.toString()
+            }
             AxiomBackup.import(context, json)
         }.onSuccess {
             favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()

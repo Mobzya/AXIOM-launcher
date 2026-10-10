@@ -119,7 +119,9 @@ fun AxiomScreen(resumeVersion: Int) {
     }
 
     LaunchedEffect(resumeVersion, refresh) {
-        apps = withContext(Dispatchers.IO) { findLaunchableApps(context) }
+        val latest = withContext(Dispatchers.IO) { AppCatalogCache.load(context) }
+        // Keeping the same snapshot avoids rebuilding the entire Atlas on resume.
+        if (apps != latest) apps = latest
     }
     LaunchedEffect(mode) {
         if (mode == AxiomMode.SEARCH) {
@@ -144,6 +146,7 @@ fun AxiomScreen(resumeVersion: Int) {
     fun openApp(app: InstalledApp) {
         try {
             dev.axiom.launcher.openApp(context, app)
+            AppRecents.record(context, app.packageName)
             close()
         } catch (_: Exception) {
             Toast.makeText(context, "Не удалось запустить ${app.label}", Toast.LENGTH_SHORT).show()
@@ -336,7 +339,11 @@ fun AxiomScreen(resumeVersion: Int) {
                     terminalInitial = ""
                     mode = AxiomMode.TERMINAL
                 },
-                onRefresh = { refresh++; close() },
+                onRefresh = {
+                    AppCatalogCache.invalidate()
+                    refresh++
+                    close()
+                },
                 onBack = ::close
             )
         }

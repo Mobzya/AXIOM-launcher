@@ -16,8 +16,14 @@ class TerminalCommandsTest {
     @Test fun cinematicEventCommands() {
         assertEquals(CosmicEventKind.SINGULARITY,
             (parseAxCommand("event blackhole") as AxCommand.Event).kind)
-        assertEquals(CosmicEventKind.NEURAL,
-            (parseAxCommand("event neural") as AxCommand.Event).kind)
+        assertEquals(MathKind.BACKPROP,
+            (parseAxCommand("event neural") as AxCommand.Model).kind)
+        assertEquals(CosmicEventKind.NOVA,
+            (parseAxCommand("event nova") as AxCommand.Event).kind)
+        assertEquals(MathKind.ATTENTION,
+            (parseAxCommand("model attention") as AxCommand.Model).kind)
+        assertTrue(parseAxCommand("models") is AxCommand.Output)
+        assertTrue(parseAxCommand("timeline") is AxCommand.Timeline)
         assertTrue(parseAxCommand("event unknown") is AxCommand.Output)
         assertEquals(.5f, (parseAxCommand("depth 0.5") as AxCommand.Depth).delta)
     }
@@ -40,6 +46,31 @@ class UniverseTest {
         repeat(300) { world.step(1f / 60f) }
         assertTrue(world.bodies.size in 1..11)
         assertTrue(world.bodies.all { it.x in .07f.. .93f && it.y in .09f.. .88f })
+    }
+    @Test fun mathCatalogHasSixteenThreeStageStories() {
+        assertEquals(16, MathKind.entries.size)
+        assertTrue(MathKind.entries.all { mathSteps(it).size == 3 })
+    }
+    @Test fun foregroundGravityMakesMeasurableDifference() {
+        val weak = CosmicWorld(21)
+        val strong = CosmicWorld(21)
+        weak.updateGravity(.25f)
+        strong.updateGravity(2.2f)
+        repeat(400) {
+            weak.step(1f / 60f)
+            strong.step(1f / 60f)
+        }
+        val dx = kotlin.math.abs(
+            weak.bodies.first().x - strong.bodies.first().x)
+        val dy = kotlin.math.abs(
+            weak.bodies.first().y - strong.bodies.first().y)
+        assertTrue(dx + dy > .0001f)
+    }
+    @Test fun mathematicsAppearsIndependentlyOfCinematicEvents() {
+        val world = CosmicWorld(7)
+        repeat(900) { world.step(1f / 60f) }
+        assertTrue(world.mathMoment.active)
+        assertEquals(CosmicEventKind.QUIET, world.episode.kind)
     }
     @Test fun bodiesArriveFromCorners() {
         val world = CosmicWorld(19)

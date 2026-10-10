@@ -213,7 +213,7 @@ internal fun AxiomTerminal(
 
     Column(
         Modifier.fillMaxSize()
-            .background(Color(0xFC050505))
+            .background(AX_BLACK)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
             .padding(horizontal = 24.dp)
@@ -241,7 +241,7 @@ internal fun AxiomTerminal(
         ) {
             itemsIndexed(lines) { index, line ->
                 Text(line.value,
-                    color = if (line.command) AX_WHITE else Color(0xFFBBBBBB),
+                    color = if (line.command) AX_WHITE else AX_GRAY,
                     fontSize = 12.sp, lineHeight = 20.sp,
                     fontFamily = FontFamily.Monospace)
             }
@@ -252,7 +252,7 @@ internal fun AxiomTerminal(
         ) {
             listOf("help", "models", "physics", "spawn").forEach { c ->
                 Text(
-                    c, color = Color(0xFFAFAFAF), fontSize = 11.sp,
+                    c, color = AX_GRAY, fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.clickable { execute(c) }
                         .padding(horizontal = 6.dp, vertical = 9.dp)
@@ -261,8 +261,8 @@ internal fun AxiomTerminal(
         }
         Row(
             Modifier.fillMaxWidth()
-                .border(1.dp, Color(0xFF555555), RoundedCornerShape(18.dp))
-                .background(Color(0xFF161616), RoundedCornerShape(18.dp))
+                .border(1.dp, AX_BORDER, RoundedCornerShape(18.dp))
+                .background(AX_SURFACE, RoundedCornerShape(18.dp))
                 .padding(horizontal = 17.dp, vertical = 17.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

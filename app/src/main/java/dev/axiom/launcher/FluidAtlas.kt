@@ -126,7 +126,7 @@ internal fun AxiomAtlas(
     }
 
     var details by remember { mutableStateOf<InstalledApp?>(null) }
-    Column(Modifier.fillMaxSize().background(Color(0xFF050505))
+    Column(Modifier.fillMaxSize().background(AX_BLACK)
         .padding(start = 24.dp, end = 11.dp, top = 15.dp)) {
         var headerDrag by remember { mutableStateOf(0f) }
         Row(
@@ -163,8 +163,8 @@ internal fun AxiomAtlas(
         BasicTextField(
             value = query, onValueChange = onQuery, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(end = 11.dp)
-                .clip(searchShape).background(Color(0xFF171717))
-                .border(1.dp, Color(0xFF383838), searchShape)
+                .clip(searchShape).background(AX_SURFACE)
+                .border(1.dp, AX_BORDER, searchShape)
                 .padding(horizontal = 16.dp, vertical = 15.dp),
             cursorBrush = SolidColor(AX_WHITE),
             textStyle = TextStyle(color = AX_WHITE, fontSize = 15.sp),
@@ -190,9 +190,9 @@ internal fun AxiomAtlas(
                     color = if (selected) AX_WHITE else AX_GRAY,
                     fontSize = 11.sp,
                     modifier = Modifier.clip(chip)
-                        .background(if (selected) Color(0xFF353535) else Color(0xFF141414))
+                        .background(if (selected) AX_TILE else AX_SURFACE)
                         .border(1.dp,
-                            if (selected) Color(0xFF666666) else Color(0xFF292929), chip)
+                            if (selected) AX_DARK else AX_DIVIDER, chip)
                         .clickable { onFilter(name) }
                         .padding(horizontal = 13.dp, vertical = 10.dp))
             }
@@ -242,7 +242,7 @@ internal fun AxiomAtlas(
     details?.let { app ->
         AlertDialog(
             onDismissRequest = { details = null },
-            containerColor = Color(0xFF161616),
+            containerColor = AX_SURFACE,
             title = { Text(app.label, color = AX_WHITE) },
             text = {
                 Column {
@@ -296,8 +296,10 @@ private fun IndexedAppRow(
     onStar: (String) -> Unit,
     onDetails: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().height(70.dp),
+    Row(Modifier.fillMaxWidth().height(72.dp),
         verticalAlignment = Alignment.CenterVertically) {
+        AxiomAppIcon(app, 39.dp)
+        Spacer(Modifier.width(13.dp))
         Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis,
             color = AX_WHITE, fontSize = 24.sp, fontWeight = FontWeight.Light,
             modifier = Modifier.weight(1f)

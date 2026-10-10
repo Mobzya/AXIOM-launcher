@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -19,11 +20,16 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.BLACK
         window.navigationBarColor = android.graphics.Color.BLACK
         setContent {
+            val colors = AxiomColors.palette
             MaterialTheme(
-                colorScheme = darkColorScheme(
-                    background = Color.Black, surface = Color.Black,
-                    onBackground = Color.White, onSurface = Color.White,
-                    primary = Color.White, onPrimary = Color.Black
+                colorScheme = if (colors.light) lightColorScheme(
+                    background = colors.background, surface = colors.surface,
+                    onBackground = colors.ink, onSurface = colors.ink,
+                    primary = colors.ink, onPrimary = colors.background
+                ) else darkColorScheme(
+                    background = colors.background, surface = colors.surface,
+                    onBackground = colors.ink, onSurface = colors.ink,
+                    primary = colors.ink, onPrimary = colors.background
                 )
             ) { AxiomScreen(resumeVersion, frameMeter) }
         }

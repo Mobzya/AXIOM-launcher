@@ -18,7 +18,9 @@ import kotlin.math.sin
 internal enum class MathKind {
     GRADIENT, BACKPROP, ATTENTION, MATRIX, FOURIER, BAYES, SIGMOID,
     CONVOLUTION, ENTROPY, EIGEN, QUADRATIC, MANDELBROT, PCA, RELU,
-    DIFFUSION, RESIDUAL
+    DIFFUSION, RESIDUAL, LIFE, JULIA, LORENZ, PENDULUM,
+    MARKOV, BEZIER, GAUSSIAN, LAPLACIAN, TRANSFORMER, SVD,
+    SOFTMAX, OPTICAL_FLOW, REACTION_DIFFUSION, L_SYSTEM
 }
 
 internal data class MathMoment(
@@ -98,7 +100,35 @@ private val formulaAtlas = mapOf(
     MathKind.DIFFUSION to EquationSteps("DIFFUSION FORWARD",
         listOf("xₜ = √ᾱₜ x₀ + √(1-ᾱₜ)ε", "ε ~ N(0, I)", "xₜ = signal + noise")),
     MathKind.RESIDUAL to EquationSteps("RESIDUAL NETWORK",
-        listOf("h = F(x) + x", "F(x) = W₂σ(W₁x)", "h = W₂σ(W₁x) + x"))
+        listOf("h = F(x) + x", "F(x) = W₂σ(W₁x)", "h = W₂σ(W₁x) + x")),
+    MathKind.LIFE to EquationSteps("CELLULAR AUTOMATON",
+        listOf("N = Σ neighbors", "B3 / S23", "xₜ₊₁ = rule(xₜ)")),
+    MathKind.JULIA to EquationSteps("JULIA FRACTAL",
+        listOf("zₙ₊₁ = zₙ² + c", "c = -0.7 + 0.2i", "|z| > 2 ⇒ escape")),
+    MathKind.LORENZ to EquationSteps("LORENZ SYSTEM",
+        listOf("dx/dt = σ(y-x)", "dy/dt = x(ρ-z)-y", "dz/dt = xy-βz")),
+    MathKind.PENDULUM to EquationSteps("PENDULUM",
+        listOf("τ = -mgL sin θ", "I θ'' = τ", "θ'' = -(g/L)sin θ")),
+    MathKind.MARKOV to EquationSteps("MARKOV CHAIN",
+        listOf("pₜ₊₁ = pₜ P", "Pᵢⱼ ≥ 0; Σⱼ Pᵢⱼ=1", "p₂ = p₀ P²")),
+    MathKind.BEZIER to EquationSteps("BEZIER CURVE",
+        listOf("B(t)=(1-t)P₀+tP₁", "Q₀=(1-t)P₀+tP₁", "B₂=(1-t)Q₀+tQ₁")),
+    MathKind.GAUSSIAN to EquationSteps("NORMAL DISTRIBUTION",
+        listOf("Z=(X-μ)/σ", "X ~ N(μ, σ²)", "E[X]=μ, Var[X]=σ²")),
+    MathKind.LAPLACIAN to EquationSteps("GRAPH LAPLACIAN",
+        listOf("L = D - A", "L·1 = 0", "xᵀLx = Σedges (xᵢ-xⱼ)²")),
+    MathKind.TRANSFORMER to EquationSteps("TRANSFORMER BLOCK",
+        listOf("H₁ = X + Attention(X)", "H₂ = LayerNorm(H₁)", "Y = H₂ + FFN(H₂)")),
+    MathKind.SVD to EquationSteps("SINGULAR VALUE DECOMP",
+        listOf("A = UΣVᵀ", "AᵀA = VΣ²Vᵀ", "rank(A)=#{σᵢ>0}")),
+    MathKind.SOFTMAX to EquationSteps("NORMALIZED EXPONENTIAL",
+        listOf("sᵢ=e^(zᵢ)/Σⱼe^(zⱼ)", "z=(0,0)", "s=(½,½)")),
+    MathKind.OPTICAL_FLOW to EquationSteps("OPTICAL FLOW",
+        listOf("I(x,y,t)=const", "Iₓu + Iᵧv + Iₜ=0", "∇I·v = -Iₜ")),
+    MathKind.REACTION_DIFFUSION to EquationSteps("TURING PATTERNS",
+        listOf("∂u/∂t=Dᵤ∇²u + f", "∂v/∂t=Dᵥ∇²v + g", "diffusion + reaction")),
+    MathKind.L_SYSTEM to EquationSteps("L-SYSTEM",
+        listOf("axiom: F", "F → F[+F]F[-F]", "n ← n + 1"))
 )
 
 internal fun mathSteps(kind: MathKind): List<String> = formulaAtlas.getValue(kind).frames

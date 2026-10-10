@@ -89,14 +89,23 @@ internal fun AxiomAtlas(
     onOpen: (InstalledApp) -> Unit,
     onStar: (String) -> Unit
 ) {
-    val filtered = remember(apps, query, favorites, filter) {
+    val context = LocalContext.current
+    val recentPackages = remember(apps) { AppRecents.list(context) }
+    val filtered = remember(apps, query, favorites, filter, recentPackages) {
         val found = if (query.isBlank()) apps else searchApps(apps, query, favorites)
-        when (filter) {
-            "Избранное" -> found.filter { it.packageName in favorites }
-            "Системные" -> found.filter { it.system }
-            "Сторонние" -> found.filterNot { it.system }
-            else -> found
-        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        if (filter == "Недавние") {
+            val rank = recentPackages.withIndex().associate { it.value to it.index }
+            found.filter { it.packageName in rank }
+                .sortedBy { rank[it.packageName] ?: Int.MAX_VALUE }
+        } else {
+            val chosen = when (filter) {
+                "Избранное" -> found.filter { it.packageName in favorites }
+                "Системные" -> found.filter { it.system }
+                "Сторонние" -> found.filterNot { it.system }
+                else -> found
+            }
+            chosen.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        }
     }
     val entries = remember(filtered) { makeAtlasEntries(filtered) }
     val positions = remember(entries) {
@@ -111,8 +120,6 @@ internal fun AxiomAtlas(
     }
 
     var details by remember { mutableStateOf<InstalledApp?>(null) }
-    val context = LocalContext.current
-
     Column(Modifier.fillMaxSize().background(Color(0xFF050505))
         .padding(start = 24.dp, end = 11.dp, top = 15.dp)) {
         var headerDrag by remember { mutableStateOf(0f) }
@@ -164,7 +171,7 @@ internal fun AxiomAtlas(
             contentPadding = PaddingValues(end = 11.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(listOf("Все", "Избранное", "Системные", "Сторонние"),
+            items(listOf("Все", "Недавние", "Избранное", "Системные", "Сторонние"),
                 key = { it }, contentType = { "filter" }) { name ->
                 val selected = filter == name
                 val chip = RoundedCornerShape(11.dp)
@@ -210,7 +217,7 @@ internal fun AxiomAtlas(
                         }
                     }
                 }
-                if (letters.isNotEmpty()) {
+                if (letters.isNotEmpty() && filter != "Недавние") {
                     FluidAlphabetRail(
                         letters = letters, positions = positions,
                         entries = entries, state = listState,

@@ -402,6 +402,8 @@ internal fun AxiomSettings(
     gravity: Float,
     onGravity: (Float) -> Unit,
     onResetUniverse: () -> Unit,
+    onSurprise: () -> Unit,
+    currentEpisode: String,
     onTerminal: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit
@@ -421,8 +423,8 @@ internal fun AxiomSettings(
         Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
             fontWeight = FontWeight.Light)
         Spacer(Modifier.height(8.dp))
-        Text("Все объекты движутся в одной физической среде.\n" +
-            "Сила притяжения влияет на их ускорение и траектории.",
+        Text("Глубокое пространство со случайными событиями:\n" +
+            "кометы, математические волны, ML-структуры и редкие аномалии.",
             fontSize = 13.sp, color = AX_GRAY, lineHeight = 20.sp)
         Spacer(Modifier.height(18.dp))
         Slider(
@@ -436,7 +438,20 @@ internal fun AxiomSettings(
         )
         Text("G = ${"%.2f".format(java.util.Locale.US, gravity)}",
             fontFamily = FontFamily.Monospace, color = AX_GRAY, fontSize = 12.sp)
-        Spacer(Modifier.height(35.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("Событие: ${currentEpisode.lowercase().replace('_', ' ')}",
+            color = AX_GRAY, fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace)
+        Spacer(Modifier.height(13.dp))
+        Text("✧  Случайное космическое событие",
+            color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onSurprise).padding(vertical = 15.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("Прикосновение создаёт волну, двойное нажатие — комету,\n" +
+            "удерживание вызывает событие, горизонтальный жест меняет глубину.",
+            color = AX_GRAY, fontSize = 12.sp, lineHeight = 19.sp)
+        Spacer(Modifier.height(20.dp))
         Text("ИНСТРУМЕНТЫ", color = AX_DARK, fontSize = 10.sp,
             letterSpacing = 3.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(17.dp))
@@ -456,7 +471,7 @@ internal fun AxiomSettings(
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onRefresh).padding(vertical = 19.dp))
         Spacer(Modifier.weight(1f))
-        Text("AXIOM 0.4  /  MASS · MOTION · INTENT", color = AX_DARK,
+        Text("AXIOM 0.5  /  DEPTH · CHAOS · CINEMA", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

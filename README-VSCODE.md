@@ -54,3 +54,11 @@ This prototype still requires compilation and testing on a real device. Debug AP
 - In Settings: gravity slider, console access, universe reset.
 - Terminal: `help`, `ls`, `find firefox`, `calc 2*(3+4)`, `gravity 1.4`, `spawn`, `note test`.
 - Verify fluidity and keyboard/resizing on actual Redmi. Debug APKs may require uninstalling AXIOM only due to signing mismatch.
+
+## AXIOM 0.5 test checklist
+- Let idle home sit for 60–90 seconds: objects should enter from offscreen corners and occasional episodes appear.
+- Double-tap empty space: one corner object; tap for expanding ripple; long press for scene event.
+- Drag sideways for parallax. Swipe down for Atlas; the touch detectors should not conflict.
+- Console `events`, `event blackhole`, `event neural`, `depth 0.5`, `physics`, `spawn`, `gravity 1.5`.
+- Confirm no results until search input, glowing search opening and alphabet rail.
+- Measure performance using Android Studio profiler or `adb shell dumpsys gfxinfo dev.axiom.launcher framestats`.

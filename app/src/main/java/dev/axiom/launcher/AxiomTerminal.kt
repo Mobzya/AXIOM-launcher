@@ -63,6 +63,10 @@ internal fun AxiomTerminal(
     apps: List<InstalledApp>,
     gravity: Float,
     bodyCount: Int,
+    currentEpisode: String,
+    onEvent: (CosmicEventKind) -> Unit,
+    onSurprise: () -> Unit,
+    onDepth: (Float) -> Unit,
     onGravity: (Float) -> Unit,
     onReset: () -> Unit,
     onSpawn: () -> Unit,
@@ -105,6 +109,14 @@ internal fun AxiomTerminal(
                 append(if (matches.isEmpty()) "Совпадений нет"
                     else matches.joinToString("\n") { " ↳ ${it.label}" })
             }
+            is AxCommand.Event -> {
+                if (parsed.kind == null) onSurprise() else onEvent(parsed.kind)
+                append("Сценарий: ${parsed.kind?.name ?: "случайный"}  ✓")
+            }
+            is AxCommand.Depth -> {
+                onDepth(parsed.delta)
+                append("Сдвиг перспективы: ${parsed.delta} ✓")
+            }
             is AxCommand.Gravity -> {
                 onGravity(parsed.value)
                 append("G = ${"%.2f".format(Locale.US, parsed.value)}  ✓")
@@ -132,7 +144,8 @@ internal fun AxiomTerminal(
             AxCommand.Physics -> append(
                 "UNIVERSE / LIVE\nТела: $bodyCount\nГравитация: " +
                 "${"%.2f".format(Locale.US, gravity)}\n" +
-                "Интеграция: 60 Гц · softening + collisions"
+                "Событие: $currentEpisode\\n" +
+                "Глубинные слои · 60 Гц · мягкая гравитация"
             )
             AxCommand.Spawn -> {
                 onSpawn()
@@ -220,7 +233,7 @@ internal fun AxiomTerminal(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("help", "physics", "apps", "spawn").forEach { c ->
+            listOf("help", "events", "physics", "spawn").forEach { c ->
                 Text(
                     c, color = Color(0xFFAFAFAF), fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,

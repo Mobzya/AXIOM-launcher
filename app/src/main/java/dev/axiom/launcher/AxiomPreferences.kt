@@ -31,6 +31,7 @@ internal object AxiomBackup {
             put("format", "axiom-config")
             put("version", 1)
             put("gravity", prefs.getFloat("gravity", 1f).toDouble())
+            put("themeMode", prefs.getString("theme_mode", "DARK"))
             put("favorites", JSONArray(
                 prefs.getStringSet("favorites", emptySet())?.sorted() ?: emptyList<String>()
             ))
@@ -62,11 +63,13 @@ internal object AxiomBackup {
         val favorites = packages("favorites")
         val work = packages("work")
         val tools = packages("tools")
+        val theme = modeFromPreference(json.optString("themeMode", "DARK"))
         val g = json.optDouble("gravity", 1.0).toFloat()
         require(g.isFinite()) { "Некорректная гравитация" }
         context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE)
             .edit()
             .putFloat("gravity", g.coerceIn(.25f, 2.2f))
+            .putString("theme_mode", theme.name)
             .putStringSet("favorites", favorites)
             .putStringSet("space_work", work)
             .putStringSet("space_tools", tools)

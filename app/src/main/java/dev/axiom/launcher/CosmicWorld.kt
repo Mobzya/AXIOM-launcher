@@ -332,12 +332,7 @@ internal class CosmicWorld(seed: Int = 42) {
             val b = current[j]
             val dx = b.x - a.x
             val dy = b.y - a.y
-            val attraction = mutualGravity(a, b, gravity)
-            val repulsion = contactRepulsion(a, b)
-            ax[i] += attraction.first.x + repulsion.first.x
-            ay[i] += attraction.first.y + repulsion.first.y
-            ax[j] += attraction.second.x + repulsion.second.x
-            ay[j] += attraction.second.y + repulsion.second.y
+            accumulateForces(a, b, gravity, i, j, ax, ay)
         }
 
         // Singularity bends trajectories only during the exceptional episode.

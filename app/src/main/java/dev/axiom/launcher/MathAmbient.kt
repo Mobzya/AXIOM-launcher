@@ -127,12 +127,12 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                 val y = py + scale * (.64f - .53f * (2f * u - 1f) * (2f * u - 1f))
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, Color.White.copy(alpha = .22f * a),
+            drawPath(path, AX_WHITE.copy(alpha = .22f * a),
                 style = Stroke(.8.dp.toPx()))
             val step = (.13f + .72f * (1f - kotlin.math.exp(-moment.age * .25f)))
             val gx = px + scale * 2f * step
             val gy = py + scale * (.64f - .53f * (2f * step - 1f) * (2f * step - 1f))
-            drawCircle(Color.White.copy(alpha = a), 2.6.dp.toPx(), Offset(gx, gy))
+            drawCircle(AX_WHITE.copy(alpha = a), 2.6.dp.toPx(), Offset(gx, gy))
         }
         1 -> { // neural graph with flowing signals
             val pts = listOf(Offset(0f,.1f),Offset(0f,.7f),
@@ -143,13 +143,13 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
             edges.forEachIndexed { i,(from,to) ->
                 val p = Offset(px,py) + pts[from] * scale
                 val q = Offset(px,py) + pts[to] * scale
-                drawLine(Color.White.copy(alpha = .2f * a), p,q,.75.dp.toPx())
+                drawLine(AX_WHITE.copy(alpha = .2f * a), p,q,.75.dp.toPx())
                 val progress = (moment.age * .13f + i * .19f) % 1f
-                drawCircle(Color.White.copy(alpha = .75f * a),
+                drawCircle(AX_WHITE.copy(alpha = .75f * a),
                     1.6.dp.toPx(), p + (q-p) * progress)
             }
             pts.forEach { p ->
-                drawCircle(Color.White.copy(alpha = .65f * a), 2.dp.toPx(),
+                drawCircle(AX_WHITE.copy(alpha = .65f * a), 2.dp.toPx(),
                     Offset(px,py)+p*scale)
             }
         }
@@ -157,7 +157,7 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
             for (i in 0..3) for (j in 0..3) {
                 val phase = (moment.age * .4f + (i+j)*.15f)
                 val brightness = .2f + .35f * (.5f + .5f * sin(phase))
-                drawCircle(Color.White.copy(alpha = a * brightness),
+                drawCircle(AX_WHITE.copy(alpha = a * brightness),
                     3.dp.toPx(), Offset(px + (i * .36f + .2f)*scale,
                         py + (j * .36f + .08f)*scale))
             }
@@ -166,13 +166,13 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
             for (i in 0..2) for(j in 0..2) {
                 val vx = px + scale * (.2f + i*.45f)
                 val vy = py + scale * (.15f + j*.40f)
-                drawCircle(Color.White.copy(alpha = a * (.45f + .35f*
+                drawCircle(AX_WHITE.copy(alpha = a * (.45f + .35f*
                     sin(wave + i + j).coerceIn(0f,1f))),
                     2.6.dp.toPx(), Offset(vx,vy))
             }
-            drawLine(Color.White.copy(alpha = .25f*a),
+            drawLine(AX_WHITE.copy(alpha = .25f*a),
                 Offset(px,py),Offset(px,py+scale),.7.dp.toPx())
-            drawLine(Color.White.copy(alpha = .25f*a),
+            drawLine(AX_WHITE.copy(alpha = .25f*a),
                 Offset(px+scale,py),Offset(px+scale,py+scale),.7.dp.toPx())
         }
         4 -> { // interference and Fourier waves
@@ -184,18 +184,18 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                         sin(u * k * 6.28f + wave)*scale*.15f/k)
                     if(i==0)path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)
                 }
-                drawPath(path,Color.White.copy(alpha = a * (.30f/k)),
+                drawPath(path,AX_WHITE.copy(alpha = a * (.30f/k)),
                     style = Stroke(.7.dp.toPx()))
             }
         }
         5 -> { // concentric inference probability rings
             for(k in 1..4) {
                 val r=scale*(.16f*k+.08f)
-                drawCircle(Color.White.copy(alpha = .09f*a + .18f*a/k),
+                drawCircle(AX_WHITE.copy(alpha = .09f*a + .18f*a/k),
                     r,center,style=Stroke(.75.dp.toPx()))
             }
             val phi=wave*1.2f
-            drawCircle(Color.White.copy(alpha = .75f*a),2.dp.toPx(),
+            drawCircle(AX_WHITE.copy(alpha = .75f*a),2.dp.toPx(),
                 center+Offset(cos(phi)*scale*.65f,sin(phi)*scale*.65f))
         }
         6 -> { // sigmoid / activation curve
@@ -206,17 +206,17 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                 val p=Offset(px+u*scale*2f,py+scale*(.85f-y*.7f))
                 if(i==0)path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)
             }
-            drawPath(path,Color.White.copy(alpha=.35f*a),style=Stroke(.9.dp.toPx()))
+            drawPath(path,AX_WHITE.copy(alpha=.35f*a),style=Stroke(.9.dp.toPx()))
         }
         else -> { // branching eigen / PCA / polynomial axes
             val angle=moment.age*.16f
             val r=scale*.72f
             for(k in 0..3){
                 val phi=angle+k*PI.toFloat()*.5f
-                drawLine(Color.White.copy(alpha=.24f*a),center,
+                drawLine(AX_WHITE.copy(alpha=.24f*a),center,
                     center+Offset(cos(phi)*r,sin(phi)*r),.8.dp.toPx())
             }
-            drawCircle(Color.White.copy(alpha=.68f*a),2.4.dp.toPx(),center)
+            drawCircle(AX_WHITE.copy(alpha=.68f*a),2.4.dp.toPx(),center)
         }
     }
 
@@ -270,14 +270,14 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                 9.dp.toPx()*(1f-reducedMotion),baseline,paint)
         }
         if (blend in .25f.. .85f && fragments.removed.isNotBlank()) {
-            drawLine(Color.White.copy(alpha = a*.18f),
+            drawLine(AX_WHITE.copy(alpha = a*.18f),
                 Offset(baseX+prefixWidth,baseline-4.dp.toPx()),
                 Offset(baseX+prefixWidth+deletedWidth*(1f-blend),
                     baseline-4.dp.toPx()), .65.dp.toPx())
         }
     }
     // Quiet underline indicates a running symbolic transformation.
-    drawLine(Color.White.copy(alpha = a*.23f),
+    drawLine(AX_WHITE.copy(alpha = a*.23f),
         Offset(baseX,baseY+23.dp.toPx()),
         Offset(baseX + scale*2f * normalized,baseY+23.dp.toPx()),
         .7.dp.toPx())

@@ -79,7 +79,8 @@ internal class ScienceLab(seed: Int = 19) {
 
     fun step(dt: Float) {
         val h = dt.coerceIn(0f, .08f)
-        time += h
+        if(kind !in listOf(LabKind.JULIA,LabKind.LIFE,LabKind.REACTION,
+                LabKind.ATTENTION,LabKind.PCA)) time += h
         accumulator += h
         if (kind == LabKind.LIFE && accumulator >= .12f) {
             cells = lifeStep(cells, columns, rows)

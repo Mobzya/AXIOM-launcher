@@ -168,6 +168,7 @@ fun AxiomScreen(resumeVersion: Int) {
             }
     ) {
         val searching = mode == AxiomMode.SEARCH
+        val suggestionLimit = (maxHeight * .44f).coerceAtMost(350.dp)
         val restTop = (maxHeight - 57.dp) / 2f
         val activeTop = (maxHeight * .115f).coerceAtLeast(25.dp)
         val dockTop by animateDpAsState(
@@ -222,7 +223,7 @@ fun AxiomScreen(resumeVersion: Int) {
                     SearchSuggestions(
                         results = choices,
                         favorites = favorites,
-                        maxHeight = (maxHeight * .44f).coerceAtMost(350.dp),
+                        maxHeight = suggestionLimit,
                         showHint = query.isBlank(),
                         onOpen = ::openApp,
                         onStar = ::star,
@@ -369,7 +370,7 @@ private fun CentralSearchDock(
                 ),
                 cursorBrush = SolidColor(AX_WHITE),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = onSubmit),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
                 decorationBox = { content ->
                     Box {
                         if (query.isEmpty()) {

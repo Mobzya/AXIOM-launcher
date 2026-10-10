@@ -28,11 +28,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Test search logic and assemble debug APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Unit tests and both APK builds
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
           name: AXIOM-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload optimized signed performance APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXIOM-optimized-test-APK
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

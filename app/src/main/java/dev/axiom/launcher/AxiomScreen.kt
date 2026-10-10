@@ -18,6 +18,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -101,7 +102,7 @@ internal val AX_TILE get() = AxiomColors.palette.tile
 internal val AX_DIVIDER get() = AxiomColors.palette.divider
 internal val AX_HINT get() = AxiomColors.palette.hint
 
-internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL }
+internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL, LAB }
 
 @Composable
 internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
@@ -140,6 +141,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
     val world = remember { CosmicWorld() }
+    val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         world.updateGravity(prefs.getFloat("gravity", 1f))
@@ -267,8 +269,46 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                                 point.y / size.height.toFloat().coerceAtLeast(1f)
                             )
                         },
-                        onDoubleTap = { world.spawnFromCorner() },
-                        onLongPress = { world.triggerRandomEvent() }
+                        onDoubleTap = { point ->
+                            val x = point.x / size.width.toFloat().coerceAtLeast(1f)
+                            val y = point.y / size.height.toFloat().coerceAtLeast(1f)
+                            val math = world.mathMoment
+                            if (math.active && x in (math.x-.06f)..(math.x+.43f) &&
+                                y in (math.y-.06f)..(math.y+.34f)) {
+                                lab.select(when(math.kind) {
+                                    MathKind.BACKPROP, MathKind.ATTENTION,
+                                    MathKind.TRANSFORMER, MathKind.SOFTMAX ->
+                                        LabKind.NEURAL
+                                    MathKind.LIFE, MathKind.L_SYSTEM -> LabKind.LIFE
+                                    MathKind.JULIA, MathKind.MANDELBROT -> LabKind.JULIA
+                                    MathKind.LORENZ -> LabKind.LORENZ
+                                    MathKind.PENDULUM -> LabKind.PENDULUM
+                                    MathKind.PCA -> LabKind.PCA
+                                    MathKind.FOURIER -> LabKind.FOURIER
+                                    else -> LabKind.WAVE
+                                })
+                                mode = AxiomMode.LAB
+                            } else world.spawnFromCorner()
+                        }
+                    )
+                }
+            }
+            .pointerInput(world, mode) {
+                if (mode == AxiomMode.HOME) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { pos ->
+                            world.startBrush(
+                                pos.x / size.width.toFloat().coerceAtLeast(1f),
+                                pos.y / size.height.toFloat().coerceAtLeast(1f))
+                        },
+                        onDrag = { change, _ ->
+                            world.moveBrush(
+                                change.position.x / size.width.toFloat().coerceAtLeast(1f),
+                                change.position.y / size.height.toFloat().coerceAtLeast(1f))
+                            change.consume()
+                        },
+                        onDragEnd = { world.endBrush() },
+                        onDragCancel = { world.endBrush() }
                     )
                 }
             }
@@ -472,7 +512,14 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                         ))
                     }
                 },
-                onMath = { world.summonMath(); close() },
+                onMath = {
+                    lab.select(LabKind.WAVE)
+                    mode = AxiomMode.LAB
+                },
+                timeScale = world.timeScale,
+                onTimeScale = { world.setTimeScale(it) },
+                onBinary = { world.spawnBinary() },
+                onRewind = { world.rewind(3) },
                 onExport = { exportSettings.launch("axiom-settings.json") },
                 onImport = { importSettings.launch(arrayOf("application/json",
                     "text/plain")) },
@@ -493,6 +540,9 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 onBack = ::close
             )
         }
+        if (mode == AxiomMode.LAB) {
+            ScienceLabScreen(lab = lab, onBack = ::close)
+        }
         if (mode == AxiomMode.TERMINAL) {
             AxiomTerminal(
                 initial = terminalInitial,
@@ -502,6 +552,20 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 currentEpisode = world.episode.kind.name,
                 eventHistory = world.eventHistory,
                 onModel = { world.summonMath(it) },
+                onLab = { choice ->
+                    lab.select(choice ?: LabKind.WAVE)
+                    keyboard?.hide()
+                    focus.clearFocus()
+                    mode = AxiomMode.LAB
+                },
+                onTimeScale = { world.setTimeScale(it) },
+                onRewind = { world.rewind(it) },
+                onSpawnBinary = { world.spawnBinary() },
+                onThemeMode = { next ->
+                    themeMode = next
+                    AxiomColors.apply(next)
+                    prefs.edit().putString("theme_mode", next.name).apply()
+                },
                 onProfile = { meter.toggle() },
                 onEvent = { world.trigger(it) },
                 onSurprise = { world.triggerRandomEvent() },

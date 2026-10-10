@@ -43,6 +43,28 @@ private data class EquationSteps(
     val frames: List<String>
 )
 
+/** Shared glyphs are preserved while changing terms are removed or inserted. */
+internal data class EquationMorph(
+    val prefix: String, val removed: String,
+    val inserted: String, val suffix: String
+)
+
+internal fun equationMorph(from: String, to: String): EquationMorph {
+    val prefixLength = from.zip(to).takeWhile { it.first == it.second }.size
+    val shorter = minOf(from.length, to.length)
+    var suffixLength = 0
+    while (suffixLength < shorter - prefixLength &&
+        from[from.lastIndex - suffixLength] == to[to.lastIndex - suffixLength]) {
+        suffixLength++
+    }
+    return EquationMorph(
+        prefix = from.take(prefixLength),
+        removed = from.substring(prefixLength, from.length - suffixLength),
+        inserted = to.substring(prefixLength, to.length - suffixLength),
+        suffix = if (suffixLength == 0) "" else from.takeLast(suffixLength)
+    )
+}
+
 /** Curated, mathematically consistent steps, not arbitrary symbolic claims. */
 private val formulaAtlas = mapOf(
     MathKind.GRADIENT to EquationSteps("GRADIENT DESCENT",
@@ -211,13 +233,41 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     drawIntoCanvas { it.nativeCanvas.drawText(
         lesson.caption,baseX,baseY,paint) }
     paint.textSize = 11.sp.toPx()
-    paint.alpha = (a*(1f-blend)*255f).toInt().coerceIn(0,255)
-    drawIntoCanvas { it.nativeCanvas.drawText(
-        lesson.frames[first],baseX,baseY+17.dp.toPx(),paint) }
-    if (next != first && blend > .001f) {
-        paint.alpha = (a*blend*255f).toInt().coerceIn(0,255)
+    val baseline = baseY + 17.dp.toPx()
+    val oldEquation = lesson.frames[first]
+    val newEquation = lesson.frames[next]
+    if (first == next || blend <= .001f) {
+        paint.alpha = (a*255f).toInt().coerceIn(0,255)
         drawIntoCanvas { it.nativeCanvas.drawText(
-            lesson.frames[next],baseX,baseY+17.dp.toPx(),paint) }
+            oldEquation,baseX,baseline,paint) }
+    } else {
+        val fragments = equationMorph(oldEquation, newEquation)
+        val prefixWidth = paint.measureText(fragments.prefix)
+        val deletedWidth = paint.measureText(fragments.removed)
+        val insertedWidth = paint.measureText(fragments.inserted)
+        val reducedMotion = blend * blend * (3f - 2f * blend)
+        // Unchanged symbols remain stable; outgoing terms drift and fade;
+        // new terms settle onto the baseline. Shared suffix slides into place.
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            paint.alpha = (a*255f).toInt().coerceIn(0,255)
+            native.drawText(fragments.prefix,baseX,baseline,paint)
+            native.drawText(fragments.suffix,
+                baseX + prefixWidth + deletedWidth * (1f-reducedMotion) +
+                    insertedWidth * reducedMotion,baseline,paint)
+            paint.alpha = (a*(1f-reducedMotion)*255f).toInt().coerceIn(0,255)
+            native.drawText(fragments.removed,baseX+prefixWidth-
+                9.dp.toPx()*reducedMotion,baseline,paint)
+            paint.alpha = (a*reducedMotion*255f).toInt().coerceIn(0,255)
+            native.drawText(fragments.inserted,baseX+prefixWidth+
+                9.dp.toPx()*(1f-reducedMotion),baseline,paint)
+        }
+        if (blend in .25f.. .85f && fragments.removed.isNotBlank()) {
+            drawLine(Color.White.copy(alpha = a*.18f),
+                Offset(baseX+prefixWidth,baseline-4.dp.toPx()),
+                Offset(baseX+prefixWidth+deletedWidth*(1f-blend),
+                    baseline-4.dp.toPx()), .65.dp.toPx())
+        }
     }
     // Quiet underline indicates a running symbolic transformation.
     drawLine(Color.White.copy(alpha = a*.23f),

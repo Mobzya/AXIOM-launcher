@@ -13,7 +13,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Single cinematic world; scenarios are temporary events, not user-facing modes. */
-internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA }
+internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA, ENCOUNTER, FILAMENT, RADIATION, RING_WAVE, REACTION }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -87,6 +87,25 @@ internal class CosmicWorld(seed: Int = 42) {
     private var inspectAge = 0f
     private var pinnedFor = 0f
 
+    // Only world simulation time changes. The app picker/keyboard remain at full speed.
+    var timeScale by mutableStateOf(1f)
+        private set
+    var brushPoint by mutableStateOf<SpaceRipple?>(null)
+        private set
+    var brushMass by mutableStateOf(0f)
+        private set
+    private var brushStartX = 0f
+    private var brushStartY = 0f
+    private var brushPrevX = 0f
+    private var brushPrevY = 0f
+    private var brushGestureDistance = 0f
+    private var brushInitialBodyCount = 0
+    private val replayBuffer = ArrayDeque<List<CelestialBody>>(100)
+    private var replayTimer = 0f
+    private var cascadeBudget = 0
+    var lastEncounter by mutableStateOf("none")
+        private set
+
     private fun initialBodies(): List<CelestialBody> {
         // Deliberately no permanent massive object in the center.
         return listOf(
@@ -103,7 +122,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     fun spawnFromCorner(burst: Boolean = false) {
-        if (bodies.size >= 21) return
+        if (bodies.size >= 23) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -122,7 +141,7 @@ internal class CosmicWorld(seed: Int = 42) {
         val depth = .65f + random.nextFloat() * 2.6f
         val body = CelestialBody(
             id = idSequence++,
-            kind = if (burst) 1 else 1 + random.nextInt(12),
+            kind = if (burst) 1 else 1 + random.nextInt(22),
             mass = .30f + random.nextFloat() * 1.35f,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
@@ -162,12 +181,23 @@ internal class CosmicWorld(seed: Int = 42) {
                 CosmicEventKind.PULSAR -> 17f
                 CosmicEventKind.WORMHOLE -> 16f
                 CosmicEventKind.NEBULA -> 18f
+                CosmicEventKind.ENCOUNTER -> 14f
+                CosmicEventKind.FILAMENT -> 16f
+                CosmicEventKind.RADIATION -> 12f
+                CosmicEventKind.RING_WAVE -> 14f
+                CosmicEventKind.REACTION -> 11f
                 else -> 1f
             },
             x = .25f + random.nextFloat() * .5f,
             y = .20f + random.nextFloat() * .50f,
             serial = eventSerial
         )
+        if (kind == CosmicEventKind.ENCOUNTER) {
+            spawnBinary()
+        }
+        if (kind == CosmicEventKind.REACTION || kind == CosmicEventKind.RADIATION) {
+            cascadeBudget = 2
+        }
         if (kind == CosmicEventKind.METEORS) {
             repeat(3) { spawnFromCorner(burst = true) }
             lastBurstAt = elapsed
@@ -175,13 +205,18 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     /** Visual math/ML is now an independent ambient layer, not a cinematic event. */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(200)) {
-        in 0..49 -> CosmicEventKind.METEORS
-        in 50..83 -> CosmicEventKind.LENS
-        in 84..117 -> CosmicEventKind.NOVA
-        in 118..151 -> CosmicEventKind.PULSAR
-        in 152..176 -> CosmicEventKind.WORMHOLE
-        in 177..197 -> CosmicEventKind.NEBULA
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(300)) {
+        in 0..54 -> CosmicEventKind.METEORS
+        in 55..94 -> CosmicEventKind.LENS
+        in 95..131 -> CosmicEventKind.NOVA
+        in 132..164 -> CosmicEventKind.PULSAR
+        in 165..191 -> CosmicEventKind.WORMHOLE
+        in 192..218 -> CosmicEventKind.NEBULA
+        in 219..244 -> CosmicEventKind.ENCOUNTER
+        in 245..266 -> CosmicEventKind.FILAMENT
+        in 267..281 -> CosmicEventKind.RING_WAVE
+        in 282..291 -> CosmicEventKind.RADIATION
+        in 292..297 -> CosmicEventKind.REACTION
         else -> CosmicEventKind.SINGULARITY
     }
 
@@ -240,6 +275,107 @@ internal class CosmicWorld(seed: Int = 42) {
         }
     }
 
+    fun setTimeScale(next: Float) {
+        require(next.isFinite())
+        timeScale = when {
+            next <= .01f -> 0f
+            next <= .4f -> .25f
+            next <= .75f -> .5f
+            next <= 1.5f -> 1f
+            else -> 2f
+        }
+    }
+
+    fun startBrush(x: Float, y: Float) {
+        brushStartX = x.coerceIn(0f, 1f)
+        brushStartY = y.coerceIn(0f, 1f)
+        brushPrevX = brushStartX
+        brushPrevY = brushStartY
+        brushGestureDistance = 0f
+        brushInitialBodyCount = bodies.size
+        brushMass = 1.2f
+        brushPoint = SpaceRipple(brushStartX, brushStartY)
+    }
+
+    fun moveBrush(x: Float, y: Float) {
+        val px = x.coerceIn(0f, 1f)
+        val py = y.coerceIn(0f, 1f)
+        brushGestureDistance += hypot(px - brushPrevX, py - brushPrevY)
+        brushPrevX = px
+        brushPrevY = py
+        brushPoint = SpaceRipple(px, py)
+        brushMass = (brushMass + .008f).coerceAtMost(4f)
+    }
+
+    /** The release vector injects a new orbit candidate. Pure taps create a
+     * temporary gravity well instead; this is one unified long-press gesture.
+     */
+    fun endBrush() {
+        val point = brushPoint ?: return
+        if (brushGestureDistance > .065f && bodies.size < 23) {
+            val dx = point.x - brushStartX
+            val dy = point.y - brushStartY
+            val norm = max(hypot(dx, dy), .005f)
+            val speed = (norm * .65f).coerceIn(.04f, .24f)
+            val nearby = bodies.minByOrNull {
+                hypot(it.x - point.x, it.y - point.y)
+            }
+            // Tangential injection around an existing heavy body when nearby.
+            val tangentX: Float
+            val tangentY: Float
+            if (nearby != null && hypot(nearby.x-point.x,nearby.y-point.y) < .35f) {
+                val rx = point.x-nearby.x
+                val ry = point.y-nearby.y
+                val radius = max(hypot(rx, ry), .04f)
+                tangentX = -.55f * ry / radius + .45f * dx / norm
+                tangentY = .55f * rx / radius + .45f * dy / norm
+            } else {
+                tangentX = dx/norm
+                tangentY = dy/norm
+            }
+            bodies = bodies + CelestialBody(idSequence++, 3 + random.nextInt(20),
+                .5f + random.nextFloat() * 1.5f, 1.1f,
+                point.x, point.y, tangentX*speed, tangentY*speed,
+                lifetime = 100f)
+        } else {
+            disturb(point.x, point.y)
+        }
+        brushPoint = null
+        brushMass = 0f
+    }
+
+    fun spawnBinary() {
+        if (bodies.size > 20) return
+        val x = .20f + random.nextFloat() * .56f
+        val y = .19f + random.nextFloat() * .56f
+        val vx = .008f + random.nextFloat() * .018f
+        val id = idSequence++
+        val left = CelestialBody(id, 6, 1.4f, 1.1f, x-.048f, y, 0f, -vx,
+            lifetime = 125f)
+        val right = CelestialBody(idSequence++, 6, 1.4f, 1.1f,
+            x+.048f, y, 0f, vx, lifetime = 125f)
+        bodies = bodies + left + right
+        lastEncounter = "binary"
+    }
+
+    /** Deterministic rewind of stored physical frames; excludes app UI state.
+     * The small bounded buffer intentionally does not persist user history.
+     */
+    fun rewind(seconds: Int = 3): Boolean {
+        if (replayBuffer.isEmpty()) return false
+        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) * 10)
+            .coerceAtLeast(0)
+        val snapshot = replayBuffer.elementAt(index)
+        bodies = snapshot
+        previousBodies = snapshot
+        return true
+    }
+
+    fun clearReplay() {
+        replayBuffer.clear()
+        replayTimer = 0f
+    }
+
     fun shiftPerspective(dx: Float) {
         depthShift = (depthShift + dx).coerceIn(-1f, 1f)
     }
@@ -263,11 +399,18 @@ internal class CosmicWorld(seed: Int = 42) {
         eventHistory = emptyList()
         inspectAge = 0f
         nextMathAt = 13f
+        timeScale = 1f
+        brushPoint = null
+        brushMass = 0f
+        cascadeBudget = 0
+        lastEncounter = "none"
+        clearReplay()
     }
 
     /** Symplectic-style velocity integration, soft gravity, no mandatory center. */
     fun step(dt: Float) {
-        val h = dt.coerceIn(.004f, .034f)
+        if (timeScale == 0f) return
+        val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
         elapsed += h
         inspectAge += h
         if (mathPinned) {
@@ -394,6 +537,53 @@ internal class CosmicWorld(seed: Int = 42) {
             }
         }
 
+        // Touch-controlled gravity: one bounded softened acceleration field.
+        val well = brushPoint
+        if (well != null) {
+            for (i in current.indices) {
+                val b = current[i]
+                val dx = well.x - b.x
+                val dy = well.y - b.y
+                val r2 = dx*dx + dy*dy + .01f
+                val influence = (.0024f * brushMass / (r2 * sqrt(r2)))
+                    .coerceAtMost(1.3f)
+                ax[i] += dx * influence
+                ay[i] += dy * influence
+            }
+        }
+
+        // Mild exterior forces for the special events.
+        if (e.kind in listOf(CosmicEventKind.ENCOUNTER, CosmicEventKind.FILAMENT,
+                CosmicEventKind.RADIATION, CosmicEventKind.RING_WAVE,
+                CosmicEventKind.REACTION)) {
+            for (i in current.indices) {
+                val b = current[i]
+                val dx = b.x - e.x
+                val dy = b.y - e.y
+                val d = max(hypot(dx, dy), .03f)
+                when (e.kind) {
+                    CosmicEventKind.RING_WAVE, CosmicEventKind.RADIATION -> {
+                        val waveRadius = e.progress*.65f
+                        val shell = (1f - kotlin.math.abs(d-waveRadius)/.08f)
+                            .coerceIn(0f,1f)
+                        ax[i] += .024f*shell*dx/d
+                        ay[i] += .024f*shell*dy/d
+                    }
+                    CosmicEventKind.FILAMENT -> {
+                        ay[i] += .0015f*sin(b.x*18f+e.age*.8f)
+                    }
+                    CosmicEventKind.ENCOUNTER -> {
+                        ax[i] += -.002f*dy/d
+                        ay[i] += .002f*dx/d
+                    }
+                    CosmicEventKind.REACTION -> {
+                        ax[i] += .003f*sin(e.age*2f+b.rotation)
+                        ay[i] += .003f*cos(e.age*2f+b.rotation)
+                    }
+                    else -> Unit
+                }
+            }
+        }
         // Rare singularity remnants continue to bend paths after the event ends.
         for (remnant in remnants) {
             if (remnant.kind != CosmicEventKind.SINGULARITY) continue
@@ -479,6 +669,20 @@ internal class CosmicWorld(seed: Int = 42) {
                 consumed += b.id
                 ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
             }
+        }
+        if (cascadeBudget > 0 && e.kind == CosmicEventKind.REACTION &&
+            e.age > 2f && e.age < 7f && random.nextFloat() < .0018f) {
+            if (compact.size < 23) {
+                spawnFromCorner(burst = true)
+                ripples = (ripples + SpaceRipple(e.x, e.y)).takeLast(4)
+            }
+            cascadeBudget--
+        }
+        replayTimer += h
+        if (replayTimer >= .1f) {
+            replayBuffer.addLast(current)
+            if (replayBuffer.size > 100) replayBuffer.removeFirst()
+            replayTimer = 0f
         }
         previousBodies = current
         bodies = compact

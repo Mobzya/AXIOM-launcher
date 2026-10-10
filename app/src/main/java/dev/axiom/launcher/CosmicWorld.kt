@@ -46,11 +46,22 @@ internal data class CelestialBody(
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
+internal data class CosmicRemnant(
+    val kind: CosmicEventKind, val x: Float, val y: Float,
+    val age: Float = 0f, val lifetime: Float = 38f
+)
+
 internal class CosmicWorld(seed: Int = 42) {
     private val random = Random(seed)
     var bodies by mutableStateOf<List<CelestialBody>>(initialBodies())
         private set
     var ripples by mutableStateOf<List<SpaceRipple>>(emptyList())
+        private set
+    var previousBodies by mutableStateOf(bodies)
+        private set
+    var remnants by mutableStateOf<List<CosmicRemnant>>(emptyList())
+        private set
+    var mathPinned by mutableStateOf(false)
         private set
     var elapsed by mutableStateOf(0f)
         private set
@@ -164,6 +175,7 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     fun summonMath(requested: MathKind? = null) {
+        mathPinned = false
         nextMathAt = elapsed + 23f
         mathMoment = MathMoment(
             kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
@@ -173,6 +185,22 @@ internal class CosmicWorld(seed: Int = 42) {
             y = if (random.nextBoolean()) .18f else .63f,
             seed = random.nextInt()
         )
+    }
+
+    /**
+     * Touching a live mathematical construction advances its derivation.
+     * Touching elsewhere produces a local impulse.
+     */
+    fun interact(x: Float, y: Float) {
+        val m = mathMoment
+        if (m.active && x in (m.x - .04f)..(m.x + .43f) &&
+            y in (m.y - .04f)..(m.y + .32f)) {
+            mathPinned = true
+            val next = ((m.progress * 3f).toInt() + 1).coerceAtMost(2)
+            mathMoment = m.copy(age = (next / 3f + .04f) * m.duration)
+            return
+        }
+        disturb(x, y)
     }
 
     fun disturb(x: Float, y: Float) {
@@ -200,7 +228,10 @@ internal class CosmicWorld(seed: Int = 42) {
 
     fun reset() {
         bodies = initialBodies()
+        previousBodies = bodies
         ripples = emptyList()
+        remnants = emptyList()
+        mathPinned = false
         elapsed = 0f
         episode = CosmicEpisode()
         depthShift = 0f
@@ -222,7 +253,9 @@ internal class CosmicWorld(seed: Int = 42) {
         if (inspectAge > 4.5f && selectedBody != null) selectedBody = null
         depthShift *= (1f - .5f * h)
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
-        if (mathMoment.active) {
+        remnants = remnants.map { it.copy(age = it.age + h) }
+            .filter { it.age < it.lifetime }
+        if (mathMoment.active && !mathPinned) {
             val age = mathMoment.age + h
             mathMoment = if (age > mathMoment.duration) MathMoment()
                          else mathMoment.copy(age = age)
@@ -233,6 +266,17 @@ internal class CosmicWorld(seed: Int = 42) {
         val oldEpisode = episode
         if (oldEpisode.kind != CosmicEventKind.QUIET) {
             if (oldEpisode.age + h >= oldEpisode.duration) {
+                if (oldEpisode.kind in listOf(
+                    CosmicEventKind.SINGULARITY, CosmicEventKind.NOVA,
+                    CosmicEventKind.PULSAR, CosmicEventKind.WORMHOLE)) {
+                    remnants = (remnants + CosmicRemnant(
+                        oldEpisode.kind, oldEpisode.x, oldEpisode.y,
+                        lifetime = if (oldEpisode.kind == CosmicEventKind.SINGULARITY)
+                            65f else 32f
+                    )).takeLast(4)
+                    // Scattering is a lasting physical consequence of the episode.
+                    repeat(2) { spawnFromCorner(burst = true) }
+                }
                 episode = CosmicEpisode()
                 eventAt = elapsed + 24f + random.nextFloat() * 48f
             } else episode = oldEpisode.copy(age = oldEpisode.age + h)
@@ -353,6 +397,7 @@ internal class CosmicWorld(seed: Int = 42) {
                     rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
+        previousBodies = current
         bodies = next
     }
 }

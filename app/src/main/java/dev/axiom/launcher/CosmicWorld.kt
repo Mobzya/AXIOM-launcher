@@ -13,7 +13,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Single cinematic world; scenarios are temporary events, not user-facing modes. */
-internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY }
+internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -65,6 +65,14 @@ internal class CosmicWorld(seed: Int = 42) {
     private var spawnAt = 10f
     private var eventAt = 38f
     private var lastBurstAt = -100f
+    private var nextMathAt = 13f
+    var mathMoment by mutableStateOf(MathMoment())
+        private set
+    var selectedBody by mutableStateOf<CelestialBody?>(null)
+        private set
+    var eventHistory by mutableStateOf<List<String>>(emptyList())
+        private set
+    private var inspectAge = 0f
 
     private fun initialBodies(): List<CelestialBody> {
         // Deliberately no permanent massive object in the center.
@@ -72,7 +80,9 @@ internal class CosmicWorld(seed: Int = 42) {
             CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f, lifetime = 95f),
             CelestialBody(2, 3, .7f, 2.2f, .83f, .28f, -.008f, .003f, .7f, lifetime = 96f),
             CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f, lifetime = 92f),
-            CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f, lifetime = 90f)
+            CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f, lifetime = 90f),
+            CelestialBody(5, 6, 2.1f, 1.12f, .38f, .80f, .015f, -.009f, .3f, lifetime = 120f),
+            CelestialBody(6, 8, 1.7f, 1.50f, .73f, .44f, -.014f, -.005f, 2f, lifetime = 110f)
         )
     }
 
@@ -80,7 +90,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     fun spawnFromCorner(burst: Boolean = false) {
-        if (bodies.size >= 16) return
+        if (bodies.size >= 18) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -99,7 +109,7 @@ internal class CosmicWorld(seed: Int = 42) {
         val depth = .65f + random.nextFloat() * 2.6f
         val body = CelestialBody(
             id = idSequence++,
-            kind = if (burst) 1 else 1 + random.nextInt(5),
+            kind = if (burst) 1 else 1 + random.nextInt(12),
             mass = .30f + random.nextFloat() * 1.35f,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
@@ -117,6 +127,7 @@ internal class CosmicWorld(seed: Int = 42) {
             return
         }
         eventSerial++
+        eventHistory = (eventHistory + kind.name).takeLast(10)
         episode = CosmicEpisode(
             kind = kind, age = 0f,
             duration = when (kind) {
@@ -125,6 +136,10 @@ internal class CosmicWorld(seed: Int = 42) {
                 CosmicEventKind.HARMONICS -> 17f
                 CosmicEventKind.LENS -> 13f
                 CosmicEventKind.METEORS -> 10f
+                CosmicEventKind.NOVA -> 13f
+                CosmicEventKind.PULSAR -> 17f
+                CosmicEventKind.WORMHOLE -> 16f
+                CosmicEventKind.NEBULA -> 18f
                 else -> 1f
             },
             x = .25f + random.nextFloat() * .5f,
@@ -137,19 +152,38 @@ internal class CosmicWorld(seed: Int = 42) {
         }
     }
 
-    /** Auto-runs interesting scenes but black holes are very rare (~1% per event). */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(100)) {
-        in 0..32 -> CosmicEventKind.METEORS
-        in 33..56 -> CosmicEventKind.NEURAL
-        in 57..77 -> CosmicEventKind.HARMONICS
-        in 78..98 -> CosmicEventKind.LENS
+    /** Visual math/ML is now an independent ambient layer, not a cinematic event. */
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(200)) {
+        in 0..49 -> CosmicEventKind.METEORS
+        in 50..83 -> CosmicEventKind.LENS
+        in 84..117 -> CosmicEventKind.NOVA
+        in 118..151 -> CosmicEventKind.PULSAR
+        in 152..176 -> CosmicEventKind.WORMHOLE
+        in 177..197 -> CosmicEventKind.NEBULA
         else -> CosmicEventKind.SINGULARITY
+    }
+
+    fun summonMath(requested: MathKind? = null) {
+        nextMathAt = elapsed + 23f
+        mathMoment = MathMoment(
+            kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
+            age = 0f,
+            duration = 9.2f + random.nextFloat() * 3f,
+            x = .10f + random.nextFloat() * .27f,
+            y = if (random.nextBoolean()) .18f else .63f,
+            seed = random.nextInt()
+        )
     }
 
     fun disturb(x: Float, y: Float) {
         val px = x.coerceIn(0f, 1f)
         val py = y.coerceIn(0f, 1f)
         ripples = (ripples + SpaceRipple(px, py)).takeLast(4)
+        val closest = bodies.minByOrNull { hypot(it.x - px, it.y - py) }
+        selectedBody = closest?.takeIf {
+            hypot(it.x - px, it.y - py) < .072f
+        }
+        inspectAge = 0f
         bodies = bodies.map { b ->
             val dx = b.x - px
             val dy = b.y - py
@@ -173,14 +207,28 @@ internal class CosmicWorld(seed: Int = 42) {
         spawnAt = 10f
         eventAt = 38f
         lastBurstAt = -100f
+        mathMoment = MathMoment()
+        selectedBody = null
+        eventHistory = emptyList()
+        inspectAge = 0f
+        nextMathAt = 13f
     }
 
     /** Symplectic-style velocity integration, soft gravity, no mandatory center. */
     fun step(dt: Float) {
         val h = dt.coerceIn(.004f, .034f)
         elapsed += h
+        inspectAge += h
+        if (inspectAge > 4.5f && selectedBody != null) selectedBody = null
         depthShift *= (1f - .5f * h)
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
+        if (mathMoment.active) {
+            val age = mathMoment.age + h
+            mathMoment = if (age > mathMoment.duration) MathMoment()
+                         else mathMoment.copy(age = age)
+        } else if (elapsed >= nextMathAt) {
+            summonMath()
+        }
 
         val oldEpisode = episode
         if (oldEpisode.kind != CosmicEventKind.QUIET) {
@@ -195,7 +243,7 @@ internal class CosmicWorld(seed: Int = 42) {
 
         if (elapsed >= spawnAt) {
             spawnFromCorner()
-            spawnAt = elapsed + 7f + random.nextFloat() * 15f
+            spawnAt = elapsed + 5f + random.nextFloat() * 11f
         }
         if (episode.kind == CosmicEventKind.METEORS &&
             elapsed - lastBurstAt > 1.8f && episode.age < 6.5f) {
@@ -214,10 +262,10 @@ internal class CosmicWorld(seed: Int = 42) {
             val b = current[j]
             val dx = b.x - a.x
             val dy = b.y - a.y
-            val radius2 = dx * dx + dy * dy + .012f
-            val grav = (.000035f * gravity /
-                (radius2 * sqrt(radius2))).coerceAtMost(.2f)
-            val planeCoupling = 1f / (1f + kotlin.math.abs(a.depth - b.depth))
+            val radius2 = dx * dx + dy * dy + .0035f
+            val grav = (.00026f * gravity /
+                (radius2 * sqrt(radius2))).coerceAtMost(1.15f)
+            val planeCoupling = 1f / (1f + .55f * kotlin.math.abs(a.depth - b.depth))
             ax[i] += grav * b.mass * dx * planeCoupling
             ay[i] += grav * b.mass * dy * planeCoupling
             ax[j] -= grav * a.mass * dx * planeCoupling
@@ -253,6 +301,37 @@ internal class CosmicWorld(seed: Int = 42) {
                 val d2 = dx * dx + dy * dy + .08f
                 ax[i] += -.0034f * e.alpha * dy / d2
                 ay[i] += .0034f * e.alpha * dx / d2
+            }
+        } else if (e.kind == CosmicEventKind.NOVA ||
+                   e.kind == CosmicEventKind.PULSAR ||
+                   e.kind == CosmicEventKind.WORMHOLE ||
+                   e.kind == CosmicEventKind.NEBULA) {
+            for (i in current.indices) {
+                val b = current[i]
+                val dx = b.x - e.x
+                val dy = b.y - e.y
+                val d2 = dx * dx + dy * dy + .026f
+                when (e.kind) {
+                    CosmicEventKind.NOVA -> {
+                        val impulse = if (e.age < 2.5f) .022f else .003f
+                        ax[i] += impulse * e.alpha * dx / d2
+                        ay[i] += impulse * e.alpha * dy / d2
+                    }
+                    CosmicEventKind.PULSAR -> {
+                        val pulse = .5f + .5f * sin(e.age * 5f)
+                        ax[i] += .012f * e.alpha * pulse * dx / d2
+                        ay[i] += .012f * e.alpha * pulse * dy / d2
+                    }
+                    CosmicEventKind.WORMHOLE -> {
+                        ax[i] += -.006f * e.alpha * dy / d2
+                        ay[i] += .006f * e.alpha * dx / d2
+                    }
+                    CosmicEventKind.NEBULA -> {
+                        ax[i] += .0035f * e.alpha * sin(b.rotation + e.age) / d2
+                        ay[i] += .0035f * e.alpha * cos(b.rotation + e.age) / d2
+                    }
+                    else -> Unit
+                }
             }
         }
 

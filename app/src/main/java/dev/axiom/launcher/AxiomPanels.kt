@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -198,6 +199,12 @@ internal fun AxiomAtlas(
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var lastScrubbed by remember { mutableStateOf("") }
+    var scrubDestination by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    // Coalesce alphabet scrubbing into one target per composition instead of
+    // launching dozens of simultaneous scroll coroutines per pointer sample.
+    LaunchedEffect(scrubDestination) {
+        if (scrubDestination >= 0) state.scrollToItem(scrubDestination)
+    }
     val selectedLetter = filtered.getOrNull(state.firstVisibleItemIndex)
         ?.label?.firstOrNull()?.uppercaseChar()?.toString() ?: "•"
 
@@ -273,41 +280,28 @@ internal fun AxiomAtlas(
                         state = state,
                         contentPadding = PaddingValues(top = 16.dp, bottom = 70.dp)
                     ) {
-                        items(filtered, key = { "${it.packageName}/${it.className}" }) { app ->
+                        itemsIndexed(filtered,
+                            key = { _, app -> "${app.packageName}/${app.className}" }
+                        ) { appIndex, app ->
                             val letter = app.label.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
-                            val first = index[letter] == filtered.indexOf(app)
+                            val first = index[letter] == appIndex
                             Column {
                                 if (first) {
                                     Text(letter, color = AX_DARK, fontSize = 11.sp,
                                         letterSpacing = 2.sp, fontFamily = FontFamily.Monospace,
                                         modifier = Modifier.padding(top = 16.dp, bottom = 9.dp))
                                 }
-                                // Read scrolling geometry only in the graphics layer.
-                                // No per-frame recomposition of the entire list.
+                                // No per-row reads of LazyListState.layoutInfo:
+                                // those were causing expensive work every scroll frame.
                                 Row(
                                     Modifier.fillMaxWidth()
-                                        .height(80.dp)
-                                        .graphicsLayer {
-                                            val item = state.layoutInfo.visibleItemsInfo
-                                                .firstOrNull { it.key ==
-                                                    "${app.packageName}/${app.className}" }
-                                            val center = state.layoutInfo.viewportSize.height / 2f
-                                            val offset = if (item != null)
-                                                kotlin.math.abs(item.offset + item.size / 2f - center)
-                                            else center
-                                            val prominence = (1f - offset / (center * 1.45f))
-                                                .coerceIn(0f, 1f)
-                                            alpha = .48f + .52f * prominence
-                                            scaleX = .92f + .08f * prominence
-                                            scaleY = .94f + .06f * prominence
-                                            transformOrigin = TransformOrigin(0f, .5f)
-                                        },
+                                        .height(76.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         app.label, color = AX_WHITE,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        fontSize = 23.sp, fontWeight = FontWeight.Light,
+                                        fontSize = 25.sp, fontWeight = FontWeight.Light,
                                         letterSpacing = -.35.sp,
                                         modifier = Modifier.weight(1f)
                                             .clickable { onOpen(app) }
@@ -339,7 +333,7 @@ internal fun AxiomAtlas(
                                         if (ch != lastScrubbed) {
                                             lastScrubbed = ch
                                             index[ch]?.let { dest ->
-                                                scope.launch { state.scrollToItem(dest) }
+                                                scrubDestination = dest
                                             }
                                         }
                                     },
@@ -351,7 +345,7 @@ internal fun AxiomAtlas(
                                         if (ch != lastScrubbed) {
                                             lastScrubbed = ch
                                             index[ch]?.let { dest ->
-                                                scope.launch { state.scrollToItem(dest) }
+                                                scrubDestination = dest
                                             }
                                         }
                                         change.consume()
@@ -370,7 +364,7 @@ internal fun AxiomAtlas(
                                     FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier.clickable {
                                     index[letter]?.let { dest ->
-                                        scope.launch { state.animateScrollToItem(dest) }
+                                        scrubDestination = dest
                                     }
                                 }.padding(vertical = 3.dp)
                             )

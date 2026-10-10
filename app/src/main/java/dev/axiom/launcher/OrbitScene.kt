@@ -132,6 +132,8 @@ internal fun CosmicEnvironment(
             drawEpisode(scene, t, dim, unit, paint)
         }
 
+        drawMathMoment(world.mathMoment, dim, paint)
+
         world.ripples.forEach { ripple ->
             val life = (1f - ripple.age / 1.7f).coerceIn(0f, 1f)
             drawCircle(
@@ -201,6 +203,82 @@ private fun DrawScope.drawBody(
                     radius * .26f, end)
             }
             drawCircle(White.copy(alpha = a * .70f), radius * .43f, c)
+        }
+        6 -> { // Rotating binary with a visible barycenter.
+            val phase = b.rotation * 3f + time * .35f
+            val dx = cos(phase) * radius * 2.3f
+            val dy = sin(phase) * radius * 1.3f
+            drawLine(White.copy(alpha = a * .3f),
+                c - Offset(dx,dy),c + Offset(dx,dy),.7.dp.toPx())
+            drawCircle(White.copy(alpha = a * .9f),
+                radius*.8f,c+Offset(dx,dy))
+            drawCircle(White.copy(alpha = a * .58f),
+                radius*.58f,c-Offset(dx,dy))
+        }
+        7 -> { // Procedural thin tetrahedral cage.
+            withTransform({ rotate(b.rotation * 36f, c) }) {
+                val t = c + Offset(0f,-radius*2.6f)
+                val l = c + Offset(-radius*1.7f,radius)
+                val r = c + Offset(radius*1.7f,radius)
+                val m = c + Offset(0f,radius*.35f)
+                listOf(t to l,t to r,l to r,t to m,l to m,r to m)
+                    .forEach { (p,q) ->
+                        drawLine(White.copy(alpha = a*.47f),
+                            p,q,.7.dp.toPx())
+                    }
+            }
+        }
+        8 -> { // Galaxy-like spiral arms.
+            repeat(2) { arm ->
+                val path = Path()
+                for(i in 0..28){
+                    val u=i/28f
+                    val theta=b.rotation + arm*PI.toFloat() + u*6f
+                    val rr=radius*(.3f+u*3.5f)
+                    val point=c+Offset(cos(theta)*rr,sin(theta)*rr*.68f)
+                    if(i==0)path.moveTo(point.x,point.y)
+                    else path.lineTo(point.x,point.y)
+                }
+                drawPath(path,White.copy(alpha=a*.40f),
+                    style=Stroke(.7.dp.toPx()))
+            }
+            drawCircle(White.copy(alpha=a*.75f),radius*.4f,c)
+        }
+        9 -> { // Pulsar beams, rotating without screen-filling glow.
+            val theta=b.rotation*2f
+            val ray=Offset(cos(theta),sin(theta))*radius*5f
+            drawLine(White.copy(alpha=a*.52f),c-ray,c+ray,.85.dp.toPx())
+            drawCircle(White.copy(alpha=a*.6f),
+                radius*1.15f,c,style=Stroke(.75.dp.toPx()))
+        }
+        10 -> { // Gyroscope of eccentric rings.
+            for(j in 0..2) {
+                withTransform({ rotate(b.rotation*29f+j*58f,c) }) {
+                    drawOval(White.copy(alpha=a*(.24f+j*.05f)),
+                        topLeft=c-Offset(radius*2.5f,radius*.7f),
+                        size=Size(radius*5f,radius*1.4f),
+                        style=Stroke(.65.dp.toPx()))
+                }
+            }
+        }
+        11 -> { // Short molecular/lattice polyhedron.
+            val nodes=listOf(Offset(-2f,-1f),Offset(0f,-2f),
+                Offset(2f,-1f),Offset(-2f,1f),Offset(0f,2f),Offset(2f,1f))
+            for(j in 0..5) {
+                val p=c+nodes[j]*radius
+                drawCircle(White.copy(alpha=a*.65f),
+                    radius*.27f,p)
+                if(j<5)drawLine(White.copy(alpha=a*.25f),p,
+                    c+nodes[j+1]*radius,.65.dp.toPx())
+            }
+        }
+        12 -> { // Double shock ring with opposite phase.
+            val wave=.5f+.5f*sin(time*.6f+b.rotation)
+            drawCircle(White.copy(alpha=a*.22f),
+                radius*(1.2f+wave*2.4f),c,style=Stroke(.75.dp.toPx()))
+            drawCircle(White.copy(alpha=a*.4f),
+                radius*(1.5f+(1f-wave)*1.6f),c,style=Stroke(.7.dp.toPx()))
+            drawCircle(White.copy(alpha=a*.65f),radius*.42f,c)
         }
         else -> { // Slowly rotating mathematical glyph, a travelling sine fragment.
             val path = Path()
@@ -307,6 +385,79 @@ private fun DrawScope.drawEpisode(
             }
             formula("κ = (1/2) ∇² ψ", Offset(size.width * .22f,
                 size.height * .77f), a * .34f, paint)
+        }
+        CosmicEventKind.NOVA -> {
+            // Expanding shock rings physically kick surrounding bodies.
+            val f=ep.progress
+            repeat(4) { i ->
+                val rr=unit*(.045f+f*(.12f+i*.065f))
+                drawCircle(White.copy(alpha=a*(.26f-i*.04f)),
+                    rr,center,style=Stroke((.9f-i*.1f).dp.toPx()))
+            }
+            for (i in 0..11) {
+                val theta=i*TAU/12f
+                val r=unit*(.10f+ep.progress*.40f)
+                val point=center+Offset(cos(theta)*r,sin(theta)*r)
+                drawCircle(White.copy(alpha=a*.6f),1.3.dp.toPx(),point)
+            }
+            formula("E = Δmc²  /  SHOCK FRONT",
+                Offset(size.width*.12f,size.height*.76f),a*.30f,paint)
+        }
+        CosmicEventKind.PULSAR -> {
+            val rr=unit*.09f
+            val theta=ep.age*1.5f
+            val ray=Offset(cos(theta),sin(theta))*unit*.34f
+            drawCircle(White.copy(alpha=a*.38f),rr,center,
+                style=Stroke(.8.dp.toPx()))
+            drawLine(White.copy(alpha=a*.44f),center-ray,center+ray,.9.dp.toPx())
+            repeat(4) { k ->
+                drawCircle(White.copy(alpha=a*(.17f-k*.027f)),
+                    rr*(1.4f+k*.7f)+unit*.018f*sin(ep.age*4f),
+                    center,style=Stroke(.8.dp.toPx()))
+            }
+            formula("ν = 1/T   /   PERIODICITY",
+                Offset(size.width*.18f,size.height*.77f),a*.30f,paint)
+        }
+        CosmicEventKind.WORMHOLE -> {
+            // Two separate portals with a curved spatial bridge.
+            val left=center-Offset(unit*.21f,0f)
+            val right=center+Offset(unit*.21f,0f)
+            repeat(3) { k ->
+                drawOval(White.copy(alpha=a*(.27f-k*.06f)),
+                    topLeft=left-Offset(unit*(.028f+k*.012f),unit*.10f),
+                    size=Size(unit*(.056f+k*.024f),unit*.2f),
+                    style=Stroke(.75.dp.toPx()))
+                drawOval(White.copy(alpha=a*(.27f-k*.06f)),
+                    topLeft=right-Offset(unit*(.028f+k*.012f),unit*.10f),
+                    size=Size(unit*(.056f+k*.024f),unit*.2f),
+                    style=Stroke(.75.dp.toPx()))
+            }
+            val bridge=Path()
+            for(i in 0..38){
+                val t=i/38f
+                val p=Offset(left.x+(right.x-left.x)*t,
+                    left.y+sin(t*PI.toFloat()*2f+ep.age*.3f)*unit*.052f)
+                if(i==0)bridge.moveTo(p.x,p.y) else bridge.lineTo(p.x,p.y)
+            }
+            drawPath(bridge,White.copy(alpha=a*.23f),
+                style=Stroke(.75.dp.toPx()))
+            formula("ds² = gᵤᵥ dxᵘdxᵛ",
+                Offset(size.width*.22f,size.height*.75f),a*.28f,paint)
+        }
+        CosmicEventKind.NEBULA -> {
+            // Anisotropic slow flow rather than expensive alpha-blurred textures.
+            for (layer in 0..7) {
+                val path=Path()
+                for(i in 0..42){
+                    val t=i/42f
+                    val xx=center.x+unit*(t-.5f)*.95f
+                    val yy=center.y+unit*((layer-3.5f)*.036f+
+                        .047f*sin(t*TAU*2f+ep.age*.21f+layer*.43f))
+                    if(i==0)path.moveTo(xx,yy) else path.lineTo(xx,yy)
+                }
+                drawPath(path,White.copy(alpha=a*(.07f+layer*.009f)),
+                    style=Stroke(.65.dp.toPx()))
+            }
         }
         CosmicEventKind.SINGULARITY -> {
             // Extremely rare gravitational lensing: dark center, light photon ring,

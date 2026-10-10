@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
@@ -316,6 +315,7 @@ fun AxiomScreen(resumeVersion: Int) {
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onReset = { world.reset() },
+                onSpawn = { world.disturb(.50f, .41f) },
                 onLaunch = ::openApp,
                 onOpenAtlas = ::atlas,
                 onBack = ::close

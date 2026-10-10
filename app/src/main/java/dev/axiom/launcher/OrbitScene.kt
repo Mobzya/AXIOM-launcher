@@ -139,6 +139,9 @@ internal fun CosmicEnvironment(
         }
 
         val scene = world.episode
+        // Keep the scene readable: no decorative object or equation may cover
+        // a mathematical lesson, and search suppresses lessons entirely.
+        val lesson = world.mathMoment.takeIf { !interacting && it.active }
         val mix = frameMix
         val oldBodies = world.previousBodies
         world.bodies.sortedByDescending { it.depth }.forEach { b ->
@@ -149,10 +152,14 @@ internal fun CosmicEnvironment(
             val fadeIn = (b.age / 1.8f).coerceIn(0f, 1f)
             val fadeOut = ((b.lifetime - b.age) / 3f).coerceIn(0f, 1f)
             val opacity = dim * (.20f + .57f * factor) * fadeIn * fadeOut
-            val origin = Offset(
-                (visualX + perspective * .026f * factor) * size.width,
-                visualY * size.height)
-            drawBody(b, origin, unit * factor, opacity, t)
+            val drawX = visualX + perspective * .026f * factor
+            val avoidMath = lesson != null &&
+                drawX in (lesson.x - .035f)..(lesson.x + .43f) &&
+                visualY in (lesson.y - .035f)..(lesson.y + .30f)
+            if (!avoidMath) {
+                val origin = Offset(drawX * size.width, visualY * size.height)
+                drawBody(b, origin, unit * factor, opacity, t)
+            }
         }
 
         // Temporally coherent procedural events, blending with ordinary space.
@@ -160,7 +167,9 @@ internal fun CosmicEnvironment(
             drawEpisode(scene, t, dim, unit, paint)
         }
 
-        drawMathMoment(world.mathMoment, dim, paint)
+        if (!interacting && scene.kind == CosmicEventKind.QUIET) {
+            drawMathMoment(world.mathMoment, dim, paint)
+        }
 
         world.remnants.forEach { remnant ->
             val life = (1f - remnant.age / remnant.lifetime).coerceIn(0f, 1f)

@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -218,6 +219,28 @@ fun AxiomScreen(resumeVersion: Int) {
             modifier = Modifier.fillMaxSize()
         )
 
+        // Tapping a nearby entity opens a tiny, self-dismissing scientific inspector.
+        val inspected = world.selectedBody
+        if (mode == AxiomMode.HOME && inspected != null) {
+            Column(
+                Modifier.align(Alignment.BottomStart)
+                    .padding(start = 23.dp, bottom = 56.dp)
+                    .background(Color(0xDD131313), RoundedCornerShape(14.dp))
+                    .border(1.dp, Color(0xFF343434), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
+            ) {
+                Text("OBJECT  /  ${inspected.id}", color = AX_GRAY,
+                    fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text("m = ${"%.2f".format(java.util.Locale.US, inspected.mass)}   " +
+                    "z = ${"%.2f".format(java.util.Locale.US, inspected.depth)}",
+                    color = AX_WHITE, fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace)
+                Text("v = ${"%.3f".format(java.util.Locale.US,
+                    kotlin.math.hypot(inspected.vx, inspected.vy))}",
+                    color = AX_GRAY, fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace)
+            }
+        }
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             Column(
                 modifier = Modifier.fillMaxWidth()
@@ -320,6 +343,8 @@ fun AxiomScreen(resumeVersion: Int) {
                 gravity = world.gravity,
                 bodyCount = world.bodies.size,
                 currentEpisode = world.episode.kind.name,
+                eventHistory = world.eventHistory,
+                onModel = { world.summonMath(it) },
                 onEvent = { world.trigger(it) },
                 onSurprise = { world.triggerRandomEvent() },
                 onDepth = { world.shiftPerspective(it) },

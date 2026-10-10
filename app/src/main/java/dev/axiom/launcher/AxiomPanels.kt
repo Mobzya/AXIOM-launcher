@@ -189,6 +189,7 @@ internal fun AxiomSettings(
     gravity: Float,
     onGravity: (Float) -> Unit,
     onResetUniverse: () -> Unit,
+    onSelectHome: () -> Unit,
     onMath: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
@@ -213,7 +214,16 @@ internal fun AxiomSettings(
             Text("×", color = AX_WHITE, fontSize = 28.sp,
                 modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp))
         }
-        Spacer(Modifier.height(46.dp))
+        Spacer(Modifier.height(32.dp))
+        Text("ГЛАВНЫЙ ЭКРАН", color = AX_DARK, fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
+        Text("⌂  Выбрать домашний экран", color = AX_WHITE, fontSize = 16.sp,
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onSelectHome).padding(vertical = 18.dp))
+        Text("Откроются системные настройки. На некоторых версиях HyperOS " +
+            "выбор стороннего лаунчера ограничен производителем.",
+            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(25.dp))
         Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
             fontWeight = FontWeight.Light)
         Spacer(Modifier.height(8.dp))
@@ -289,7 +299,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM 0.8  /  FLUID · CONSEQUENCE · INTELLIGENCE", color = AX_DARK,
+        Text("AXIOM 0.9  /  VERIFIED PHYSICS · CLEAR MATHEMATICS", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

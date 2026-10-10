@@ -58,6 +58,15 @@ internal class ScienceLab(seed: Int = 19) {
     val rows = 20
     var cells by mutableStateOf(BooleanArray(columns*rows) { rng.nextFloat() < .29f })
         private set
+    var reactionV by mutableStateOf(FloatArray(columns*rows) { idx ->
+        val x=idx%columns
+        val y=idx/columns
+        if (x in 12..17 && y in 7..12) .75f else 0f
+    })
+        private set
+    private var reactionU = FloatArray(columns*rows) { idx ->
+        if(reactionV[idx]>.5f) .45f else 1f
+    }
     private var accumulator = 0f
 
     fun select(newKind: LabKind) {
@@ -80,10 +89,24 @@ internal class ScienceLab(seed: Int = 19) {
             neural = neural.train(.02 + parameter * .75)
             accumulator = 0f
         }
+        if (kind == LabKind.REACTION && accumulator >= .09f) {
+            val (u,v)=grayScottStep(reactionU,reactionV,columns,rows,
+                feed=.02f+parameter*.05f,kill=.046f+secondParameter*.027f)
+            reactionU=u
+            reactionV=v
+            accumulator = 0f
+        }
     }
 
     fun reseed() {
         cells = BooleanArray(columns*rows) { rng.nextFloat() < .26f }
+        reactionV = FloatArray(columns*rows) { idx ->
+            val x=idx%columns; val y=idx/columns
+            if(x in 12..17 && y in 7..12) .75f else 0f
+        }
+        reactionU = FloatArray(columns*rows) { idx ->
+            if(reactionV[idx]>.5f) .45f else 1f
+        }
         neural = NeuralState()
         time = 0f
     }
@@ -172,3 +195,40 @@ internal fun waveValue(x: Float, time: Float, amp: Float, frequency: Float): Flo
     amp*sin(x*frequency-time)
 internal fun pendulumAngle(t: Float,length: Float,amplitude: Float): Float =
     amplitude*cos(sqrt(9.81f/length.coerceAtLeast(.2f))*t)*exp(-.018f*t)
+
+
+/** Gray–Scott two-species finite-difference reaction–diffusion, bounded grid. */
+internal fun grayScottStep(
+    u: FloatArray,v: FloatArray,width: Int,height: Int,
+    feed: Float,kill: Float
+): Pair<FloatArray,FloatArray> {
+    require(width>2 && height>2 && width*height==u.size && v.size==u.size)
+    val nu=u.copyOf()
+    val nv=v.copyOf()
+    for(y in 1 until height-1)for(x in 1 until width-1){
+        val i=y*width+x
+        val lu=u[i-1]+u[i+1]+u[i-width]+u[i+width]-4*u[i]
+        val lv=v[i-1]+v[i+1]+v[i-width]+v[i+width]-4*v[i]
+        val uvv=u[i]*v[i]*v[i]
+        nu[i]=(u[i]+.16f*lu-uvv+feed*(1f-u[i])).coerceIn(0f,1f)
+        nv[i]=(v[i]+.08f*lv+uvv-(kill+feed)*v[i]).coerceIn(0f,1f)
+    }
+    return nu to nv
+}
+
+/** Scaled dot-product attention: normalized probabilities sum to one. */
+internal fun attentionWeights(
+    query: DoubleArray,keys: Array<DoubleArray>,temperature: Double
+): DoubleArray {
+    require(query.isNotEmpty() && keys.isNotEmpty() &&
+        temperature>0 && temperature.isFinite())
+    val denom=sqrt(query.size.toDouble())*temperature
+    val scores=keys.map { key ->
+        require(key.size==query.size)
+        key.indices.sumOf { key[it]*query[it] }/denom
+    }
+    val largest=scores.maxOrNull() ?: 0.0
+    val powers=scores.map { exp((it-largest).coerceIn(-30.0,30.0)) }
+    val total=powers.sum()
+    return DoubleArray(keys.size) { powers[it]/total }
+}

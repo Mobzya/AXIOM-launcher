@@ -122,7 +122,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     SideEffect {
         (context as? Activity)?.window?.let { window ->
             @Suppress("DEPRECATION")
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.statusBarColor = if (currentPalette.light)
+                android.graphics.Color.WHITE else android.graphics.Color.BLACK
             @Suppress("DEPRECATION")
             window.navigationBarColor = if (currentPalette.light)
                 android.graphics.Color.WHITE else android.graphics.Color.BLACK

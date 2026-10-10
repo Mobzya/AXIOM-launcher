@@ -74,7 +74,7 @@ private val formulaAtlas = mapOf(
     MathKind.ATTENTION to EquationSteps("SELF-ATTENTION",
         listOf("S = QKᵀ / √d", "A = softmax(S)", "Y = AV")),
     MathKind.MATRIX to EquationSteps("MATRIX PRODUCT",
-        listOf("[1  3] · [2]", "1·2 + 3·4", "14")),
+        listOf("[1  3] · [2; 4]", "1·2 + 3·4", "14")),
     MathKind.FOURIER to EquationSteps("SPECTRAL DECOMPOSITION",
         listOf("f(t) = sin(t) + ½sin(3t)", "a₁ = 1,   a₃ = ½", "peaks: ω = 1, 3")),
     MathKind.BAYES to EquationSteps("BAYESIAN INFERENCE",
@@ -113,7 +113,7 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     val a = moment.opacity * dim * .72f
     val px = moment.x * size.width
     val py = moment.y * size.height
-    val scale = size.width * .18f
+    val scale = minOf(size.width * .18f, size.height * .11f)
     val wave = moment.age * .6f
     val center = Offset(px + scale * .6f, py + scale * .4f)
 
@@ -228,11 +228,18 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     val blend = ((position-first-.72f)/.28f).coerceIn(0f,1f)
     val baseX = px
     val baseY = py + scale*1.25f
+    // All math occupies one of four disjoint safe zones; bound each line to
+    // the right edge instead of drawing offscreen on narrow Android displays.
+    val availableWidth = (size.width - baseX - 16.dp.toPx())
+        .coerceAtLeast(size.width * .19f)
     paint.textSize = 8.sp.toPx()
     paint.alpha = (a*.58f*255f).toInt().coerceIn(0,255)
     drawIntoCanvas { it.nativeCanvas.drawText(
         lesson.caption,baseX,baseY,paint) }
     paint.textSize = 11.sp.toPx()
+    val longest = lesson.frames.maxOf { paint.measureText(it) }
+    paint.textSize *= (availableWidth / longest.coerceAtLeast(1f))
+        .coerceIn(.54f, 1f)
     val baseline = baseY + 17.dp.toPx()
     val oldEquation = lesson.frames[first]
     val newEquation = lesson.frames[next]

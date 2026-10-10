@@ -134,6 +134,14 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     fun trigger(kind: CosmicEventKind) {
+        // Mathematical diagrams and cinematic events occupy separate time slots.
+        // An event replaces any math lesson rather than rendering across its text.
+        if (kind != CosmicEventKind.QUIET) {
+            mathMoment = MathMoment()
+            mathPinned = false
+            pinnedFor = 0f
+            nextMathAt = elapsed + 7f
+        }
         if (kind == CosmicEventKind.QUIET) {
             episode = CosmicEpisode()
             eventAt = elapsed + 32f
@@ -178,6 +186,11 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     fun summonMath(requested: MathKind? = null) {
+        // An explicitly requested lesson takes priority over ongoing scenery.
+        if (episode.kind != CosmicEventKind.QUIET) {
+            episode = CosmicEpisode()
+            eventAt = elapsed + 22f
+        }
         mathPinned = false
         pinnedFor = 0f
         nextMathAt = elapsed + 23f
@@ -185,8 +198,8 @@ internal class CosmicWorld(seed: Int = 42) {
             kind = requested ?: MathKind.entries[random.nextInt(MathKind.entries.size)],
             age = 0f,
             duration = 9.2f + random.nextFloat() * 3f,
-            x = .10f + random.nextFloat() * .27f,
-            y = if (random.nextBoolean()) .18f else .63f,
+            x = if (random.nextBoolean()) .08f else .51f,
+            y = if (random.nextBoolean()) .15f else .65f,
             seed = random.nextInt()
         )
     }
@@ -266,11 +279,13 @@ internal class CosmicWorld(seed: Int = 42) {
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
         remnants = remnants.map { it.copy(age = it.age + h) }
             .filter { it.age < it.lifetime }
-        if (mathMoment.active && !mathPinned) {
-            val age = mathMoment.age + h
-            mathMoment = if (age > mathMoment.duration) MathMoment()
-                         else mathMoment.copy(age = age)
-        } else if (elapsed >= nextMathAt) {
+        if (mathMoment.active) {
+            if (!mathPinned) {
+                val age = mathMoment.age + h
+                mathMoment = if (age > mathMoment.duration) MathMoment()
+                             else mathMoment.copy(age = age)
+            }
+        } else if (episode.kind == CosmicEventKind.QUIET && elapsed >= nextMathAt) {
             summonMath()
         }
 
@@ -291,7 +306,7 @@ internal class CosmicWorld(seed: Int = 42) {
                 episode = CosmicEpisode()
                 eventAt = elapsed + 24f + random.nextFloat() * 48f
             } else episode = oldEpisode.copy(age = oldEpisode.age + h)
-        } else if (elapsed >= eventAt) {
+        } else if (!mathMoment.active && elapsed >= eventAt) {
             trigger(chooseEvent())
             eventAt = elapsed + 110f
         }
@@ -317,23 +332,7 @@ internal class CosmicWorld(seed: Int = 42) {
             val b = current[j]
             val dx = b.x - a.x
             val dy = b.y - a.y
-            val radius2 = dx * dx + dy * dy + .0035f
-            val grav = (.00026f * gravity /
-                (radius2 * sqrt(radius2))).coerceAtMost(1.15f)
-            val planeCoupling = 1f / (1f + .55f * kotlin.math.abs(a.depth - b.depth))
-            ax[i] += grav * b.mass * dx * planeCoupling
-            ay[i] += grav * b.mass * dy * planeCoupling
-            ax[j] -= grav * a.mass * dx * planeCoupling
-            ay[j] -= grav * a.mass * dy * planeCoupling
-            val separation = sqrt(dx * dx + dy * dy)
-            if (separation > .001f && separation < .023f &&
-                kotlin.math.abs(a.depth - b.depth) < .55f) {
-                val repel = (.023f - separation) * .8f
-                ax[i] -= dx / separation * repel
-                ay[i] -= dy / separation * repel
-                ax[j] += dx / separation * repel
-                ay[j] += dy / separation * repel
-            }
+            accumulateForces(a, b, gravity, i, j, ax, ay)
         }
 
         // Singularity bends trajectories only during the exceptional episode.
@@ -443,7 +442,15 @@ internal class CosmicWorld(seed: Int = 42) {
                     rotation = b.rotation + h * (.10f + .25f / b.depth), age = age)
             }
         }
-        // Very slow close encounters may coalesce instead of indefinitely colliding.
+        // Resolve touching, approaching pairs with a momentum-conserving impulse.
+        // Slow encounters may subsequently coalesce; fast ones scatter.
+        for (i in next.indices) for (j in i + 1 until next.size) {
+            val a = next[i]
+            val b = next[j]
+            val velocities = collide(a, b)
+            next[i] = a.copy(vx = velocities.avx, vy = velocities.avy)
+            next[j] = b.copy(vx = velocities.bvx, vy = velocities.bvy)
+        }
         val compact = ArrayList<CelestialBody>(next.size)
         val consumed = HashSet<Int>()
         for (i in next.indices) {
@@ -454,14 +461,15 @@ internal class CosmicWorld(seed: Int = 42) {
                 b.id !in consumed &&
                 kotlin.math.abs(a.depth-b.depth) < .4f &&
                 hypot(a.x-b.x,a.y-b.y) < .012f &&
-                hypot(a.vx-b.vx,a.vy-b.vy) < .018f
+                hypot(a.vx-b.vx,a.vy-b.vy) < .018f &&
+                a.mass + b.mass <= 7f
             }
             if (partner == null) compact += a
             else {
                 val b = next[partner]
                 val combinedMass = a.mass + b.mass
                 compact += a.copy(
-                    mass = combinedMass.coerceAtMost(7f),
+                    mass = combinedMass,
                     x = (a.x*a.mass+b.x*b.mass)/combinedMass,
                     y = (a.y*a.mass+b.y*b.mass)/combinedMass,
                     vx = (a.vx*a.mass+b.vx*b.mass)/combinedMass,

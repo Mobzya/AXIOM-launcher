@@ -1,6 +1,7 @@
 package dev.axiom.launcher
 
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.view.FrameMetrics
 import android.view.Window
@@ -9,11 +10,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * Optional in-app frame timing profiler (API 28+).
- * It gathers timings for AXIOM's own window only; does not need ADB, root,
- * Usage Access or overlay permissions.
+ * Opt-in frame meter. Processing and percentile sorting take place on a
+ * dedicated thread, never on the launcher UI thread.
  *
- * Runs only while explicitly enabled and publishes results every 90 frames.
+ * The only UI work is one text update per 90 measured frames.
  */
 internal class FrameMeter(private val window: Window) {
     var enabled by mutableStateOf(false)
@@ -21,49 +21,59 @@ internal class FrameMeter(private val window: Window) {
     var summary by mutableStateOf("Сбор данных о кадрах…")
         private set
 
+    private val main = Handler(Looper.getMainLooper())
+    private var worker: HandlerThread? = null
+    private var listener: Window.OnFrameMetricsAvailableListener? = null
     private val durations = LongArray(240)
-    private var cursor = 0
     private var count = 0
-    private val handler = Handler(Looper.getMainLooper())
-    private val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
-        if (!enabled) return@OnFrameMetricsAvailableListener
-        val nanos = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
-        if (nanos <= 0L) return@OnFrameMetricsAvailableListener
-        durations[cursor] = nanos
-        cursor = (cursor + 1) % durations.size
-        count++
-        if (count % 90 == 0) {
-            val n = minOf(count, durations.size)
-            val sorted = durations.take(n).sorted()
-            val median = sorted[(n * .5f).toInt().coerceIn(0, n-1)]
-            val p95 = sorted[(n * .95f).toInt().coerceIn(0, n-1)]
-            val p99 = sorted[(n * .99f).toInt().coerceIn(0, n-1)]
-            summary = "P50 ${format(median)}   P95 ${format(p95)}   P99 ${format(p99)}"
-        }
-    }
+    private var cursor = 0
+    private var session = 0
 
     fun toggle(): Boolean {
-        if (enabled) {
-            enabled = false
-            window.removeOnFrameMetricsAvailableListener(listener)
-        } else {
-            count = 0
-            cursor = 0
-            summary = "Сбор данных о кадрах…"
-            enabled = true
-            window.addOnFrameMetricsAvailableListener(listener, handler)
-        }
+        if (enabled) stop() else start()
         return enabled
     }
 
-    fun stop() {
-        if (enabled) {
-            enabled = false
-            window.removeOnFrameMetricsAvailableListener(listener)
+    private fun start() {
+        stop()
+        session++
+        val currentSession = session
+        count = 0
+        cursor = 0
+        summary = "Сбор данных о кадрах…"
+        worker = HandlerThread("AXIOM-FrameMeter").also { it.start() }
+        val capture = Window.OnFrameMetricsAvailableListener { _, frame, _ ->
+            val duration = frame.getMetric(FrameMetrics.TOTAL_DURATION)
+            if (duration <= 0L || currentSession != session) return@OnFrameMetricsAvailableListener
+            durations[cursor] = duration
+            cursor = (cursor + 1) % durations.size
+            count++
+            if (count % 90 == 0) {
+                val values = durations.take(minOf(count, durations.size)).sorted()
+                val last = values.lastIndex
+                fun pct(q: Double): String {
+                    val index = (last * q).toInt().coerceIn(0, last)
+                    return "%.1f".format(
+                        java.util.Locale.US, values[index] / 1_000_000.0
+                    )
+                }
+                val value = "P50 ${pct(.5)} ms   P95 ${pct(.95)} ms   P99 ${pct(.99)} ms"
+                main.post {
+                    if (session == currentSession && enabled) summary = value
+                }
+            }
         }
+        listener = capture
+        enabled = true
+        window.addOnFrameMetricsAvailableListener(capture, Handler(worker!!.looper))
     }
 
-    private fun format(nanos: Long) = "%.1f ms".format(
-        java.util.Locale.US, nanos / 1_000_000.0
-    )
+    fun stop() {
+        enabled = false
+        session++
+        listener?.let { window.removeOnFrameMetricsAvailableListener(it) }
+        listener = null
+        worker?.quitSafely()
+        worker = null
+    }
 }

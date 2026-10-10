@@ -102,7 +102,7 @@ fun AxiomScreen(resumeVersion: Int) {
     val world = remember { CosmicWorld() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
-        world.setGravity(prefs.getFloat("gravity", 1f))
+        world.updateGravity(prefs.getFloat("gravity", 1f))
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -292,7 +292,7 @@ fun AxiomScreen(resumeVersion: Int) {
             AxiomSettings(
                 gravity = world.gravity,
                 onGravity = {
-                    world.setGravity(it)
+                    world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onResetUniverse = { world.reset() },
@@ -311,7 +311,7 @@ fun AxiomScreen(resumeVersion: Int) {
                 gravity = world.gravity,
                 bodyCount = world.bodies.size,
                 onGravity = {
-                    world.setGravity(it)
+                    world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
                 onReset = { world.reset() },

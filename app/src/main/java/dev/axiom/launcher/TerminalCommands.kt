@@ -12,6 +12,8 @@ internal sealed class AxCommand {
     data class Find(val name: String) : AxCommand()
     data class Gravity(val value: Float) : AxCommand()
     data class Event(val kind: CosmicEventKind?) : AxCommand()
+    data class Model(val kind: MathKind?) : AxCommand()
+    data object Timeline : AxCommand()
     data class Depth(val delta: Float) : AxCommand()
     data class Calculate(val expression: String) : AxCommand()
     data class Note(val value: String) : AxCommand()
@@ -42,16 +44,36 @@ internal fun parseAxCommand(input: String): AxCommand {
             "display · notifications · clear · exit"
         )
         "ls", "apps", "atlas" -> AxCommand.Apps
+        "models", "maths" -> AxCommand.Output(
+            "16 визуализаций: " + MathKind.entries.joinToString(" · ") {
+                it.name.lowercase()
+            } + "\nЗапуск: model attention или model для случайной."
+        )
+        "model", "study", "visualize" -> {
+            if (arg.isBlank()) AxCommand.Model(null)
+            else {
+                val kind = MathKind.entries.firstOrNull {
+                    it.name.equals(arg, ignoreCase = true)
+                }
+                if (kind == null) AxCommand.Output("Неизвестная модель. Введи models.")
+                else AxCommand.Model(kind)
+            }
+        }
+        "timeline", "history" -> AxCommand.Timeline
         "events", "scenarios" -> AxCommand.Output(
-            "Сценарии: meteor, neural, wave, lens, blackhole. " +
+            "Сценарии: meteor, lens, nova, pulsar, wormhole, nebula, blackhole. " +
             "Введи event <сценарий> или event для случайного."
         )
         "event", "scenario" -> {
             val kind = when (arg.lowercase()) {
                 "meteor", "meteors", "comet" -> CosmicEventKind.METEORS
-                "neural", "ml", "network" -> CosmicEventKind.NEURAL
-                "wave", "fourier", "math" -> CosmicEventKind.HARMONICS
+                "neural", "ml", "network" -> return AxCommand.Model(MathKind.BACKPROP)
+                "wave", "fourier", "math" -> return AxCommand.Model(MathKind.FOURIER)
                 "lens", "gravity" -> CosmicEventKind.LENS
+                "nova", "supernova" -> CosmicEventKind.NOVA
+                "pulsar" -> CosmicEventKind.PULSAR
+                "wormhole", "portal" -> CosmicEventKind.WORMHOLE
+                "nebula", "cloud" -> CosmicEventKind.NEBULA
                 "blackhole", "singularity", "bh" -> CosmicEventKind.SINGULARITY
                 "quiet", "stop" -> CosmicEventKind.QUIET
                 "" -> null

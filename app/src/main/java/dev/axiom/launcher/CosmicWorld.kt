@@ -689,7 +689,14 @@ internal class CosmicWorld(seed: Int = 42) {
         for (i in next.indices) for (j in i + 1 until next.size) {
             val a = next[i]
             val b = next[j]
+            // Avoid allocating CollisionVelocities and copies for distant
+            // pairs; >99% of pair checks never come close to contact.
+            if (kotlin.math.abs(b.x-a.x) >= .025f ||
+                kotlin.math.abs(b.y-a.y) >= .025f ||
+                kotlin.math.abs(b.depth-a.depth) > .5f) continue
             val velocities = collide(a, b)
+            if (velocities.avx == a.vx && velocities.avy == a.vy &&
+                velocities.bvx == b.vx && velocities.bvy == b.vy) continue
             next[i] = a.copy(vx = velocities.avx, vy = velocities.avy)
             next[j] = b.copy(vx = velocities.bvx, vy = velocities.bvy)
         }

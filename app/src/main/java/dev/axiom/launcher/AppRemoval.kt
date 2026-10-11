@@ -14,7 +14,6 @@ internal fun canRequestUninstall(app: InstalledApp, launcherPackage: String): Bo
 
 internal fun uninstallConfirmationIntent(app: InstalledApp): Intent =
     Intent(Intent.ACTION_DELETE, Uri.fromParts("package", app.packageName, null))
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
 /** Safe fallback for protected/system apps or locked profiles. */
 internal fun applicationDetailsIntent(app: InstalledApp): Intent =

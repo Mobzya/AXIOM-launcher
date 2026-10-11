@@ -117,6 +117,9 @@ internal fun CosmicEnvironment(
         val unit = min(size.width, size.height)
         val perspective = world.depthShift
 
+        // Very rare full-sky background appears only behind all UI controls.
+        drawRareBackdrop(world.episode)
+
         // 3-layer star volume. Greater z means further / dimmer / slower motion.
         starLayers.forEachIndexed { i, star ->
             // White daytime mode keeps the same physics but a cleaner sky.
@@ -453,6 +456,152 @@ private fun DrawScope.drawBody(
                 }
             }
         }
+        in 23..34 -> {
+            // Twelve additional thin, monochrome physical/scientific silhouettes.
+            val family = b.kind - 23
+            when (family) {
+                0 -> { // Quasar polar jets
+                    val theta = b.rotation*.7f
+                    val axis=Offset(cos(theta),sin(theta))
+                    drawLine(White.copy(alpha=a*.75f),
+                        c-axis*radius*5.2f,c+axis*radius*5.2f,
+                        1.dp.toPx())
+                    drawCircle(White.copy(alpha=a*.6f),radius*.7f,c)
+                    drawCircle(White.copy(alpha=a*.24f),radius*1.9f,c,
+                        style=Stroke(.8.dp.toPx()))
+                }
+                1 -> { // Star map / connected constellation
+                    val pts=Array(6){i->
+                        val phi=i*TAU/6f+b.rotation
+                        c+Offset(cos(phi)*(1f+(i%2)*.6f),
+                            sin(phi)*(1f+(i%3)*.18f))*radius*2f
+                    }
+                    for(i in 0..4){
+                        drawLine(White.copy(alpha=a*.42f),
+                            pts[i],pts[i+1],.65.dp.toPx())
+                    }
+                    pts.forEach {p->drawCircle(White.copy(alpha=a*.8f),
+                        1.2.dp.toPx(),p)}
+                }
+                2 -> { // Star forming accretion disk
+                    for(k in 0..2){
+                        val r=radius*(1.4f+k*.8f)
+                        withTransform({rotate(b.rotation*20f+k*33f,c)}){
+                            drawOval(White.copy(alpha=a*(.5f-k*.10f)),
+                                c-Offset(r,r*.28f),Size(r*2f,r*.56f),
+                                style=Stroke(.7.dp.toPx()))
+                        }
+                    }
+                    drawCircle(White.copy(alpha=a*.82f),radius*.46f,c)
+                }
+                3 -> { // Interlaced orbital inclinations
+                    for(k in 0..3){
+                        withTransform({rotate(k*46f+b.rotation*11f,c)}){
+                            drawOval(White.copy(alpha=a*.36f),
+                                c-Offset(radius*2.8f,radius*.60f),
+                                Size(radius*5.6f,radius*1.2f),
+                                style=Stroke(.65.dp.toPx()))
+                        }
+                    }
+                }
+                4 -> { // Seismology-like radial oscillations
+                    for(k in 0..5){
+                        val r=radius*(.7f+k*.50f+
+                            .14f*sin(time*.8f+k*.75f))
+                        drawCircle(White.copy(alpha=a*(.55f-k*.075f)),
+                            r,c,style=Stroke(.65.dp.toPx()))
+                    }
+                }
+                5 -> { // Rotating geometric hypercube
+                    val theta=b.rotation
+                    val side=radius*1.3f
+                    val p=Offset(cos(theta),sin(theta))*radius*.8f
+                    for(k in 0..3){
+                        val angle=(k+.5f)*TAU/4f
+                        val v=Offset(cos(angle),sin(angle))*side
+                        val w=Offset(cos(angle+TAU/4f),
+                            sin(angle+TAU/4f))*side
+                        drawLine(White.copy(alpha=a*.5f),
+                            c+v,c+w,.7.dp.toPx())
+                        drawLine(White.copy(alpha=a*.22f),
+                            c+p+v,c+p+w,.7.dp.toPx())
+                        drawLine(White.copy(alpha=a*.24f),
+                            c+v,c+p+v,.6.dp.toPx())
+                    }
+                }
+                6 -> { // Magnetic field loop
+                    for(k in -2..2){
+                        val curve=Path()
+                        for(j in 0..32){
+                            val u=j/32f
+                            val x=(u-.5f)*radius*6f
+                            val y=(.5f*sin(u*TAU)+k*.26f)*
+                                radius*(1f+.2f*sin(time*.2f))
+                            if(j==0)curve.moveTo(c.x+x,c.y+y)
+                            else curve.lineTo(c.x+x,c.y+y)
+                        }
+                        drawPath(curve,White.copy(alpha=a*.3f),
+                            style=Stroke(.65.dp.toPx()))
+                    }
+                }
+                7 -> { // Pulsing dark nebula filament
+                    val path=Path()
+                    for(j in 0..35){
+                        val u=j/35f
+                        val r=radius*(.3f+3f*u)
+                        val theta=u*TAU*2f+b.rotation
+                        val p=c+Offset(cos(theta)*r,
+                            sin(theta)*r*.66f)
+                        if(j==0)path.moveTo(p.x,p.y)
+                        else path.lineTo(p.x,p.y)
+                    }
+                    drawPath(path,White.copy(alpha=a*.67f),
+                        style=Stroke(.65.dp.toPx()))
+                }
+                8 -> { // Three-body resonance marker
+                    for(j in 0..2){
+                        val phi=b.rotation+j*TAU/3f
+                        val p=c+Offset(cos(phi),sin(phi))*radius*2.2f
+                        drawLine(White.copy(alpha=a*.25f),
+                            c,p,.6.dp.toPx())
+                        drawCircle(White.copy(alpha=a*.6f),
+                            radius*.38f,p)
+                    }
+                }
+                9 -> { // Diffraction grating
+                    for(j in -4..4){
+                        val x=c.x+j*radius*.55f
+                        drawLine(White.copy(alpha=a*(.20f+
+                            .34f*(1f-kotlin.math.abs(j)/5f))),
+                            Offset(x,c.y-radius*1.6f),
+                            Offset(x,c.y+radius*1.6f),.7.dp.toPx())
+                    }
+                }
+                10 -> { // Helical rotating filament
+                    for(k in 0..1){
+                        val path=Path()
+                        for(j in 0..26){
+                            val u=j/26f
+                            val x=(u-.5f)*radius*7f
+                            val y=sin(u*TAU*2f+b.rotation+k*PI.toFloat())*
+                                radius*.88f
+                            if(j==0)path.moveTo(c.x+x,c.y+y)
+                            else path.lineTo(c.x+x,c.y+y)
+                        }
+                        drawPath(path,White.copy(alpha=a*.52f),
+                            style=Stroke(.65.dp.toPx()))
+                    }
+                }
+                else -> { // Molecular orbit cloud
+                    for(j in 0..13){
+                        val phi=j*2.39f+b.rotation*.55f
+                        val rad=radius*(.5f+2.5f*j/14f)
+                        drawCircle(White.copy(alpha=a*(.20f+j*.045f)),
+                            radius*.16f,c+Offset(cos(phi)*rad,sin(phi)*rad))
+                    }
+                }
+            }
+        }
         12 -> { // Double shock ring with opposite phase.
             val wave=.5f+.5f*sin(time*.6f+b.rotation)
             drawCircle(White.copy(alpha=a*.22f),
@@ -481,6 +630,18 @@ private fun DrawScope.drawEpisode(
     val a = ep.alpha * dim
     val center = Offset(ep.x * size.width, ep.y * size.height)
     when (ep.kind) {
+        CosmicEventKind.ECLIPSE, CosmicEventKind.COSMIC_WEB,
+        CosmicEventKind.PHASE_TIDE -> {
+            // Full sky is already rendered behind the star field.
+            // Centerpiece stays subtle enough to preserve search readability.
+            val label=when(ep.kind){
+                CosmicEventKind.ECLIPSE -> "TOTAL OCCULTATION"
+                CosmicEventKind.COSMIC_WEB -> "DARK MATTER FILAMENTS"
+                else -> "SPACETIME PHASE TIDE"
+            }
+            formula(label,Offset(size.width*.12f,size.height*.84f),
+                a*.78f,paint)
+        }
         CosmicEventKind.METEORS -> {
             // A transient meteor window: trails are the actual moving corner entrants.
             // A sparse constellation triangulates their travel corridor.

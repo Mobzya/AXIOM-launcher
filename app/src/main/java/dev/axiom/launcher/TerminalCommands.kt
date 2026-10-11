@@ -93,7 +93,7 @@ internal fun parseAxCommand(input: String): AxCommand {
         "binary", "double-star" -> AxCommand.SpawnBinary
         "field", "brush" -> AxCommand.Field
         "models", "maths" -> AxCommand.Output(
-            "16 визуализаций: " + MathKind.entries.joinToString(" · ") {
+            "${MathKind.entries.size} визуализаций: " + MathKind.entries.joinToString(" · ") {
                 it.name.lowercase()
             } + "\nЗапуск: model attention или model для случайной."
         )
@@ -110,7 +110,8 @@ internal fun parseAxCommand(input: String): AxCommand {
         "timeline", "history" -> AxCommand.Timeline
         "events", "scenarios" -> AxCommand.Output(
             "Сценарии: meteor, lens, nova, pulsar, wormhole, nebula, " +
-            "encounter, filament, radiation, ring, reaction, blackhole. " +
+            "encounter, filament, radiation, ring, reaction, blackhole, " +
+            "eclipse, web, phasetide (крайне редкие). " +
             "Введи event <сценарий> или event для случайного."
         )
         "event", "scenario" -> {
@@ -128,6 +129,9 @@ internal fun parseAxCommand(input: String): AxCommand {
                 "radiation", "burst" -> CosmicEventKind.RADIATION
                 "ring", "ringwave" -> CosmicEventKind.RING_WAVE
                 "reaction", "cascade" -> CosmicEventKind.REACTION
+                "eclipse", "occultation" -> CosmicEventKind.ECLIPSE
+                "web", "cosmicweb" -> CosmicEventKind.COSMIC_WEB
+                "phasetide", "phase", "tide" -> CosmicEventKind.PHASE_TIDE
                 "blackhole", "singularity", "bh" -> CosmicEventKind.SINGULARITY
                 "quiet", "stop" -> CosmicEventKind.QUIET
                 "" -> null

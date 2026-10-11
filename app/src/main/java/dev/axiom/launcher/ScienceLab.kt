@@ -16,7 +16,8 @@ import kotlin.random.Random
 /** Actual small numerical experiments. All steps are local and bounded. */
 internal enum class LabKind {
     WAVE, NEURAL, LIFE, JULIA, LORENZ, PENDULUM, REACTION,
-    FOURIER, ATTENTION, GRADIENT, DIFFUSION, PCA
+    FOURIER, ATTENTION, GRADIENT, DIFFUSION, PCA,
+    KMEANS, KALMAN, BROWNIAN
 }
 
 internal fun sigmoid(x: Double) = 1.0 / (1.0 + exp(-x.coerceIn(-35.0, 35.0)))
@@ -68,6 +69,19 @@ internal class ScienceLab(seed: Int = 19) {
         if(reactionV[idx]>.5f) .45f else 1f
     }
     private var accumulator = 0f
+    val clusterPoints: List<Pair<Float,Float>> = List(42) { i ->
+        val centerX = if(i%3==0) .23f else if(i%3==1) .73f else .49f
+        val centerY = if(i%3==0) .28f else if(i%3==1) .68f else .38f
+        (centerX+.15f*sin(i*2.41f)) to
+            (centerY+.13f*cos(i*1.73f))
+    }
+    var clusterCenters by mutableStateOf(listOf(.12f to .70f,
+        .76f to .19f,.65f to .84f))
+        private set
+    var kalman by mutableStateOf(KalmanEstimate())
+        private set
+    var filterSeries by mutableStateOf<List<Pair<Float,Float>>>(emptyList())
+        private set
 
     fun select(newKind: LabKind) {
         kind = newKind
@@ -80,7 +94,7 @@ internal class ScienceLab(seed: Int = 19) {
     fun step(dt: Float) {
         val h = dt.coerceIn(0f, .08f)
         if(kind !in listOf(LabKind.JULIA,LabKind.LIFE,LabKind.REACTION,
-                LabKind.ATTENTION,LabKind.PCA)) time += h
+                LabKind.ATTENTION,LabKind.PCA,LabKind.KMEANS)) time += h
         accumulator += h
         if (kind == LabKind.LIFE && accumulator >= .12f) {
             cells = lifeStep(cells, columns, rows)
@@ -89,6 +103,21 @@ internal class ScienceLab(seed: Int = 19) {
         if (kind == LabKind.NEURAL && accumulator >= .15f) {
             neural = neural.train(.02 + parameter * .75)
             accumulator = 0f
+        }
+        if (kind == LabKind.KMEANS && accumulator >= .20f) {
+            clusterCenters=kmeansStep(clusterPoints,clusterCenters)
+            accumulator=0f
+        }
+        if (kind == LabKind.KALMAN && accumulator >= .11f) {
+            val truth=.5f+.31f*sin(time*.58f)
+            val measurement=(truth+.20f*(rng.nextFloat()+rng.nextFloat()-1f))
+                .coerceIn(.03f,.97f)
+            kalman=kalmanUpdate(kalman,measurement,
+                processVariance=.001f+parameter*.013f,
+                measurementVariance=.003f+secondParameter*.09f)
+            filterSeries=(filterSeries+(measurement to kalman.mean))
+                .takeLast(65)
+            accumulator=0f
         }
         if (kind == LabKind.REACTION && accumulator >= .09f) {
             val (u,v)=grayScottStep(reactionU,reactionV,columns,rows,
@@ -109,6 +138,9 @@ internal class ScienceLab(seed: Int = 19) {
             if(reactionV[idx]>.5f) .45f else 1f
         }
         neural = NeuralState()
+        clusterCenters=listOf(.12f to .70f,.76f to .19f,.65f to .84f)
+        kalman=KalmanEstimate()
+        filterSeries=emptyList()
         time = 0f
     }
 
@@ -135,6 +167,9 @@ internal class ScienceLab(seed: Int = 19) {
         LabKind.GRADIENT -> "∂(x-a)²/∂x = 2(x-%.2f)".formatUS(1f+parameter*3)
         LabKind.DIFFUSION -> "xₜ=√ᾱx₀+√(1-ᾱ)ε  ᾱ=%.2f".formatUS(parameter)
         LabKind.PCA -> "projection = x·v, θ=%.2f".formatUS(parameter*PI.toFloat())
+        LabKind.KMEANS -> "Lloyd: μₖ ← mean(Cₖ), k=3"
+        LabKind.KALMAN -> "K=P⁻/(P⁻+R),  x̂=%.3f".formatUS(kalman.mean)
+        LabKind.BROWNIAN -> "ΔX=σ√Δt·Z, σ=%.2f".formatUS(.1f+parameter*.8f)
     }
 }
 

@@ -13,7 +13,8 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Single cinematic world; scenarios are temporary events, not user-facing modes. */
-internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA, ENCOUNTER, FILAMENT, RADIATION, RING_WAVE, REACTION }
+internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA, ENCOUNTER, FILAMENT, RADIATION, RING_WAVE, REACTION,
+    ECLIPSE, COSMIC_WEB, PHASE_TIDE }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -118,7 +119,9 @@ internal class CosmicWorld(seed: Int = 42) {
         )
     }
 
-    fun updateGravity(value: Float) { gravity = value.coerceIn(.25f, 2.2f) }
+    fun updateGravity(value: Float) {
+        if (value.isFinite()) gravity = value.coerceIn(.25f, 2.2f)
+    }
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     fun spawnFromCorner(burst: Boolean = false) {
@@ -141,7 +144,7 @@ internal class CosmicWorld(seed: Int = 42) {
         val depth = .65f + random.nextFloat() * 2.6f
         val body = CelestialBody(
             id = idSequence++,
-            kind = if (burst) 1 else 1 + random.nextInt(22),
+            kind = if (burst) 1 else 1 + random.nextInt(34),
             mass = .30f + random.nextFloat() * 1.35f,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
@@ -186,6 +189,9 @@ internal class CosmicWorld(seed: Int = 42) {
                 CosmicEventKind.RADIATION -> 12f
                 CosmicEventKind.RING_WAVE -> 14f
                 CosmicEventKind.REACTION -> 11f
+                CosmicEventKind.ECLIPSE -> 25f
+                CosmicEventKind.COSMIC_WEB -> 28f
+                CosmicEventKind.PHASE_TIDE -> 23f
                 else -> 1f
             },
             x = .25f + random.nextFloat() * .5f,
@@ -205,7 +211,11 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     /** Visual math/ML is now an independent ambient layer, not a cinematic event. */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(300)) {
+    private fun chooseEvent(): CosmicEventKind {
+        // One rare backdrop per ~1365 eligible event slots on average;
+        // each individual scene occurs about once per 4096 slots.
+        val rare = rareCosmicEvent(random.nextInt(4096))
+        return rare ?: when (random.nextInt(300)) {
         in 0..54 -> CosmicEventKind.METEORS
         in 55..94 -> CosmicEventKind.LENS
         in 95..131 -> CosmicEventKind.NOVA
@@ -218,6 +228,7 @@ internal class CosmicWorld(seed: Int = 42) {
         in 282..291 -> CosmicEventKind.RADIATION
         in 292..297 -> CosmicEventKind.REACTION
         else -> CosmicEventKind.SINGULARITY
+        }
     }
 
     fun summonMath(requested: MathKind? = null) {
@@ -584,6 +595,37 @@ internal class CosmicWorld(seed: Int = 42) {
                 }
             }
         }
+        // Rare astronomical phenomena also affect the local trajectories.
+        // All inputs are bounded and no per-body particles are allocated.
+        if (e.kind == CosmicEventKind.ECLIPSE ||
+            e.kind == CosmicEventKind.COSMIC_WEB ||
+            e.kind == CosmicEventKind.PHASE_TIDE) {
+            for (i in current.indices) {
+                val b=current[i]
+                val dx=b.x-e.x
+                val dy=b.y-e.y
+                val d2=dx*dx+dy*dy+.07f
+                when (e.kind) {
+                    CosmicEventKind.ECLIPSE -> {
+                        val r=kotlin.math.sqrt(d2)
+                        ax[i] += -.0019f*e.alpha*dx/(r*r)
+                        ay[i] += -.0019f*e.alpha*dy/(r*r)
+                    }
+                    CosmicEventKind.COSMIC_WEB -> {
+                        val nx=kotlin.math.round(b.x*5f)/5f
+                        val ny=kotlin.math.round(b.y*7f)/7f
+                        ax[i]+=(nx-b.x)*.022f*e.alpha
+                        ay[i]+=(ny-b.y)*.022f*e.alpha
+                    }
+                    CosmicEventKind.PHASE_TIDE -> {
+                        val oscillation=sin(e.age*.31f)
+                        ax[i]+=.004f*e.alpha*(dy+dx*oscillation)
+                        ay[i]+=.004f*e.alpha*(-dx+dy*oscillation)
+                    }
+                    else -> Unit
+                }
+            }
+        }
         // Rare singularity remnants continue to bend paths after the event ends.
         for (remnant in remnants) {
             if (remnant.kind != CosmicEventKind.SINGULARITY) continue
@@ -647,7 +689,14 @@ internal class CosmicWorld(seed: Int = 42) {
         for (i in next.indices) for (j in i + 1 until next.size) {
             val a = next[i]
             val b = next[j]
+            // Avoid allocating CollisionVelocities and copies for distant
+            // pairs; >99% of pair checks never come close to contact.
+            if (kotlin.math.abs(b.x-a.x) >= .025f ||
+                kotlin.math.abs(b.y-a.y) >= .025f ||
+                kotlin.math.abs(b.depth-a.depth) > .5f) continue
             val velocities = collide(a, b)
+            if (velocities.avx == a.vx && velocities.avy == a.vy &&
+                velocities.bvx == b.vx && velocities.bvy == b.vy) continue
             next[i] = a.copy(vx = velocities.avx, vy = velocities.avy)
             next[j] = b.copy(vx = velocities.bvx, vy = velocities.bvy)
         }

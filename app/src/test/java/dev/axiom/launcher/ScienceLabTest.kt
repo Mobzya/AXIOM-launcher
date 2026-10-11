@@ -66,7 +66,7 @@ class ScienceLabTest {
 
     @Test fun allTwelveExperimentsHaveFormulas() {
         val lab=ScienceLab(30)
-        assertEquals(12,LabKind.entries.size)
+        assertEquals(15,LabKind.entries.size)
         for(kind in LabKind.entries){
             lab.select(kind)
             assertTrue(lab.formula().isNotBlank())
@@ -76,7 +76,7 @@ class ScienceLabTest {
     }
 
     @Test fun thirtyDifferentMathModelsAreCovered() {
-        assertEquals(30,MathKind.entries.size)
+        assertEquals(42,MathKind.entries.size)
         assertTrue(MathKind.entries.all{mathSteps(it).size==3})
     }
 }
@@ -135,7 +135,7 @@ class InteractiveUniverseTest {
         repeat(780){world.step(1f/60f)}
         assertTrue(world.bodies.size<=23)
         assertTrue(world.bodies.all{
-            it.kind in 1..22 && it.mass.isFinite() && it.vx.isFinite()
+            it.kind in 1..34 && it.mass.isFinite() && it.vx.isFinite()
         })
     }
 

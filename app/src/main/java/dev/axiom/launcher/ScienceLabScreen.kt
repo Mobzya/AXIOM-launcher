@@ -53,10 +53,17 @@ import kotlin.math.sqrt
 internal fun ScienceLabScreen(lab: ScienceLab, onBack: () -> Unit) {
     LaunchedEffect(lab) {
         var previous = withFrameNanos { it }
+        var accumulated = 0f
         while (true) {
             val now = withFrameNanos { it }
-            lab.step(((now-previous).coerceIn(0L,50_000_000L))/1_000_000_000f)
+            accumulated += ((now-previous).coerceIn(0L,50_000_000L))/
+                1_000_000_000f
             previous = now
+            // Labs target at most 30 state updates/sec, independent of 120Hz.
+            if (accumulated >= 1f/30f) {
+                lab.step(accumulated.coerceAtMost(.08f))
+                accumulated = 0f
+            }
         }
     }
     Column(Modifier.fillMaxSize().background(AX_BLACK)
@@ -236,11 +243,10 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
             for(i in 0..39) {
                 val x=((i*37%43)/43f-.5f)*w*.8f
                 val y=((i*53%47)/47f-.5f)*h*.7f
-                val rotated=if(lab.kind==LabKind.PCA)
-                    Offset(x*cos(theta)-y*sin(theta),x*sin(theta)+y*cos(theta))
-                    else Offset(x,y)
-                val opacity=if(lab.kind==LabKind.ATTENTION)
-                    ((sin(i*b+t)*.5f+.5f)*.75f) else .35f
+                val rotated=Offset(
+                    x*cos(theta)-y*sin(theta),
+                    x*sin(theta)+y*cos(theta))
+                val opacity=.35f
                 drawCircle(ink.copy(alpha=opacity),2.3.dp.toPx(),middle+rotated)
             }
         }
@@ -254,6 +260,63 @@ private fun DrawScope.renderExperiment(lab: ScienceLab) {
                         androidx.compose.ui.geometry.Size(cw*.94f,ch*.94f))
                 }
             }
+        }
+        LabKind.KMEANS -> {
+            val centers=lab.clusterCenters
+            lab.clusterPoints.forEach { p ->
+                val index=centers.indices.minByOrNull { k ->
+                    val dx=p.first-centers[k].first
+                    val dy=p.second-centers[k].second
+                    dx*dx+dy*dy
+                } ?: 0
+                val point=Offset(p.first*w,p.second*h)
+                val central=Offset(centers[index].first*w,centers[index].second*h)
+                drawLine(ink.copy(alpha=.16f),
+                    point,central,.55.dp.toPx())
+                drawCircle(ink.copy(alpha=.25f+index*.14f),
+                    2.7.dp.toPx(),point)
+            }
+            centers.forEachIndexed { i, center ->
+                val p=Offset(center.first*w,center.second*h)
+                drawCircle(ink.copy(alpha=.85f),8.dp.toPx(),p,
+                    style=Stroke(1.4.dp.toPx()))
+                drawCircle(ink.copy(alpha=.6f),2.1.dp.toPx(),p)
+            }
+        }
+        LabKind.KALMAN -> {
+            val history=lab.filterSeries
+            for (k in 0..1) {
+                val path=Path()
+                history.forEachIndexed {i,p->
+                    val x=(i+1f)/65f*w
+                    val v=if(k==0)p.first else p.second
+                    val y=h*(1f-v.coerceIn(0f,1f))
+                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+                }
+                if(history.size>1)drawPath(path,
+                    ink.copy(alpha=if(k==0).30f else .86f),
+                    style=Stroke((if(k==0).7f else 1.4f).dp.toPx()))
+            }
+            if(history.isNotEmpty()){
+                val last=history.last()
+                drawCircle(ink.copy(alpha=.95f),3.4.dp.toPx(),
+                    Offset(history.size/65f*w,h*(1f-last.second)))
+            }
+        }
+        LabKind.BROWNIAN -> {
+            val points=brownianWalk(31,240,.10f+a*.80f)
+            val reveal=(t*25).toInt().coerceIn(2,points.size)
+            val path=Path()
+            points.take(reveal).forEachIndexed {i,p->
+                val x=p.first*w
+                val y=p.second*h
+                if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+            }
+            drawPath(path,ink.copy(alpha=.82f),
+                style=Stroke(1.1.dp.toPx()))
+            val latest=points[reveal-1]
+            drawCircle(ink.copy(alpha=.9f),4.dp.toPx(),
+                Offset(latest.first*w,latest.second*h))
         }
         LabKind.DIFFUSION -> {
             for(y in 0..23)for(x in 0..34){

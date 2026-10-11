@@ -88,6 +88,7 @@ internal fun AxiomAtlas(
     onBack: () -> Unit,
     onOpen: (InstalledApp) -> Unit,
     onStar: (String) -> Unit,
+    onRemove: (InstalledApp) -> Unit,
     metrics: String? = null
 ) {
     val context = LocalContext.current
@@ -265,6 +266,25 @@ internal fun AxiomAtlas(
                             workspaceTools = AppSpaces.toggle(context, "tools", app.packageName)
                         }.padding(vertical = 11.dp)
                     )
+                    Text(
+                        if (canRequestUninstall(app, context.packageName))
+                            "⊖  Удалить приложение…"
+                        else "ⓘ  Настройки приложения",
+                        color = AX_WHITE,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            details = null
+                            if (canRequestUninstall(app, context.packageName)) {
+                                onRemove(app)
+                            } else {
+                                runCatching {
+                                    context.startActivity(applicationDetailsIntent(app))
+                                }
+                            }
+                        }.padding(vertical = 15.dp)
+                    )
+                    Text("Удаление подтверждается средствами Android. " +
+                        "Системные приложения защищены.",
+                        color = AX_GRAY, fontSize = 11.sp)
                 }
             },
             confirmButton = {

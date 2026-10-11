@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -38,6 +40,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,8 +74,10 @@ internal fun SearchSuggestions(
     specialResult: String? = null,
     onOpen: (InstalledApp) -> Unit,
     onStar: (String) -> Unit,
+    onRemove: (InstalledApp) -> Unit,
     onAtlas: () -> Unit
 ) {
+    var details by remember { mutableStateOf<InstalledApp?>(null) }
     val shape = RoundedCornerShape(22.dp)
     Column(
         Modifier.fillMaxWidth().padding(top = 11.dp)
@@ -100,7 +106,8 @@ internal fun SearchSuggestions(
                 .coerceAtMost((maxHeight - 37.dp).coerceAtLeast(60.dp))
             LazyColumn(Modifier.fillMaxWidth().height(scrollHeight)) {
                 items(results, key = { "${it.packageName}/${it.className}" }) { app ->
-                    AxiomAppRow(app, favorites, onOpen, onStar)
+                    AxiomAppRow(app, favorites, onOpen, onStar,
+                        onDetails = { details = app })
                 }
             }
         }
@@ -116,14 +123,53 @@ internal fun SearchSuggestions(
             }
         }
     }
+    details?.let { app ->
+        val context = androidx.compose.ui.platform.LocalContext.current
+        AlertDialog(
+            onDismissRequest = { details = null },
+            containerColor = AX_SURFACE,
+            title = { Text(app.label,color=AX_WHITE) },
+            text = {
+                Column {
+                    Text("Действия с приложением",
+                        color=AX_GRAY,fontSize=13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (canRequestUninstall(app,context.packageName))
+                            "⊖  Удалить приложение…"
+                        else "ⓘ  Открыть настройки приложения",
+                        color=AX_WHITE,
+                        modifier=Modifier.fillMaxWidth().clickable {
+                            details=null
+                            if(canRequestUninstall(app,context.packageName)) onRemove(app)
+                            else runCatching {
+                                context.startActivity(applicationDetailsIntent(app))
+                            }
+                        }.padding(vertical=14.dp))
+                    Text("Действие подтверждается в Android.",
+                        color=AX_GRAY,fontSize=11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick={details=null;onOpen(app)}) {
+                    Text("Открыть",color=AX_WHITE)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick={details=null}) {Text("Отмена",color=AX_GRAY)}
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AxiomAppRow(
     app: InstalledApp,
     favorites: Set<String>,
     onOpen: (InstalledApp) -> Unit,
-    onStar: (String) -> Unit
+    onStar: (String) -> Unit,
+    onDetails: () -> Unit
 ) {
     var appeared by remember(app.packageName, app.className) { mutableStateOf(false) }
     LaunchedEffect(app.packageName, app.className) { appeared = true }
@@ -144,7 +190,10 @@ internal fun AxiomAppRow(
             overflow = TextOverflow.Ellipsis,
             fontSize = 14.sp,
             modifier = Modifier.weight(1f)
-                .clickable { onOpen(app) }
+                .combinedClickable(
+                    onClick = { onOpen(app) },
+                    onLongClick = onDetails
+                )
                 .padding(start = 14.dp, top = 16.dp, bottom = 16.dp)
         )
         Text(

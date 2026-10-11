@@ -111,7 +111,8 @@ internal fun parseAxCommand(input: String): AxCommand {
         "events", "scenarios" -> AxCommand.Output(
             "Сценарии: meteor, lens, nova, pulsar, wormhole, nebula, " +
             "encounter, filament, radiation, ring, reaction, blackhole, " +
-            "eclipse, web, phasetide (крайне редкие). " +
+            "eclipse, web, phasetide, mega, merger, void, caustic (крайне редкие), " +
+            "echo, capture, jet, resonance, nursery, darkflow, geometry, flare, dualring, cascade. " +
             "Введи event <сценарий> или event для случайного."
         )
         "event", "scenario" -> {
@@ -128,10 +129,24 @@ internal fun parseAxCommand(input: String): AxCommand {
                 "filament", "thread" -> CosmicEventKind.FILAMENT
                 "radiation", "burst" -> CosmicEventKind.RADIATION
                 "ring", "ringwave" -> CosmicEventKind.RING_WAVE
-                "reaction", "cascade" -> CosmicEventKind.REACTION
+                "reaction" -> CosmicEventKind.REACTION
                 "eclipse", "occultation" -> CosmicEventKind.ECLIPSE
                 "web", "cosmicweb" -> CosmicEventKind.COSMIC_WEB
                 "phasetide", "phase", "tide" -> CosmicEventKind.PHASE_TIDE
+                "echo" -> CosmicEventKind.ECHO_SHELL
+                "capture" -> CosmicEventKind.TIDAL_CAPTURE
+                "jet", "polarjet" -> CosmicEventKind.POLAR_JET
+                "resonance" -> CosmicEventKind.ORBITAL_RESONANCE
+                "nursery" -> CosmicEventKind.STELLAR_NURSERY
+                "darkflow" -> CosmicEventKind.DARK_FLOW
+                "geometry" -> CosmicEventKind.GEOMETRY_SHIFT
+                "flare" -> CosmicEventKind.SOLAR_FLARE
+                "dualring" -> CosmicEventKind.DUAL_RING
+                "cascade" -> CosmicEventKind.PARTICLE_CASCADE
+                "mega", "megastructure" -> CosmicEventKind.MEGASTRUCTURE
+                "merger", "galaxycollision" -> CosmicEventKind.GALAXY_COLLISION
+                "void", "voidbloom" -> CosmicEventKind.VOID_BLOOM
+                "caustic" -> CosmicEventKind.GRAVITATIONAL_CAUSTIC
                 "blackhole", "singularity", "bh" -> CosmicEventKind.SINGULARITY
                 "quiet", "stop" -> CosmicEventKind.QUIET
                 "" -> null

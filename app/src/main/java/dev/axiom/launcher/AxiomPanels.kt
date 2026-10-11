@@ -225,6 +225,14 @@ private fun AxiomChip(label: String, selected: Boolean, onClick: () -> Unit) {
 internal fun AxiomSettings(
     themeMode: AxiomThemeMode,
     onThemeMode: (AxiomThemeMode) -> Unit,
+    sunriseMinutes: Int,
+    sunsetMinutes: Int,
+    onSunriseMinutes: (Int) -> Unit,
+    onSunsetMinutes: (Int) -> Unit,
+    maximumBodies: Int,
+    onMaximumBodies: (Int) -> Unit,
+    wallsEnabled: Boolean,
+    onWallsEnabled: (Boolean) -> Unit,
     gravity: Float,
     onGravity: (Float) -> Unit,
     onResetUniverse: () -> Unit,
@@ -295,9 +303,40 @@ internal fun AxiomSettings(
             }
         }
         Spacer(Modifier.height(9.dp))
-        Text("Автоматически: белая с 07:00 до 19:00, чёрная ночью. " +
-            "Используется местное время телефона.",
+        Text("Авто: белая с ${scheduleLabel(sunriseMinutes)} до " +
+            "${scheduleLabel(sunsetMinutes)}, остальное время чёрная. " +
+            "Учитывается местное время устройства.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(14.dp))
+        Text("Начало белой темы · ${scheduleLabel(sunriseMinutes)}",
+            color = AX_WHITE, fontSize = 13.sp)
+        Slider(
+            value = (sunriseMinutes / 15f).coerceIn(0f,95f),
+            onValueChange = {
+                onSunriseMinutes(
+                    (kotlin.math.round(it).toInt().coerceIn(0,95))*15)
+            },
+            valueRange = 0f..95f, steps = 94,
+            colors = SliderDefaults.colors(
+                thumbColor=AX_WHITE,activeTrackColor=AX_WHITE,
+                inactiveTrackColor=AX_BORDER)
+        )
+        Text("Начало чёрной темы · ${scheduleLabel(sunsetMinutes)}",
+            color = AX_WHITE, fontSize = 13.sp)
+        Slider(
+            value = (sunsetMinutes / 15f).coerceIn(0f,95f),
+            onValueChange = {
+                onSunsetMinutes(
+                    (kotlin.math.round(it).toInt().coerceIn(0,95))*15)
+            },
+            valueRange = 0f..95f, steps = 94,
+            colors = SliderDefaults.colors(
+                thumbColor=AX_WHITE,activeTrackColor=AX_WHITE,
+                inactiveTrackColor=AX_BORDER)
+        )
+        Text("Если время совпадает, белая тема действует круглосуточно. " +
+            "Доступны интервалы через 15 минут, включая переход через полночь.",
+            color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
         Spacer(Modifier.height(27.dp))
         Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
             fontWeight = FontWeight.Light)
@@ -317,6 +356,37 @@ internal fun AxiomSettings(
         )
         Text("G = ${"%.2f".format(java.util.Locale.US, gravity)}",
             fontFamily = FontFamily.Monospace, color = AX_GRAY, fontSize = 12.sp)
+        Spacer(Modifier.height(20.dp))
+        Text("ПЛОТНОСТЬ И ГРАНИЦЫ", color=AX_DARK,fontSize=10.sp,
+            fontFamily=FontFamily.Monospace,letterSpacing=2.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("Максимум физических тел: $maximumBodies",
+            color=AX_WHITE,fontSize=15.sp)
+        Slider(
+            value=maximumBodies.toFloat(),
+            onValueChange={onMaximumBodies(kotlin.math.round(it).toInt())},
+            valueRange=12f..64f,steps=51,
+            colors=SliderDefaults.colors(
+                thumbColor=AX_WHITE,activeTrackColor=AX_WHITE,
+                inactiveTrackColor=AX_BORDER)
+        )
+        Text("Больше тел — более насыщенный космос, но выше нагрузка. " +
+            "Лёгкая пыль учитывается отдельно, до 88 частиц.",
+            color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
+        Spacer(Modifier.height(13.dp))
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.SpaceBetween) {
+            Column(Modifier.weight(1f)) {
+                Text("Режим отражающих стен",color=AX_WHITE,fontSize=14.sp)
+                Text("Тела влетают из-за экрана, а затем отскакивают " +
+                    "от его границ с потерей энергии.",
+                    color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
+            }
+            Switch(checked=wallsEnabled,onCheckedChange=onWallsEnabled,
+                colors=SwitchDefaults.colors(
+                    checkedThumbColor=AX_BLACK,checkedTrackColor=AX_WHITE,
+                    uncheckedThumbColor=AX_GRAY,uncheckedTrackColor=AX_TILE))
+        }
         Spacer(Modifier.height(22.dp))
         Text("Событие: ${currentEpisode.lowercase().replace('_', ' ')}",
             color = AX_GRAY, fontSize = 12.sp,
@@ -402,7 +472,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM 0.9  /  VERIFIED PHYSICS · CLEAR MATHEMATICS", color = AX_DARK,
+        Text("AXIOM 0.13  /  REFLECTIVE UNIVERSE · PHYSICAL DEBRIS", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

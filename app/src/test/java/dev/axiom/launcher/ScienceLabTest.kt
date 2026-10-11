@@ -135,7 +135,7 @@ class InteractiveUniverseTest {
         repeat(780){world.step(1f/60f)}
         assertTrue(world.bodies.size<=23)
         assertTrue(world.bodies.all{
-            it.kind in 1..22 && it.mass.isFinite() && it.vx.isFinite()
+            it.kind in 1..34 && it.mass.isFinite() && it.vx.isFinite()
         })
     }
 

@@ -621,6 +621,9 @@ internal class CosmicWorld(seed: Int = 42) {
             }
         }
 
+        // Distinct family mechanics; simple linear pass with bounded acceleration.
+        addSpeciesForces(current,elapsed,ax,ay)
+
         // Touch-controlled gravity: one bounded softened acceleration field.
         val well = brushPoint
         if (well != null) {

@@ -9,14 +9,36 @@ import java.util.Calendar
 /** Monochrome palette. A single snapshot update repaints Compose and Canvas. */
 internal enum class AxiomThemeMode { DARK, LIGHT, AUTO }
 
-internal fun daylightAt(hour: Int): Boolean = hour in 7..18
-
-internal fun resolvedLight(mode: AxiomThemeMode, hour: Int): Boolean =
-    when (mode) {
-        AxiomThemeMode.DARK -> false
-        AxiomThemeMode.LIGHT -> true
-        AxiomThemeMode.AUTO -> daylightAt(hour)
+/** User-settable daylight interval in LOCAL device minutes. Wraps midnight. */
+internal data class ThemeSchedule(val sunrise: Int = 7 * 60,
+                                  val sunset: Int = 19 * 60) {
+    val start: Int get() = sunrise.coerceIn(0, 1439)
+    val end: Int get() = sunset.coerceIn(0, 1439)
+}
+internal fun daylightAtMinutes(minute: Int, schedule: ThemeSchedule): Boolean {
+    val t = ((minute % 1440) + 1440) % 1440
+    val from = schedule.start
+    val until = schedule.end
+    return when {
+        from == until -> true // Continuous day; user can choose DARK for constant night.
+        from < until -> t in from until until
+        else -> t >= from || t < until
     }
+}
+internal fun daylightAt(hour: Int): Boolean =
+    daylightAtMinutes(hour * 60, ThemeSchedule())
+internal fun resolvedLight(
+    mode: AxiomThemeMode, hour: Int,
+    schedule: ThemeSchedule = ThemeSchedule(),
+    minute: Int = 0
+): Boolean = when (mode) {
+    AxiomThemeMode.DARK -> false
+    AxiomThemeMode.LIGHT -> true
+    AxiomThemeMode.AUTO -> daylightAtMinutes(hour * 60 + minute, schedule)
+}
+internal fun scheduleLabel(minutes: Int): String =
+    "%02d:%02d".format(java.util.Locale.ROOT,
+        minutes.coerceIn(0,1439) / 60,minutes.coerceIn(0,1439) % 60)
 
 internal fun modeFromPreference(value: String?): AxiomThemeMode =
     AxiomThemeMode.entries.firstOrNull { it.name == value } ?: AxiomThemeMode.DARK
@@ -71,8 +93,14 @@ internal object AxiomColors {
     var palette by mutableStateOf(AxiomPalette.NIGHT)
         private set
 
-    fun apply(mode: AxiomThemeMode, hour: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-        val next = if (resolvedLight(mode, hour)) AxiomPalette.DAY else AxiomPalette.NIGHT
+    fun apply(
+        mode: AxiomThemeMode,
+        hour: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
+        schedule: ThemeSchedule = ThemeSchedule(),
+        minute: Int = Calendar.getInstance().get(Calendar.MINUTE)
+    ) {
+        val next = if (resolvedLight(mode, hour, schedule, minute))
+            AxiomPalette.DAY else AxiomPalette.NIGHT
         if (palette != next) palette = next
     }
 }

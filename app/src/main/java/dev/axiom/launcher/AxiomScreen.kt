@@ -111,10 +111,15 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var themeMode by remember {
         mutableStateOf(modeFromPreference(prefs.getString("theme_mode", "DARK")))
     }
+    var sunStart by remember { mutableIntStateOf(
+        prefs.getInt("day_start",7*60).coerceIn(0,1439)) }
+    var sunEnd by remember { mutableIntStateOf(
+        prefs.getInt("night_start",19*60).coerceIn(0,1439)) }
     val currentPalette = AxiomColors.palette
-    LaunchedEffect(themeMode) {
+    LaunchedEffect(themeMode,sunStart,sunEnd) {
         while (true) {
-            AxiomColors.apply(themeMode)
+            AxiomColors.apply(themeMode,
+                schedule=ThemeSchedule(sunStart,sunEnd))
             if (themeMode != AxiomThemeMode.AUTO) break
             // No background service; refresh automatic light/dark when UI is alive.
             delay(30_000)
@@ -145,6 +150,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         world.updateGravity(prefs.getFloat("gravity", 1f))
+        world.updateMaximumBodies(prefs.getInt("max_bodies",23))
+        world.updateWalls(prefs.getBoolean("wall_mode",false))
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -207,6 +214,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
             world.updateGravity(prefs.getFloat("gravity", 1f))
             themeMode = modeFromPreference(prefs.getString("theme_mode", "DARK"))
+            sunStart=prefs.getInt("day_start",7*60).coerceIn(0,1439)
+            sunEnd=prefs.getInt("night_start",19*60).coerceIn(0,1439)
+            world.updateMaximumBodies(prefs.getInt("max_bodies",23))
+            world.updateWalls(prefs.getBoolean("wall_mode",false))
             refresh++
             Toast.makeText(context, "Настройки AXIOM восстановлены", Toast.LENGTH_SHORT).show()
         }.onFailure {
@@ -516,8 +527,28 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 themeMode = themeMode,
                 onThemeMode = { next ->
                     themeMode = next
-                    AxiomColors.apply(next)
+                    AxiomColors.apply(next,schedule=ThemeSchedule(sunStart,sunEnd))
                     prefs.edit().putString("theme_mode", next.name).apply()
+                },
+                sunriseMinutes = sunStart,
+                sunsetMinutes = sunEnd,
+                onSunriseMinutes = {
+                    sunStart=it.coerceIn(0,1439)
+                    prefs.edit().putInt("day_start",sunStart).apply()
+                },
+                onSunsetMinutes = {
+                    sunEnd=it.coerceIn(0,1439)
+                    prefs.edit().putInt("night_start",sunEnd).apply()
+                },
+                maximumBodies = world.maxBodies,
+                onMaximumBodies = {
+                    world.updateMaximumBodies(it)
+                    prefs.edit().putInt("max_bodies",world.maxBodies).apply()
+                },
+                wallsEnabled = world.wallsEnabled,
+                onWallsEnabled = {
+                    world.updateWalls(it)
+                    prefs.edit().putBoolean("wall_mode",it).apply()
                 },
                 gravity = world.gravity,
                 onGravity = {
@@ -587,7 +618,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 onSpawnBinary = { world.spawnBinary() },
                 onThemeMode = { next ->
                     themeMode = next
-                    AxiomColors.apply(next)
+                    AxiomColors.apply(next,schedule=ThemeSchedule(sunStart,sunEnd))
                     prefs.edit().putString("theme_mode", next.name).apply()
                 },
                 onProfile = { meter.toggle() },

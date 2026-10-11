@@ -33,7 +33,8 @@ internal fun mutualGravity(
  * This prevents bodies with very different mass from violating Newton's 3rd law.
  */
 internal fun contactRepulsion(
-    a: CelestialBody, b: CelestialBody, range: Float = .023f
+    a: CelestialBody, b: CelestialBody,
+    range: Float = contactSize(a) + contactSize(b)
 ): PairAcceleration {
     val dx = b.x - a.x
     val dy = b.y - a.y
@@ -75,9 +76,10 @@ internal fun accumulateForces(
     ay[j] -= coefficient * a.mass * dy
 
     val d = hypot(dx, dy)
-    if (d >= .000001f && d < .023f &&
+    val range=contactSize(a)+contactSize(b)
+    if (d >= .000001f && d < range &&
         kotlin.math.abs(a.depth - b.depth) < .55f) {
-        val pressure = (.023f - d) * .8f
+        val pressure = (range - d) * .8f
         val fx = pressure * dx / d
         val fy = pressure * dy / d
         ax[i] -= fx / a.mass
@@ -96,7 +98,7 @@ internal fun collide(
     val dy = b.y - a.y
     val length = hypot(dx, dy)
     val empty = CollisionVelocities(a.vx, a.vy, b.vx, b.vy)
-    if (length < .000001f || length > .025f ||
+    if (length < .000001f || length > contactSize(a)+contactSize(b) ||
         kotlin.math.abs(a.depth - b.depth) > .5f) return empty
     val nx = dx / length
     val ny = dy / length

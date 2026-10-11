@@ -119,6 +119,7 @@ internal fun CosmicEnvironment(
 
         // Very rare full-sky background appears only behind all UI controls.
         drawRareBackdrop(world.episode)
+        drawUltraRareBackdrop(world.episode)
 
         // 3-layer star volume. Greater z means further / dimmer / slower motion.
         starLayers.forEachIndexed { i, star ->
@@ -639,6 +640,14 @@ private fun DrawScope.drawEpisode(
 ) {
     val a = ep.alpha * dim
     val center = Offset(ep.x * size.width, ep.y * size.height)
+    if(ep.kind in CosmicEventKind.ECHO_SHELL..
+            CosmicEventKind.PARTICLE_CASCADE) {
+        drawAdditionalEvent(ep,unit,a)
+        return
+    }
+    // Ultra rare events own the full sky; do not paint another central label.
+    if(ep.kind in CosmicEventKind.MEGASTRUCTURE..
+            CosmicEventKind.GRAVITATIONAL_CAUSTIC)return
     when (ep.kind) {
         CosmicEventKind.ECLIPSE, CosmicEventKind.COSMIC_WEB,
         CosmicEventKind.PHASE_TIDE -> {

@@ -78,7 +78,10 @@ fun searchApps(apps: List<InstalledApp>, query: String, favorites: Set<String>):
 internal object AppCatalogCache {
     private var saved: List<InstalledApp>? = null
     private var checkedAtMillis = 0L
-    @Synchronized fun invalidate() { checkedAtMillis = 0L }
+    @Synchronized fun invalidate() {
+        saved = null
+        checkedAtMillis = 0L
+    }
 
     @Synchronized fun load(context: Context): List<InstalledApp> {
         val now = android.os.SystemClock.elapsedRealtime()
@@ -98,7 +101,7 @@ internal object AppRecents {
     private const val KEY = "recent_packages"
     fun list(context: Context): List<String> =
         context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE)
-            .getString(KEY, "")!!.split('|').filter { it.isNotBlank() }
+            .getString(KEY, "").orEmpty().split('|').filter { it.isNotBlank() }
 
     fun record(context: Context, packageName: String) {
         val value = (listOf(packageName) + list(context).filterNot {

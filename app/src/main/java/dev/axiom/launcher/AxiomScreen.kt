@@ -163,6 +163,28 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             Toast.makeText(context, "Не удалось экспортировать", Toast.LENGTH_SHORT).show()
         }
     }
+    val uninstallApp = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // The user may accept or cancel. Read Android's authoritative package
+        // inventory afterwards rather than pretending that removal succeeded.
+        AppCatalogCache.invalidate()
+        AppIconStore.clear()
+        refresh++
+    }
+    fun requestUninstall(app: InstalledApp) {
+        if (!canRequestUninstall(app, context.packageName)) {
+            Toast.makeText(context, "Системное приложение защищено",
+                Toast.LENGTH_SHORT).show()
+            return
+        }
+        runCatching {
+            uninstallApp.launch(uninstallConfirmationIntent(app))
+        }.onFailure {
+            Toast.makeText(context, "Не удалось открыть удаление",
+                Toast.LENGTH_SHORT).show()
+        }
+    }
     val importSettings = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -444,6 +466,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                         specialResult = inlineResult,
                         onOpen = ::openApp,
                         onStar = ::star,
+                        onRemove = ::requestUninstall,
                         onAtlas = ::atlas
                     )
                 }
@@ -484,6 +507,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 onBack = ::close,
                 onOpen = ::openApp,
                 onStar = ::star,
+                onRemove = ::requestUninstall,
                 metrics = if (meter.enabled) meter.summary else null
             )
         }

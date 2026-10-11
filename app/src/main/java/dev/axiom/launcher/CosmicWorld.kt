@@ -14,7 +14,11 @@ import kotlin.random.Random
 
 /** Single cinematic world; scenarios are temporary events, not user-facing modes. */
 internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, SINGULARITY, NOVA, PULSAR, WORMHOLE, NEBULA, ENCOUNTER, FILAMENT, RADIATION, RING_WAVE, REACTION,
-    ECLIPSE, COSMIC_WEB, PHASE_TIDE }
+    ECLIPSE, COSMIC_WEB, PHASE_TIDE,
+    ECHO_SHELL, TIDAL_CAPTURE, POLAR_JET, ORBITAL_RESONANCE,
+    STELLAR_NURSERY, DARK_FLOW, GEOMETRY_SHIFT, SOLAR_FLARE,
+    DUAL_RING, PARTICLE_CASCADE,
+    MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -225,6 +229,20 @@ internal class CosmicWorld(seed: Int = 42) {
                 CosmicEventKind.ECLIPSE -> 25f
                 CosmicEventKind.COSMIC_WEB -> 28f
                 CosmicEventKind.PHASE_TIDE -> 23f
+                CosmicEventKind.MEGASTRUCTURE -> 34f
+                CosmicEventKind.GALAXY_COLLISION -> 35f
+                CosmicEventKind.VOID_BLOOM -> 36f
+                CosmicEventKind.GRAVITATIONAL_CAUSTIC -> 32f
+                CosmicEventKind.PARTICLE_CASCADE -> 13f
+                CosmicEventKind.STELLAR_NURSERY -> 21f
+                CosmicEventKind.ECHO_SHELL -> 12f
+                CosmicEventKind.TIDAL_CAPTURE -> 16f
+                CosmicEventKind.POLAR_JET -> 14f
+                CosmicEventKind.ORBITAL_RESONANCE -> 18f
+                CosmicEventKind.DARK_FLOW -> 17f
+                CosmicEventKind.GEOMETRY_SHIFT -> 17f
+                CosmicEventKind.SOLAR_FLARE -> 14f
+                CosmicEventKind.DUAL_RING -> 17f
                 else -> 1f
             },
             x = .25f + random.nextFloat() * .5f,
@@ -237,6 +255,14 @@ internal class CosmicWorld(seed: Int = 42) {
         if (kind == CosmicEventKind.REACTION || kind == CosmicEventKind.RADIATION) {
             cascadeBudget = 2
         }
+        if (kind == CosmicEventKind.PARTICLE_CASCADE)
+            cascadeBudget = 5
+        if (kind == CosmicEventKind.STELLAR_NURSERY ||
+            kind == CosmicEventKind.GALAXY_COLLISION) {
+            repeat(3) {spawnFromCorner()}
+        }
+        if (kind == CosmicEventKind.MEGASTRUCTURE)
+            spawnGiant(97+random.nextInt(8))
         if (kind == CosmicEventKind.METEORS) {
             repeat(3) { spawnFromCorner(burst = true) }
             lastBurstAt = elapsed
@@ -247,8 +273,8 @@ internal class CosmicWorld(seed: Int = 42) {
     private fun chooseEvent(): CosmicEventKind {
         // One rare backdrop per ~1365 eligible event slots on average;
         // each individual scene occurs about once per 4096 slots.
-        val rare = rareCosmicEvent(random.nextInt(4096))
-        return rare ?: when (random.nextInt(300)) {
+        val rare = rareCosmicEvent(random.nextInt(16384))
+        return rare ?: when (random.nextInt(400)) {
         in 0..54 -> CosmicEventKind.METEORS
         in 55..94 -> CosmicEventKind.LENS
         in 95..131 -> CosmicEventKind.NOVA
@@ -260,6 +286,16 @@ internal class CosmicWorld(seed: Int = 42) {
         in 267..281 -> CosmicEventKind.RING_WAVE
         in 282..291 -> CosmicEventKind.RADIATION
         in 292..297 -> CosmicEventKind.REACTION
+        in 298..315 -> CosmicEventKind.ECHO_SHELL
+        in 316..332 -> CosmicEventKind.TIDAL_CAPTURE
+        in 333..346 -> CosmicEventKind.POLAR_JET
+        in 347..359 -> CosmicEventKind.ORBITAL_RESONANCE
+        in 360..371 -> CosmicEventKind.STELLAR_NURSERY
+        in 372..380 -> CosmicEventKind.DARK_FLOW
+        in 381..388 -> CosmicEventKind.GEOMETRY_SHIFT
+        in 389..393 -> CosmicEventKind.SOLAR_FLARE
+        in 394..396 -> CosmicEventKind.DUAL_RING
+        in 397..398 -> CosmicEventKind.PARTICLE_CASCADE
         else -> CosmicEventKind.SINGULARITY
         }
     }
@@ -663,6 +699,88 @@ internal class CosmicWorld(seed: Int = 42) {
                 }
             }
         }
+        // Different event families apply distinct limited external fields.
+        // Pure pairwise body-to-body gravity is unaffected by the visuals.
+        if (e.kind in CosmicEventKind.ECHO_SHELL..
+                CosmicEventKind.PARTICLE_CASCADE ||
+            e.kind in CosmicEventKind.MEGASTRUCTURE..
+                CosmicEventKind.GRAVITATIONAL_CAUSTIC) {
+            for (i in current.indices) {
+                val b=current[i]
+                val dx=b.x-e.x
+                val dy=b.y-e.y
+                val distance=max(hypot(dx,dy),.06f)
+                val pressure=e.alpha*.003f
+                when(e.kind) {
+                    CosmicEventKind.ECHO_SHELL -> {
+                        val shell=sin(distance*40f-e.age*1.7f)
+                        ax[i]+=dx/distance*pressure*shell
+                        ay[i]+=dy/distance*pressure*shell
+                    }
+                    CosmicEventKind.TIDAL_CAPTURE -> {
+                        ax[i]+=-dy/distance*pressure*2f
+                        ay[i]+= dx/distance*pressure*2f
+                    }
+                    CosmicEventKind.POLAR_JET -> {
+                        if(kotlin.math.abs(dx)<.18f) ay[i]+=pressure*2f*
+                            if(dy>0)1f else -1f
+                    }
+                    CosmicEventKind.ORBITAL_RESONANCE -> {
+                        val phase=sin(e.age*1.25f + b.rotation)
+                        ax[i]+=pressure*dx*phase
+                        ay[i]+=pressure*dy*phase
+                    }
+                    CosmicEventKind.STELLAR_NURSERY -> {
+                        ax[i]+=pressure*sin(e.age*.28f+b.x*17f)
+                        ay[i]+=pressure*cos(e.age*.34f+b.y*13f)
+                    }
+                    CosmicEventKind.DARK_FLOW -> {
+                        ax[i]+=pressure*1.8f
+                        ay[i]+=pressure*.5f
+                    }
+                    CosmicEventKind.GEOMETRY_SHIFT -> {
+                        val gx=kotlin.math.round(b.x*4f)/4f
+                        val gy=kotlin.math.round(b.y*4f)/4f
+                        ax[i]+=(gx-b.x)*pressure*6f
+                        ay[i]+=(gy-b.y)*pressure*6f
+                    }
+                    CosmicEventKind.SOLAR_FLARE -> {
+                        val shell=(1f-kotlin.math.abs(distance-e.progress*.9f)/.1f)
+                            .coerceIn(0f,1f)
+                        ax[i]+=pressure*4f*shell*dx/distance
+                        ay[i]+=pressure*4f*shell*dy/distance
+                    }
+                    CosmicEventKind.DUAL_RING -> {
+                        val d2=hypot(b.x-(1f-e.x),dy).coerceAtLeast(.06f)
+                        val strength=(1f-kotlin.math.abs(d2-e.progress*.5f)/.1f)
+                            .coerceIn(0f,1f)
+                        ax[i]+=pressure*strength*(b.x-(1f-e.x))/d2
+                        ay[i]+=pressure*strength*dy/d2
+                    }
+                    CosmicEventKind.PARTICLE_CASCADE -> {
+                        ax[i]+=pressure*sin(b.age*2.3f)*dx/distance
+                        ay[i]+=pressure*cos(b.age*2.3f)*dy/distance
+                    }
+                    CosmicEventKind.MEGASTRUCTURE -> {
+                        ax[i]+=pressure*.42f*dx/distance
+                        ay[i]+=pressure*.42f*dy/distance
+                    }
+                    CosmicEventKind.GALAXY_COLLISION -> {
+                        ax[i]+=pressure*1.8f*(-dy)/distance
+                        ay[i]+=pressure*1.8f*dx/distance
+                    }
+                    CosmicEventKind.VOID_BLOOM -> {
+                        ax[i]+=pressure*2.2f*dx/distance
+                        ay[i]+=pressure*2.2f*dy/distance
+                    }
+                    CosmicEventKind.GRAVITATIONAL_CAUSTIC -> {
+                        ax[i]+=-pressure*2f*dx/(distance*distance)
+                        ay[i]+=-pressure*2f*dy/(distance*distance)
+                    }
+                    else -> Unit
+                }
+            }
+        }
         // Rare singularity remnants continue to bend paths after the event ends.
         for (remnant in remnants) {
             if (remnant.kind != CosmicEventKind.SINGULARITY) continue
@@ -814,7 +932,8 @@ internal class CosmicWorld(seed: Int = 42) {
                 ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
             }
         }
-        val chain = cascadeBudget > 0 && e.kind == CosmicEventKind.REACTION &&
+        val chain = cascadeBudget > 0 &&
+            e.kind in listOf(CosmicEventKind.REACTION,CosmicEventKind.PARTICLE_CASCADE) &&
             e.age > 2f && e.age < 7f && random.nextFloat() < .0018f
         replayTimer += h
         if (replayTimer >= .1f) {

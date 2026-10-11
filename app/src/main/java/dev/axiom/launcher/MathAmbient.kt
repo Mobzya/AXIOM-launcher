@@ -20,7 +20,10 @@ internal enum class MathKind {
     CONVOLUTION, ENTROPY, EIGEN, QUADRATIC, MANDELBROT, PCA, RELU,
     DIFFUSION, RESIDUAL, LIFE, JULIA, LORENZ, PENDULUM,
     MARKOV, BEZIER, GAUSSIAN, LAPLACIAN, TRANSFORMER, SVD,
-    SOFTMAX, OPTICAL_FLOW, REACTION_DIFFUSION, L_SYSTEM
+    SOFTMAX, OPTICAL_FLOW, REACTION_DIFFUSION, L_SYSTEM,
+    KALMAN, KMEANS, MONTE_CARLO, VORONOI, FFT, HESSIAN,
+    SPECTRAL_GRAPH, BROWNIAN, HOPFIELD, GAME_THEORY,
+    DIJKSTRA, MANIFOLD
 }
 
 internal data class MathMoment(
@@ -128,7 +131,40 @@ private val formulaAtlas = mapOf(
     MathKind.REACTION_DIFFUSION to EquationSteps("TURING PATTERNS",
         listOf("∂u/∂t=Dᵤ∇²u + f", "∂v/∂t=Dᵥ∇²v + g", "diffusion + reaction")),
     MathKind.L_SYSTEM to EquationSteps("L-SYSTEM",
-        listOf("axiom: F", "F → F[+F]F[-F]", "n ← n + 1"))
+        listOf("axiom: F", "F → F[+F]F[-F]", "n ← n + 1")),
+    MathKind.KALMAN to EquationSteps("KALMAN FILTER",
+        listOf("K = P⁻Hᵀ(HP⁻Hᵀ+R)⁻¹", "x⁺ = x⁻ + K(z-Hx⁻)",
+            "P⁺ = (I-KH)P⁻")),
+    MathKind.KMEANS to EquationSteps("K-MEANS CLUSTERING",
+        listOf("cᵢ = argminₖ ||xᵢ-μₖ||²", "μₖ ← mean({xᵢ:cᵢ=k})",
+            "repeat until stable")),
+    MathKind.MONTE_CARLO to EquationSteps("MONTE CARLO",
+        listOf("E[f(X)] ≈ (1/N)Σf(Xᵢ)", "Xᵢ ~ p(x)",
+            "error scales as N⁻¹ᐟ²")),
+    MathKind.VORONOI to EquationSteps("VORONOI CELLS",
+        listOf("Vᵢ = {x: ||x-pᵢ|| ≤ ||x-pⱼ||}",
+            "bisectors divide plane", "assign nearest seed")),
+    MathKind.FFT to EquationSteps("FAST FOURIER TRANSFORM",
+        listOf("Xₖ = Σxₙ exp(-i2πkn/N)", "split even and odd n",
+            "T(N)=2T(N/2)+O(N)")),
+    MathKind.HESSIAN to EquationSteps("SECOND DERIVATIVES",
+        listOf("Hᵢⱼ = ∂²f/∂xᵢ∂xⱼ", "f=x²+y²", "H=diag(2,2)")),
+    MathKind.SPECTRAL_GRAPH to EquationSteps("SPECTRAL GRAPH THEORY",
+        listOf("L=D-A", "Lv=λv", "λ₂ reveals connectivity")),
+    MathKind.BROWNIAN to EquationSteps("RANDOM WALK",
+        listOf("Xₜ₊Δt=Xₜ+σ√Δt·Z", "Z ~ N(0,1)", "Var(Xₜ)=σ²t")),
+    MathKind.HOPFIELD to EquationSteps("HOPFIELD MEMORY",
+        listOf("E=-½Σᵢⱼwᵢⱼsᵢsⱼ", "sᵢ ← sign(Σⱼwᵢⱼsⱼ)",
+            "symmetric weights lower E")),
+    MathKind.GAME_THEORY to EquationSteps("MIXED STRATEGY",
+        listOf("pᵀAq = expected payoff", "p≥0, Σpᵢ=1",
+            "best response maximizes pᵀAq")),
+    MathKind.DIJKSTRA to EquationSteps("SHORTEST PATH",
+        listOf("d(source)=0, others=∞", "d(v)←min(d(v),d(u)+w)",
+            "settle smallest tentative d")),
+    MathKind.MANIFOLD to EquationSteps("MANIFOLD EMBEDDING",
+        listOf("local geometry: gᵢⱼ", "ds²=Σgᵢⱼdxⁱdxʲ",
+            "coordinates change, ds invariant"))
 )
 
 internal fun mathSteps(kind: MathKind): List<String> = formulaAtlas.getValue(kind).frames
@@ -148,7 +184,7 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     val center = Offset(px + scale * .6f, py + scale * .4f)
 
     // Each family uses a different piece of animated geometry.
-    when (moment.kind.ordinal % 8) {
+    when (moment.kind.ordinal % 12) {
         0 -> { // descent over a parabola
             val path = Path()
             for (i in 0..30) {
@@ -238,7 +274,7 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
             }
             drawPath(path,AX_WHITE.copy(alpha=.35f*a),style=Stroke(.9.dp.toPx()))
         }
-        else -> { // branching eigen / PCA / polynomial axes
+        7 -> { // branching eigen / PCA / polynomial axes
             val angle=moment.age*.16f
             val r=scale*.72f
             for(k in 0..3){
@@ -247,6 +283,65 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                     center+Offset(cos(phi)*r,sin(phi)*r),.8.dp.toPx())
             }
             drawCircle(AX_WHITE.copy(alpha=.68f*a),2.4.dp.toPx(),center)
+        }
+        8 -> { // Voronoi-style particles and nearest regions
+            val seeds=listOf(Offset(.2f,.25f),Offset(1.4f,.2f),
+                Offset(.75f,1.15f),Offset(1.65f,1.0f))
+            for(i in 0..26)for(j in 0..12){
+                val x=i/26f*scale*1.9f
+                val y=j/12f*scale*1.15f
+                val seed=seeds.indices.minByOrNull { k->
+                    val dx=x/scale-seeds[k].x
+                    val dy=y/scale-seeds[k].y
+                    dx*dx+dy*dy
+                } ?: 0
+                if((i+j+seed)%4==0)
+                    drawCircle(AX_WHITE.copy(alpha=a*(.12f+seed*.07f)),
+                        .6.dp.toPx(),Offset(px+x,py+y))
+            }
+            seeds.forEach { p ->
+                drawCircle(AX_WHITE.copy(alpha=a*.65f),
+                    2.1.dp.toPx(),Offset(px,py)+p*scale)
+            }
+        }
+        9 -> { // Fourier spectroscopy bars
+            for(j in 0..12){
+                val x=px+scale*(.1f+j*.15f)
+                val amplitude=(.2f+.6f*kotlin.math.abs(
+                    sin(j*.58f+moment.age*.16f)))
+                drawLine(AX_WHITE.copy(alpha=a*.4f),
+                    Offset(x,py+scale),
+                    Offset(x,py+scale*(1f-amplitude)),.85.dp.toPx())
+                drawCircle(AX_WHITE.copy(alpha=a*.52f),
+                    1.5.dp.toPx(),Offset(x,py+scale*(1f-amplitude)))
+            }
+        }
+        10 -> { // Stochastic Brownian diffusion traces
+            for(j in 0..4){
+                val path=Path()
+                var y=py+scale*.12f+j*scale*.20f
+                for(i in 0..25){
+                    val x=px+i/25f*scale*2f
+                    y+=sin(i*2.49f+j*1.38f+moment.age*.22f)*scale*.065f
+                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+                }
+                drawPath(path,AX_WHITE.copy(alpha=a*.33f),
+                    style=Stroke(.65.dp.toPx()))
+            }
+        }
+        else -> { // Graph edges and signal propagation
+            val nodes=List(8){i->
+                val phi=i*2f*PI.toFloat()/8f
+                center+Offset(cos(phi)*scale*.65f,
+                    sin(phi)*scale*.55f)
+            }
+            nodes.forEachIndexed {i,p->
+                val q=nodes[(i+3)%8]
+                drawLine(AX_WHITE.copy(alpha=a*.25f),
+                    p,q,.65.dp.toPx())
+                drawCircle(AX_WHITE.copy(alpha=a*.67f),
+                    (1.6f+.7f*sin(moment.age*.5f+i)).dp.toPx(),p)
+            }
         }
     }
 

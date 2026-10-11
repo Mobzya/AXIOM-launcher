@@ -87,8 +87,8 @@ internal fun CosmicEnvironment(
     // Paint at display refresh rate, but integrate physics at stable 60/30 Hz.
     // Interpolation makes motion continuous on 90/120-Hz displays.
     var frameMix by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(world, interacting, reducedPower) {
-        val slow = interacting || reducedPower
+    LaunchedEffect(world, interacting, reducedPower, world.maxBodies) {
+        val slow = interacting || reducedPower || world.maxBodies >= 40
         val targetNanos = if (slow) 33_333_333L else 16_666_667L
         var previous = withFrameNanos { it }
         var accumulator = 0L
@@ -159,26 +159,6 @@ internal fun CosmicEnvironment(
         // Keep the scene readable: no decorative object or equation may cover
         // a mathematical lesson, and search suppresses lessons entirely.
         val lesson = world.mathMoment.takeIf { !interacting && it.active }
-        val mix = frameMix
-        val oldBodies = world.previousBodies
-        world.bodies.sortedByDescending { it.depth }.forEach { b ->
-            val old = oldBodies.firstOrNull { it.id == b.id } ?: b
-            val visualX = old.x + (b.x - old.x) * mix
-            val visualY = old.y + (b.y - old.y) * mix
-            val factor = (1f / b.depth).coerceIn(.38f, 1.45f)
-            val fadeIn = (b.age / 1.8f).coerceIn(0f, 1f)
-            val fadeOut = ((b.lifetime - b.age) / 3f).coerceIn(0f, 1f)
-            val opacity = dim * (.20f + .57f * factor) * fadeIn * fadeOut
-            val drawX = visualX + perspective * .026f * factor
-            val avoidMath = lesson != null &&
-                drawX in (lesson.x - .035f)..(lesson.x + .43f) &&
-                visualY in (lesson.y - .035f)..(lesson.y + .30f)
-            if (!avoidMath) {
-                val origin = Offset(drawX * size.width, visualY * size.height)
-                drawBody(b, origin, unit * factor, opacity, t)
-            }
-        }
-
         // Temporally coherent procedural events, blending with ordinary space.
         if (scene.kind != CosmicEventKind.QUIET && scene.alpha > .005f) {
             drawEpisode(scene, t, dim, unit, paint)
@@ -235,9 +215,36 @@ CosmicEventKind.SINGULARITY -> {
             drawCircle(White.copy(alpha=dim*.76f),3.dp.toPx(),c)
         }
 
+        // Mathematical information belongs to the atmospheric layer.
+        // Even a giant cosmic body is drawn above the ML/maths backdrop.
         if (!interacting && scene.kind == CosmicEventKind.QUIET) {
-            drawMathMoment(world.mathMoment, dim, paint)
+            drawMathMoment(world.mathMoment, dim*.60f, paint)
         }
+
+        // Bright, massless impact dust; capped independently of real physics.
+        world.dust.forEach { p ->
+            val life=(1f-p.age/p.lifetime).coerceIn(0f,1f)
+            drawCircle(White.copy(alpha=dim*life*life*.65f),
+                radius=(.6f+life*1.3f).dp.toPx(),
+                center=Offset(p.x*size.width,p.y*size.height))
+        }
+
+        // Actual material bodies always own the highest COSMIC depth layer.
+        val mix = frameMix
+        val oldBodies = world.previousBodies
+        world.bodies.sortedByDescending { it.depth }.forEach { b ->
+        val old = oldBodies.firstOrNull { it.id == b.id } ?: b
+        val visualX = old.x + (b.x - old.x) * mix
+        val visualY = old.y + (b.y - old.y) * mix
+        val factor = (1f / b.depth).coerceIn(.38f, 1.45f)
+        val fadeIn = (b.age / 1.8f).coerceIn(0f, 1f)
+        val fadeOut = ((b.lifetime - b.age) / 3f).coerceIn(0f, 1f)
+        val opacity = dim * (.20f + .57f * factor) * fadeIn * fadeOut
+        val drawX = visualX + perspective * .026f * factor
+        val origin = Offset(drawX * size.width, visualY * size.height)
+        drawBody(b, origin, unit * factor, opacity, t)
+        }
+
 
     }
 }
@@ -246,8 +253,11 @@ private fun DrawScope.drawBody(
     b: CelestialBody, c: Offset, unit: Float, a: Float, time: Float
 ) {
     if (a < .002f) return
-    val radius = (unit * (.0055f + b.mass * .0014f)).coerceIn(1.3.dp.toPx(), 7.dp.toPx())
+    val radius = (unit*(.0050f + .0052f*
+        kotlin.math.sqrt(b.mass.coerceAtLeast(.05f)))*
+        b.sizeFactor).coerceIn(1.0.dp.toPx(),11.dp.toPx())
     when (b.kind) {
+        in 35..104 -> drawExpandedBody(b,c,radius,a,time)
         1 -> { // Comet: perspective-scaled velocity trail and a thin shock halo.
             val v = Offset(b.vx, b.vy)
             val speed = max(hypot(v.x, v.y), .01f)

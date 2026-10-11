@@ -42,7 +42,8 @@ internal data class CelestialBody(
     val vy: Float,
     val rotation: Float = 0f,
     val age: Float = 0f,
-    val lifetime: Float = 58f
+    val lifetime: Float = 58f,
+    val sizeFactor: Float = 1f
 )
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
@@ -104,6 +105,21 @@ internal class CosmicWorld(seed: Int = 42) {
     private val replayBuffer = ArrayDeque<List<CelestialBody>>(100)
     private var replayTimer = 0f
     private var cascadeBudget = 0
+    var maxBodies by mutableStateOf(23)
+        private set
+    var wallsEnabled by mutableStateOf(false)
+        private set
+    var dust by mutableStateOf<List<ImpactDust>>(emptyList())
+        private set
+    fun updateMaximumBodies(value: Int) {
+        maxBodies=value.coerceIn(12,64)
+        if(bodies.size>maxBodies){
+            bodies=bodies.take(maxBodies)
+            previousBodies=bodies
+        }
+    }
+    fun updateWalls(enabled: Boolean) {wallsEnabled=enabled}
+
     var lastEncounter by mutableStateOf("none")
         private set
 
@@ -119,13 +135,25 @@ internal class CosmicWorld(seed: Int = 42) {
         )
     }
 
+    fun spawnGiant(kind: Int = 97) {
+        if (bodies.size >= maxBodies || bodies.any { it.kind in 97..104 }) return
+        val chosen=kind.coerceIn(97,104)
+        bodies=bodies + CelestialBody(
+            idSequence++,chosen,3.5f+random.nextFloat()*2f,
+            1.6f,.2f+random.nextFloat()*.6f,
+            .22f+random.nextFloat()*.56f,
+            (random.nextFloat()-.5f)*.015f,
+            (random.nextFloat()-.5f)*.015f,
+            lifetime=48f+random.nextFloat()*45f,sizeFactor=1.1f)
+    }
+
     fun updateGravity(value: Float) {
         if (value.isFinite()) gravity = value.coerceIn(.25f, 2.2f)
     }
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     fun spawnFromCorner(burst: Boolean = false) {
-        if (bodies.size >= 23) return
+        if (bodies.size >= maxBodies) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -142,15 +170,20 @@ internal class CosmicWorld(seed: Int = 42) {
         val speed = if (burst) .17f + random.nextFloat() * .12f
                     else .048f + random.nextFloat() * .085f
         val depth = .65f + random.nextFloat() * 2.6f
+        val giant = !burst && bodies.none { it.kind in 97..104 } &&
+            random.nextInt(720) == 0
         val body = CelestialBody(
             id = idSequence++,
-            kind = if (burst) 1 else 1 + random.nextInt(34),
-            mass = .30f + random.nextFloat() * 1.35f,
+            kind = if (burst) 1 else if(giant) 97+random.nextInt(8)
+                else 1 + random.nextInt(96),
+            mass = if(giant) 3.8f + random.nextFloat()*1.5f
+                else .30f + random.nextFloat() * 1.35f,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
             vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
-            lifetime = if (burst) 20f + random.nextFloat() * 15f
-                       else 39f + random.nextFloat() * 37f
+            lifetime = if(giant) 105f else if (burst) 20f + random.nextFloat() * 15f
+                       else 39f + random.nextFloat() * 37f,
+            sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f
         )
         bodies = bodies + body
     }
@@ -323,7 +356,7 @@ internal class CosmicWorld(seed: Int = 42) {
      */
     fun endBrush() {
         val point = brushPoint ?: return
-        if (brushGestureDistance > .065f && bodies.size < 23) {
+        if (brushGestureDistance > .065f && bodies.size < maxBodies) {
             val dx = point.x - brushStartX
             val dy = point.y - brushStartY
             val norm = max(hypot(dx, dy), .005f)
@@ -356,7 +389,7 @@ internal class CosmicWorld(seed: Int = 42) {
     }
 
     fun spawnBinary() {
-        if (bodies.size > 20) return
+        if (bodies.size > maxBodies-2) return
         val x = .20f + random.nextFloat() * .56f
         val y = .19f + random.nextFloat() * .56f
         val vx = .008f + random.nextFloat() * .018f
@@ -415,6 +448,7 @@ internal class CosmicWorld(seed: Int = 42) {
         brushMass = 0f
         cascadeBudget = 0
         lastEncounter = "none"
+        dust=emptyList()
         clearReplay()
     }
 
@@ -433,6 +467,9 @@ internal class CosmicWorld(seed: Int = 42) {
         ripples = ripples.map { it.copy(age = it.age + h) }.filter { it.age < 1.7f }
         remnants = remnants.map { it.copy(age = it.age + h) }
             .filter { it.age < it.lifetime }
+        if (dust.isNotEmpty()) dust=dust.map { driftDust(it,h) }
+            .filter { it.age < it.lifetime && it.x in -.1f..1.1f &&
+                it.y in -.1f..1.1f }.takeLast(88)
         if (mathMoment.active) {
             if (!mathPinned) {
                 val age = mathMoment.age + h

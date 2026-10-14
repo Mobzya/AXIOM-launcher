@@ -346,6 +346,23 @@ internal class GranularUniverse {
             ax[j] += force * nx / b.mass
             ay[j] += force * ny / b.mass
         }
+        // Barnes-Hut multipoles are not exactly pairwise reciprocal.
+        // Remove the tiny net numerical force from every acceleration so
+        // centre-of-mass momentum remains conserved, even for big clouds.
+        var mx = 0.0; var my = 0.0; var total = 0.0
+        for (i in grains.indices) {
+            val m = grains[i].mass.toDouble()
+            mx += ax[i] * m; my += ay[i] * m
+            total += m
+        }
+        if (total > 0.0) {
+            val correctionX = mx / total
+            val correctionY = my / total
+            for (i in grains.indices) {
+                ax[i] -= correctionX
+                ay[i] -= correctionY
+            }
+        }
     }
 
     /**

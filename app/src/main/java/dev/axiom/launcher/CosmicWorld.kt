@@ -157,7 +157,8 @@ internal class CosmicWorld(seed: Int = 42) {
             CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f,
                 lifetime = 3600f, material = MatterMaterial.SILICATE),
             CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f,
-                lifetime = 3600f, material = MatterMaterial.ICE, temperature = 160f),
+                lifetime = 3600f, material = MatterMaterial.ICE, temperature = 160f,
+                stellarClass = StellarClass.CLOUD),
             CelestialBody(5, 6, 2.1f, 1.12f, .38f, .80f, .015f, -.009f, .3f,
                 lifetime = 3600f, material = MatterMaterial.IRON),
             CelestialBody(6, 8, 1.7f, 1.50f, .73f, .44f, -.014f, -.005f, 2f,
@@ -891,7 +892,7 @@ internal class CosmicWorld(seed: Int = 42) {
             val range=contactSize(a)+contactSize(b)
             if (kotlin.math.abs(b.x-a.x) >= range ||
                 kotlin.math.abs(b.y-a.y) >= range ||
-                kotlin.math.abs(b.depth-a.depth) > .5f) continue
+                false) continue
             val relativeSpeed = hypot(a.vx - b.vx, a.vy - b.vy)
             if (relativeSpeed < .055f) continue
             val velocities = collide(a, b)
@@ -926,8 +927,7 @@ internal class CosmicWorld(seed: Int = 42) {
             val partner = ((i+1) until next.size).firstOrNull { j ->
                 val b = next[j]
                 b.id !in consumed &&
-                kotlin.math.abs(a.depth-b.depth) < .4f &&
-                hypot(a.x-b.x,a.y-b.y) <
+                                hypot(a.x-b.x,a.y-b.y) <
                     (contactSize(a)+contactSize(b))*1.15f &&
                 hypot(a.vx-b.vx,a.vy-b.vy) < .055f
             }

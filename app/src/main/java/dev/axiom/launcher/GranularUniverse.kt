@@ -46,7 +46,7 @@ internal class GranularUniverse {
 
     private val gravityConstant = 0.000028
     private val softeningSquared = .0032 * .0032
-    private val contactStiffness = .012
+    private val contactStiffness = 3.2
     private val specificHeat = 0.000001
     private var nextGrainId = 1
     private var pulseSerial = -1
@@ -72,6 +72,27 @@ internal class GranularUniverse {
     private var root = 0
 
     fun updateMode(value: MatterMode) { mode = value }
+
+    fun snapshot(): List<SandGrain> = grains.map { it.copy() }
+
+    fun restore(snapshot: List<SandGrain>) {
+        grains.clear()
+        grains.addAll(snapshot.map { it.copy() })
+        nextGrainId = (grains.maxOfOrNull { it.id } ?: 0) + 1
+    }
+
+    /** Explicit finger force; particles are never emitted by gestures. */
+    fun perturb(x: Float, y: Float, strength: Float) {
+        for (p in grains) {
+            val dx = (p.x - x).toDouble()
+            val dy = (p.y - y).toDouble()
+            val dist = sqrt(dx*dx + dy*dy)
+            if (dist > .17 || dist < 1e-8) continue
+            val kick = strength * (1.0 - dist / .17)
+            p.vx = (p.vx + kick * dx / dist).toFloat()
+            p.vy = (p.vy + kick * dy / dist).toFloat()
+        }
+    }
     fun clear() {
         grains.clear()
         nextGrainId = 1
@@ -85,7 +106,7 @@ internal class GranularUniverse {
         if (grains.size >= mode.maxParticles) return
         val n = min(requested, mode.maxParticles - grains.size)
         if (n <= 0) return
-        val radius = structureRadius(body) * .85
+        val radius = structureRadius(body) * 1.35
         val goldenAngle = PI * (3.0 - sqrt(5.0))
         for (i in 0 until n) {
             // Deterministic disc packing. No egg shape or pinned lattice:

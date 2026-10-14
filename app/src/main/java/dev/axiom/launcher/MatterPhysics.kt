@@ -155,6 +155,28 @@ internal class MatterField(private val random: Random = Random(91)) {
 
     fun totalMass(): Double = particles.sumOf { it.mass.toDouble() }
 
+    /** Low-mass, pre-existing protoplanetary discs make matter visible at launch. */
+    fun seedOrbit(source: CelestialBody, requested: Int = 24): CelestialBody {
+        val room = (mode.maxParticles - particles.size).coerceAtLeast(0)
+        val count = min(requested, room).let { it - it % 2 }
+        if (count < 2 || source.mass <= .10f) return source
+        val mass = source.mass * .055f
+        val per = mass / count
+        for (i in 0 until count) {
+            val angle = i * (2 * PI).toFloat() / count
+            val radius = .022f + (i % 3) * .003f
+            // Opposing positions and tangential velocities keep the disc balanced.
+            particles.add(MatterParticle(sequence++,
+                source.x + cos(angle) * radius,
+                source.y + sin(angle) * radius,
+                source.vx - sin(angle) * .022f,
+                source.vy + cos(angle) * .022f,
+                per, source.temperature,
+                debrisType(source.material, i)))
+        }
+        return source.copy(mass = source.mass - mass)
+    }
+
     /**
      * Transfer part of BOTH bodies' mass into symmetric particle ejecta.
      * Opposite-pair velocities sum to zero around each parent's velocity.

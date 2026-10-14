@@ -234,6 +234,7 @@ internal fun AxiomSettings(
     matterMode: MatterMode,
     onMatterMode: (MatterMode) -> Unit,
     particleCount: Int,
+    boundParticleCount: Int,
     reactionCount: Int,
     planetCount: Int,
     wallsEnabled: Boolean,
@@ -365,15 +366,16 @@ internal fun AxiomSettings(
         Text("ФИЗИКА ВЕЩЕСТВА", color = AX_DARK, fontSize = 10.sp,
             fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
         Spacer(Modifier.height(9.dp))
-        Text("После столкновения появляются частицы с массой, температурой и составом. " +
-            "Они притягиваются, реагируют и могут объединяться в новые планеты.",
+        Text("Планеты, звёзды и квазары состоят из связанных частиц. " +
+            "При ударе или сильных приливных силах вещество освобождается, " +
+            "движется независимо и способно собираться в новые тела.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(14.dp))
         listOf(
             Triple(MatterMode.BALANCED, "Умеренный",
-                "До 850 частиц · плавнее и экономнее для рабочего стола"),
+                "До 850 свободных частиц · компактные связанные структуры"),
             Triple(MatterMode.DETAILED, "Проработанный",
-                "До 4800 частиц · больше осколков и реакций, высокий расход батареи")
+                "До 4800 свободных частиц · плотные структуры и высокий расход батареи")
         ).forEach { (choice, title, description) ->
             val selected = matterMode == choice
             val shape = RoundedCornerShape(17.dp)
@@ -396,8 +398,8 @@ internal fun AxiomSettings(
                 Text(if (selected) "◉" else "○", color = AX_WHITE, fontSize = 22.sp)
             }
         }
-        Text("Сейчас: $particleCount частиц · $reactionCount реакций · " +
-            "$planetCount новых планет", color = AX_GRAY,
+        Text("Связанные частицы: $boundParticleCount · свободные: $particleCount · " +
+            "реакции: $reactionCount · новых планет: $planetCount", color = AX_GRAY,
             fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {

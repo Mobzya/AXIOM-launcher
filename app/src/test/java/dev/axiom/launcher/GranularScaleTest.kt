@@ -49,7 +49,9 @@ class GranularScaleTest {
         val millis = (System.nanoTime()-started)/1_000_000
         println("AXIOM worst-case dense bucket: 4600 particles in ${millis}ms")
         assertEquals(mass, world.totals().mass, 1e-6)
-        assertTrue(world.counters.first <= 4600L*80)
+        // Each substep traverses the contact grid twice: once for symmetric
+        // contact forces and once for restitution/heat transfer.
+        assertTrue(world.counters.first <= 4600L*80*2)
         assertTrue("Dense-cloud neighbor scan regressed: ${millis}ms",
             millis < 25000)
     }

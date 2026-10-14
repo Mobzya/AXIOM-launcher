@@ -127,6 +127,7 @@ private fun debrisType(type: MatterMaterial, index: Int): MatterMaterial {
  */
 internal class MatterField(private val random: Random = Random(91)) {
     val particles: MutableList<MatterParticle> = ArrayList()
+    val structures = BoundStructureField()
     var mode: MatterMode = MatterMode.BALANCED
         private set
     var reactions: Int = 0
@@ -179,6 +180,8 @@ internal class MatterField(private val random: Random = Random(91)) {
 
     fun clear() {
         particles.clear()
+        structures.clear()
+        episodeHits.clear()
         reactions = 0
         newPlanets = 0
         sequence = 0
@@ -211,55 +214,120 @@ internal class MatterField(private val random: Random = Random(91)) {
         return source.copy(mass = source.mass - mass)
     }
 
-    /**
-     * Transfer part of BOTH bodies' mass into symmetric particle ejecta.
-     * Opposite-pair velocities sum to zero around each parent's velocity.
-     * When the budget fills, old packets combine into heavier LOD packets.
-     */
+    private val episodeHits = HashMap<Long, Float>()
+
+    /** Collision fragmentation: bonded source mass is released, never cloned. */
     fun emitImpact(
         first: CelestialBody, second: CelestialBody, speed: Float
     ): Pair<CelestialBody, CelestialBody> {
-        if (particles.size + mode.burstPerBody * 2 > mode.maxParticles) {
-            // Level-of-detail coarsening makes room for EVERY new collision
-            // without silently destroying previously simulated mass.
-            coarsenTo((mode.maxParticles * .74f).toInt())
-        }
+        reserveParticles(mode.burstPerBody * 2)
         val room = (mode.maxParticles - particles.size).coerceAtLeast(0)
-        if (room < 4) return first to second
         val count = min(mode.burstPerBody, room / 2).let { it - it % 2 }
         if (count < 2) return first to second
-        val fraction = (.24f + speed.coerceAtMost(.4f) * 1.1f)
-            .coerceIn(.24f, .68f)
-        val aMass = min(first.mass * fraction, (first.mass - .035f).coerceAtLeast(0f))
-        val bMass = min(second.mass * fraction, (second.mass - .035f).coerceAtLeast(0f))
-        if (aMass < .0001f || bMass < .0001f) return first to second
+        val frac = (.075f + (speed - .07f).coerceAtLeast(0f) * 1.1f)
+            .coerceIn(.045f, .36f)
+        val (a, emittedA) = structures.release(first, count, frac,
+            .02f + speed * .65f, ::nextId)
+        val (b, emittedB) = structures.release(second, count, frac,
+            .02f + speed * .65f, ::nextId)
+        particles.addAll(emittedA)
+        particles.addAll(emittedB)
+        return a to b
+    }
 
-        fun spray(source: CelestialBody, ejected: Float, offset: Float) {
-            val perParticle = ejected / count
-            val angle = random.nextFloat() * (2 * PI).toFloat() + offset
-            val kick = (.017f + speed * .36f).coerceAtMost(.14f)
-            for (i in 0 until count) {
-                val theta = angle + i * (2 * PI).toFloat() / count
-                // Same speed for opposite directions: exact zero net impulse.
-                val variation = 1f + (i % (count / 2)).rem(5) * .035f
-                val dx = cos(theta)
-                val dy = sin(theta)
-                particles.add(MatterParticle(
-                    sequence++,
-                    source.x + dx * (contactSize(source) + .003f + i % 4 * .0004f),
-                    source.y + dy * (contactSize(source) + .003f + i % 4 * .0004f),
-                    source.vx + dx * kick * variation,
-                    source.vy + dy * kick * variation,
-                    perParticle,
-                    (source.temperature + speed * 1700f).coerceIn(50f, 7000f),
-                    debrisType(source.material, i + source.id)
-                ))
+    private fun nextId(): Int = sequence++
+
+    private fun reserveParticles(incoming: Int) {
+        if (particles.size + incoming > mode.maxParticles) {
+            coarsenTo((mode.maxParticles * .65f).toInt())
+        }
+    }
+
+    /**
+     * Roche-like stripping in close encounters and episodic particle outflows.
+     * A stable structure remains rigid until the external gradient is material.
+     */
+    fun releaseFromTidesAndEvents(
+        bodies: MutableList<CelestialBody>, episode: CosmicEpisode, elapsed: Float
+    ) {
+        if (bodies.isEmpty()) return
+        for (i in bodies.indices) {
+            val source = bodies[i]
+            val r = structureRadius(source)
+            var tidal = 0f
+            for (j in bodies.indices) {
+                if (i == j) continue
+                val other = bodies[j]
+                val d = hypot(other.x - source.x, other.y - source.y)
+                if (d <= r + structureRadius(other)) continue // impact handles contact
+                val ratio = (other.mass / source.mass.coerceAtLeast(.02f)) *
+                    (2f * r / d.coerceAtLeast(.003f)).let { it * it * it }
+                tidal = max(tidal, ratio)
+            }
+            val dx = source.x - episode.x
+            val dy = source.y - episode.y
+            val dist = hypot(dx, dy)
+            val activity = episode.alpha
+            val shock = episode.kind in listOf(
+                CosmicEventKind.NOVA, CosmicEventKind.SOLAR_FLARE,
+                CosmicEventKind.RADIATION, CosmicEventKind.PARTICLE_CASCADE,
+                CosmicEventKind.METEORS, CosmicEventKind.GALAXY_COLLISION
+            ) && dist < .37f && activity > .22f
+            val rip = episode.kind in listOf(
+                CosmicEventKind.SINGULARITY, CosmicEventKind.GRAVITATIONAL_CAUSTIC,
+                CosmicEventKind.PHASE_TIDE, CosmicEventKind.TIDAL_CAPTURE
+            ) && dist < .27f && activity > .30f
+            val strip = tidal > 1.8f || shock || rip
+            if (!strip || source.mass < .12f) continue
+            val key = (source.id.toLong() shl 32) or episode.serial.toLong()
+            val cooldown = if (tidal > 1.8f) 1.8f else 4.5f
+            if (elapsed - (episodeHits[key] ?: -999f) < cooldown) continue
+            reserveParticles(32)
+            val room = (mode.maxParticles - particles.size).coerceAtLeast(0)
+            val count = min(if (mode == MatterMode.DETAILED) 60 else 20, room)
+                .let { it - it % 2 }
+            if (count < 2) continue
+            val intensity = when {
+                tidal > 1.8f -> (tidal * .025f).coerceIn(.018f, .18f)
+                rip -> .065f
+                else -> .04f
+            }
+            val (remaining, shards) = structures.release(source, count,
+                intensity, .025f + intensity * .4f, ::nextId)
+            if (shards.isNotEmpty()) {
+                bodies[i] = remaining
+                particles.addAll(shards)
+                episodeHits[key] = elapsed
             }
         }
-        spray(first, aMass, 0f)
-        spray(second, bMass, .35f)
-        return first.copy(mass = first.mass - aMass) to
-            second.copy(mass = second.mass - bMass)
+        if (episodeHits.size > 300)
+            episodeHits.entries.removeAll { elapsed - it.value > 9f }
+    }
+
+    /** Event forces act on actual detached material, not drawn textures. */
+    private fun eventAcceleration(
+        p: MatterParticle, episode: CosmicEpisode
+    ): Pair<Float, Float> {
+        if (episode.kind == CosmicEventKind.QUIET || episode.alpha <= 0f)
+            return 0f to 0f
+        val dx = p.x - episode.x
+        val dy = p.y - episode.y
+        val d = hypot(dx, dy).coerceAtLeast(.025f)
+        val strength = episode.alpha
+        return when (episode.kind) {
+            CosmicEventKind.NOVA, CosmicEventKind.SOLAR_FLARE,
+            CosmicEventKind.RADIATION, CosmicEventKind.PARTICLE_CASCADE ->
+                if (d < .48f) (.014f * strength * dx / d) to
+                    (.014f * strength * dy / d) else 0f to 0f
+            CosmicEventKind.SINGULARITY, CosmicEventKind.GRAVITATIONAL_CAUSTIC ->
+                (-.026f * strength * dx / (d * d + .015f)) to
+                    (-.026f * strength * dy / (d * d + .015f))
+            CosmicEventKind.WORMHOLE, CosmicEventKind.GALAXY_COLLISION ->
+                (-.015f * strength * dy / d) to (.015f * strength * dx / d)
+            CosmicEventKind.STELLAR_NURSERY, CosmicEventKind.NEBULA ->
+                (-.007f * strength * dx / d) to (-.007f * strength * dy / d)
+            else -> 0f to 0f
+        }
     }
 
     private fun cell(value: Float): Int =
@@ -281,10 +349,13 @@ internal class MatterField(private val random: Random = Random(91)) {
      */
     fun step(
         dt: Float, gravity: Float, bodies: MutableList<CelestialBody>,
-        maxBodies: Int, nextBodyId: () -> Int, walls: Boolean
+        maxBodies: Int, nextBodyId: () -> Int, walls: Boolean,
+        episode: CosmicEpisode = CosmicEpisode()
     ) {
         if (particles.isEmpty()) return
         val count = particles.size
+        val reactionX = FloatArray(bodies.size)
+        val reactionY = FloatArray(bodies.size)
         java.util.Arrays.fill(cellHeads, -1)
         java.util.Arrays.fill(dead, 0, count, false)
 
@@ -292,7 +363,8 @@ internal class MatterField(private val random: Random = Random(91)) {
             val p = particles[i]
             var ax = 0f
             var ay = 0f
-            for (b in bodies) {
+            for (bodyIndex in bodies.indices) {
+                val b = bodies[bodyIndex]
                 val dx = b.x - p.x
                 val dy = b.y - p.y
                 val r2 = dx * dx + dy * dy
@@ -300,11 +372,19 @@ internal class MatterField(private val random: Random = Random(91)) {
                 val softened = r2 + .00025f
                 val pull = .00022f * gravity * b.mass /
                     (softened * sqrt(softened))
-                ax += dx * pull
-                ay += dy * pull
+                val fx = dx * pull
+                val fy = dy * pull
+                ax += fx
+                ay += fy
+                // Newton's third law: particles pull on bodies as well.
+                reactionX[bodyIndex] -= fx * p.mass / b.mass.coerceAtLeast(.01f)
+                reactionY[bodyIndex] -= fy * p.mass / b.mass.coerceAtLeast(.01f)
             }
+            val eventForce = eventAcceleration(p, episode)
+            ax += eventForce.first
+            ay += eventForce.second
             val thermal = ((p.temperature - 250f) / 6000f).coerceIn(0f, 1f)
-            val drag = if (p.material.gas) .17f else .045f
+            val drag = if (p.material.gas) .012f else .003f
             val vx = ((p.vx + ax.coerceIn(-1.8f, 1.8f) * dt) *
                 (1f - drag * dt)).coerceIn(-.7f, .7f)
             val vy = ((p.vy + ay.coerceIn(-1.8f, 1.8f) * dt) *
@@ -408,6 +488,12 @@ internal class MatterField(private val random: Random = Random(91)) {
             }
         }
 
+        for (i in bodies.indices) {
+            val b = bodies[i]
+            bodies[i] = b.copy(vx = b.vx + reactionX[i] * dt,
+                vy = b.vy + reactionY[i] * dt)
+        }
+
         // Merge packets into larger bodies; never delete a particle without
         // transferring its mass and momentum to the receiving body.
         for (i in 0 until count) {
@@ -428,6 +514,7 @@ internal class MatterField(private val random: Random = Random(91)) {
                 if (p.age < .6f || dx * dx + dy * dy > touch * touch) continue
                 if (hypot(body.vx - p.vx, body.vy - p.vy) > .24f) continue
                 val mass = body.mass + p.mass
+                structures.capture(body, p)
                 bodies[j] = body.copy(
                     mass = mass,
                     x = (body.x * body.mass + p.x * p.mass) / mass,
@@ -448,6 +535,7 @@ internal class MatterField(private val random: Random = Random(91)) {
                     lifetime = 120f, sizeFactor = .7f,
                     material = p.material, temperature = p.temperature
                 ))
+                structures.ensure(bodies.last())
                 newPlanets++
                 landed = true
             }
@@ -462,5 +550,6 @@ internal class MatterField(private val random: Random = Random(91)) {
             destination++
         }
         while (particles.size > destination) particles.removeAt(particles.lastIndex)
+        structures.reconcile(bodies)
     }
 }

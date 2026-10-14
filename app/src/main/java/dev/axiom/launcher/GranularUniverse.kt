@@ -57,6 +57,20 @@ internal class GranularUniverse {
     private val gravityConstant = 0.000028
     private val softeningSquared = .0032 * .0032
     private val contactStiffness = 3.2
+    // No per-contact trig. When exact coordinates coincide, pick one of a
+    // fixed set of equal-and-opposite normal directions by particle IDs.
+    private val overlapNormalX = DoubleArray(32) {
+        cos(2.0 * PI * (it + .5) / 32.0)
+    }
+    private val overlapNormalY = DoubleArray(32) {
+        sin(2.0 * PI * (it + .5) / 32.0)
+    }
+    var lastGravityMs = 0.0
+        private set
+    var lastContactMs = 0.0
+        private set
+    private var gravityTimeNs = 0L
+    private var contactTimeNs = 0L
     private val specificHeat = 0.000001
     private var currentEvent = CosmicEpisode()
     private val thermoInterval = 8
@@ -522,6 +536,7 @@ internal class GranularUniverse {
 
     private fun accelerations(gravity: Float, refreshGravity: Boolean) {
         if (refreshGravity) {
+            val gravityStart = System.nanoTime()
             gravityRebuilds++
             gravityNodesVisited = 0
             java.util.Arrays.fill(ax, 0, grains.size, 0.0)
@@ -546,9 +561,11 @@ internal class GranularUniverse {
                 gx[i] = ax[i] - cx
                 gy[i] = ay[i] - cy
             }
+            gravityTimeNs += System.nanoTime() - gravityStart
         }
         java.lang.System.arraycopy(gx, 0, ax, 0, grains.size)
         java.lang.System.arraycopy(gy, 0, ay, 0, grains.size)
+        val contactStart = System.nanoTime()
         contactChecks = 0
         indexCells()
         forNearby { i, j, dx, dy, d ->
@@ -557,8 +574,9 @@ internal class GranularUniverse {
             val ny: Double
             if (d > 1e-9) { nx = dx/d; ny = dy/d }
             else {
-                val angle = (a.id xor b.id) * .6180339887
-                nx = cos(angle); ny = sin(angle)
+                val slot = (a.id xor b.id) and 31
+                nx = overlapNormalX[slot]
+                ny = overlapNormalY[slot]
             }
             val overlap = grainRadius(a) + grainRadius(b) - d
             val force = contactStiffness * overlap
@@ -597,6 +615,7 @@ internal class GranularUniverse {
             a.heat -= transfer
             b.heat += transfer
         }
+        contactTimeNs += System.nanoTime() - contactStart
     }
 
     /**
@@ -695,6 +714,8 @@ internal class GranularUniverse {
     ) {
         if (grains.isEmpty() || dt <= 0f) return
         currentEvent = episode
+        gravityTimeNs = 0L
+        contactTimeNs = 0L
         releaseHeatAsMotion(episode)
         capacity()
         // Soft contact springs remain stable at h <= .017 for normal grain
@@ -750,6 +771,8 @@ internal class GranularUniverse {
                 p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
             }
         }
+        lastGravityMs = gravityTimeNs / 1_000_000.0
+        lastContactMs = contactTimeNs / 1_000_000.0
         tick++
         if (tick % thermoInterval == 0) {
             for (p in grains) phaseChange(p)

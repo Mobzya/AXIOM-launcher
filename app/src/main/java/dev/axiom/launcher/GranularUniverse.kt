@@ -608,12 +608,50 @@ internal class GranularUniverse {
         }
     }
 
+    /**
+     * A stellar nursery is a real cooling/dissipative gas encounter.
+     * Existing neighboring gas packets exchange opposite velocity changes;
+     * their lost relative kinetic energy becomes heat, while gravity can
+     * subsequently assemble the slower cloud. No mass is created.
+     */
+    private fun settleNurseryGas(event: CosmicEpisode) {
+        var previous = -1
+        for (i in grains.indices) {
+            val a = grains[i]
+            if (!a.material.gas ||
+                hypot(a.x-event.x, a.y-event.y) > .45f) continue
+            if (previous < 0) { previous = i; continue }
+            val b = grains[previous]
+            previous = -1
+            if (hypot(a.x-b.x,a.y-b.y) > .09f) continue
+            val mx = (b.vx-a.vx).toDouble()
+            val my = (b.vy-a.vy).toDouble()
+            val totalMass = a.mass.toDouble() + b.mass
+            val mu = a.mass.toDouble()*b.mass/totalMass
+            val fraction = .28
+            val lost = .5*mu*(mx*mx+my*my) *
+                (2*fraction - fraction*fraction)
+            // Both grains move toward their shared centre-of-mass velocity.
+            a.vx = (a.vx + fraction*mx*b.mass/totalMass).toFloat()
+            a.vy = (a.vy + fraction*my*b.mass/totalMass).toFloat()
+            b.vx = (b.vx - fraction*mx*a.mass/totalMass).toFloat()
+            b.vy = (b.vy - fraction*my*a.mass/totalMass).toFloat()
+            a.heat += lost * a.mass/totalMass
+            b.heat += lost * b.mass/totalMass
+        }
+    }
+
     /** Draw explosion energy from local material heat; never add energy. */
     private fun releaseHeatAsMotion(episode: CosmicEpisode) {
         if (episode.kind == CosmicEventKind.QUIET ||
             episode.serial == pulseSerial) return
         pulseSerial = episode.serial
-        if (episode.kind !in listOf(CosmicEventKind.METEORS,
+        if (episode.kind == CosmicEventKind.STELLAR_NURSERY) {
+            settleNurseryGas(episode)
+            return
+        }
+        if (episode.kind !in listOf(CosmicEventKind.NEBULA,
+            CosmicEventKind.METEORS,
             CosmicEventKind.NOVA,
             CosmicEventKind.SOLAR_FLARE, CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION,
@@ -623,7 +661,8 @@ internal class GranularUniverse {
             (episode.kind == CosmicEventKind.METEORS &&
                 p.y < .48f ||
                 hypot(p.x - episode.x, p.y - episode.y) < .40f) &&
-                p.heat > 0
+                (episode.kind != CosmicEventKind.NEBULA ||
+                    p.material.gas) && p.heat > 0
         }
         for (k in 0 until candidates.size - 1 step 2) {
             val a = grains[candidates[k]]
@@ -639,7 +678,8 @@ internal class GranularUniverse {
             }
             val vrel = (b.vx-a.vx)*nx+(b.vy-a.vy)*ny
             if (vrel < 0) { nx = -nx; ny = -ny }
-            val available = (a.heat + b.heat) * .12
+            val available = (a.heat + b.heat) *
+                (if (episode.kind == CosmicEventKind.NEBULA) .025 else .12)
             if (available <= 0) continue
             val inv = 1.0/a.mass + 1.0/b.mass
             val speedAlong = abs(vrel)

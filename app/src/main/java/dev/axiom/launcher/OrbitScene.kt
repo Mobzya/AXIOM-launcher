@@ -82,6 +82,11 @@ internal fun CosmicEnvironment(
         val capacity = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         power.isPowerSaveMode || capacity in 0..15
     }
+    val formulaPaint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
+        }
+    }
     var frameMix by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
         val slow = interacting || reducedPower || world.maxBodies >= 40 ||
@@ -106,6 +111,12 @@ internal fun CosmicEnvironment(
     }
 
     Canvas(modifier) {
+        // Educational math remains available; only cosmic silhouettes are removed.
+        if (!interacting && world.episode.kind == CosmicEventKind.QUIET) {
+            formulaPaint.color = if (AxiomColors.palette.light)
+                android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            drawMathMoment(world.mathMoment, dim * .55f, formulaPaint)
+        }
         val light = AxiomColors.palette.light
         val perspective = world.depthShift
         // No legacy drawEpisode, drawBody, backdrops, or silhouette sprites.

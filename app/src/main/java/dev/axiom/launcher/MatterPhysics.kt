@@ -275,7 +275,11 @@ internal class MatterField(private val random: Random = Random(91)) {
                 CosmicEventKind.SINGULARITY, CosmicEventKind.GRAVITATIONAL_CAUSTIC,
                 CosmicEventKind.PHASE_TIDE, CosmicEventKind.TIDAL_CAPTURE
             ) && dist < .27f && activity > .30f
-            val strip = tidal > 1.8f || shock || rip
+            // Every cosmic episode is expressed through material, including
+            // weak events without a named jet/shock wave.
+            val ambient = episode.kind != CosmicEventKind.QUIET &&
+                dist < .14f && activity > .68f
+            val strip = tidal > 1.8f || shock || rip || ambient
             if (!strip || source.mass < .12f) continue
             val key = (source.id.toLong() shl 32) or episode.serial.toLong()
             val cooldown = if (tidal > 1.8f) 1.8f else 4.5f
@@ -288,6 +292,7 @@ internal class MatterField(private val random: Random = Random(91)) {
             val intensity = when {
                 tidal > 1.8f -> (tidal * .025f).coerceIn(.018f, .18f)
                 rip -> .065f
+                ambient -> .012f
                 else -> .04f
             }
             val (remaining, shards) = structures.release(source, count,
@@ -324,7 +329,9 @@ internal class MatterField(private val random: Random = Random(91)) {
                 (-.015f * strength * dy / d) to (.015f * strength * dx / d)
             CosmicEventKind.STELLAR_NURSERY, CosmicEventKind.NEBULA ->
                 (-.007f * strength * dx / d) to (-.007f * strength * dy / d)
-            else -> 0f to 0f
+            // Background gravitational/shear field for every other event.
+            else -> (.0025f * strength * dy / d) to
+                (-.0025f * strength * dx / d)
         }
     }
 
@@ -397,6 +404,11 @@ internal class MatterField(private val random: Random = Random(91)) {
             }
             p.temperature += (180f - p.temperature) *
                 (if (p.material.gas) .016f else .008f) * dt
+            if (episode.kind in listOf(CosmicEventKind.NEBULA,
+                    CosmicEventKind.STELLAR_NURSERY) &&
+                hypot(p.x - episode.x, p.y - episode.y) < .3f) {
+                p.temperature -= 14f * dt * episode.alpha
+            }
             // Hot gases cool and disperse; solid packets can stick together.
             if (p.material.gas && thermal > .2f) p.vy -= .001f * thermal * dt
             p.material = equilibrateMaterial(p.material, p.temperature)
@@ -443,10 +455,13 @@ internal class MatterField(private val random: Random = Random(91)) {
                             a.material, b.material,
                             (a.temperature + b.temperature) * .5f)
                         val threshold = min(a.material.cohesion, b.material.cohesion)
-                        if (chemistry != null ||
-                            (!a.material.gas && !b.material.gas &&
-                                relative < threshold &&
-                                max(a.temperature, b.temperature) < 1900f)) {
+                        val solidCapture = !a.material.gas && !b.material.gas &&
+                            relative < threshold &&
+                            max(a.temperature, b.temperature) < 1900f
+                        val gasCollapse = a.material.gas && b.material.gas &&
+                            relative < .017f &&
+                            max(a.temperature, b.temperature) < 1100f
+                        if (chemistry != null || solidCapture || gasCollapse) {
                             val mass = a.mass + b.mass
                             a.vx = (a.vx * a.mass + b.vx * b.mass) / mass
                             a.vy = (a.vy * a.mass + b.vy * b.mass) / mass
@@ -525,13 +540,20 @@ internal class MatterField(private val random: Random = Random(91)) {
                 landed = true
                 break
             }
-            if (!landed && p.mass >= .11f && !p.material.gas &&
-                p.temperature < 1900f && bodies.size < maxBodies) {
+            val gas = p.material.gas
+            val threshold = if (gas) .30f else .11f
+            if (!landed && p.mass >= threshold &&
+                p.age > (if (gas) 1f else 0f) &&
+                p.temperature < (if (gas) 1400f else 1900f) &&
+                bodies.size < maxBodies) {
+                val stellarClass = if (!gas) StellarClass.PLANET
+                    else if (p.mass > .75f) StellarClass.STAR else StellarClass.CLOUD
                 bodies.add(CelestialBody(
                     id = nextBodyId(), kind = planetKind(p.material), mass = p.mass,
                     depth = 1.25f, x = p.x, y = p.y, vx = p.vx, vy = p.vy,
-                    lifetime = 120f, sizeFactor = .7f,
-                    material = p.material, temperature = p.temperature
+                    lifetime = 3600f, sizeFactor = .7f,
+                    material = p.material, temperature = p.temperature,
+                    stellarClass = stellarClass
                 ))
                 structures.ensure(bodies.last())
                 newPlanets++

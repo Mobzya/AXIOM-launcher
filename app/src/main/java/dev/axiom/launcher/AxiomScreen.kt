@@ -555,6 +555,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 },
                 particleCount = world.sand.grains.count { it.owner < 0 },
                 boundParticleCount = world.sand.grains.count { it.owner >= 0 },
+                totalMatterMass = world.sand.totals().mass,
                 reactionCount = world.matter.reactions,
                 planetCount = world.matter.newPlanets,
                 onMaximumBodies = {

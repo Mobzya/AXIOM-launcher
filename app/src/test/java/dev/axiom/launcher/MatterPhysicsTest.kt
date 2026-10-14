@@ -38,8 +38,10 @@ class MatterPhysicsTest {
     }
 
     @Test fun elementsReactAndChangePhase() {
+        assertEquals(null,
+            reactionFor(MatterMaterial.OXYGEN, MatterMaterial.HYDROGEN, 300f))
         assertEquals(MatterMaterial.STEAM,
-            reactionFor(MatterMaterial.OXYGEN, MatterMaterial.HYDROGEN, 300f)?.product)
+            reactionFor(MatterMaterial.OXYGEN, MatterMaterial.HYDROGEN, 800f)?.product)
         assertEquals(MatterMaterial.OXIDE,
             reactionFor(MatterMaterial.OXYGEN, MatterMaterial.IRON, 600f)?.product)
         assertEquals(null, reactionFor(MatterMaterial.METHANE, MatterMaterial.OXYGEN, 300f))
@@ -54,9 +56,9 @@ class MatterPhysicsTest {
     @Test fun packetsReactInRealStepWithoutMassLoss() {
         val field = MatterField(Random(3))
         field.particles.add(MatterParticle(1, .4f, .5f, 0f, 0f,
-            .02f, 300f, MatterMaterial.HYDROGEN))
+            .02f, 900f, MatterMaterial.HYDROGEN))
         field.particles.add(MatterParticle(2, .4004f, .5f, 0f, 0f,
-            .03f, 300f, MatterMaterial.OXYGEN))
+            .03f, 900f, MatterMaterial.OXYGEN))
         val before = field.totalMass()
         field.step(1f / 60f, 1f, ArrayList(), 12, { 100 }, false)
         assertEquals(before, field.totalMass(), 1e-6)

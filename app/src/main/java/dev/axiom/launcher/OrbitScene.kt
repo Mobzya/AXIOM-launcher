@@ -87,8 +87,9 @@ internal fun CosmicEnvironment(
     // Paint at display refresh rate, but integrate physics at stable 60/30 Hz.
     // Interpolation makes motion continuous on 90/120-Hz displays.
     var frameMix by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(world, interacting, reducedPower, world.maxBodies) {
-        val slow = interacting || reducedPower || world.maxBodies >= 40
+    LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
+        val slow = interacting || reducedPower || world.maxBodies >= 40 ||
+            world.matterMode == MatterMode.DETAILED
         val targetNanos = if (slow) 33_333_333L else 16_666_667L
         var previous = withFrameNanos { it }
         var accumulator = 0L
@@ -230,6 +231,25 @@ CosmicEventKind.SINGULARITY -> {
                 center=Offset(p.x*size.width,p.y*size.height))
         }
 
+        // Mass-bearing material packets: physical clusters, not cosmetic sprites.
+        // One circle per packet; the linked-cell engine handles interactions.
+        val lightBackdrop = AxiomColors.palette.light
+        world.matter.particles.forEach { p ->
+            val raw = Color(p.material.argb)
+            val pigment = if (lightBackdrop) Color(
+                red = raw.red * .58f, green = raw.green * .58f,
+                blue = raw.blue * .58f, alpha = 1f) else raw
+            val center = Offset(p.x * size.width, p.y * size.height)
+            val radius = (1.05f + kotlin.math.sqrt(p.mass) * 7f).dp.toPx()
+            val alpha = dim * (if (p.material.gas) .58f else .83f)
+            if (p.material.gas && world.matterMode == MatterMode.DETAILED &&
+                p.id % 4 == 0) {
+                drawCircle(pigment.copy(alpha = alpha * .12f),
+                    radius * 3.5f, center)
+            }
+            drawCircle(pigment.copy(alpha = alpha), radius, center)
+        }
+
         // Actual material bodies always own the highest COSMIC depth layer.
         val mix = frameMix
         val oldBodies = world.previousBodies
@@ -244,6 +264,13 @@ CosmicEventKind.SINGULARITY -> {
         val drawX = visualX + perspective * .026f * factor
         val origin = Offset(drawX * size.width, visualY * size.height)
         drawBody(b, origin, unit * factor, opacity, t)
+        val rawTint = Color(b.material.argb)
+        val rim = if (lightBackdrop) Color(
+            red = rawTint.red * .56f, green = rawTint.green * .56f,
+            blue = rawTint.blue * .56f) else rawTint
+        drawCircle(rim.copy(alpha = opacity * .8f),
+            radius = (unit * contactSize(b) * factor).coerceAtLeast(2.dp.toPx()),
+            center = origin, style = Stroke(.85.dp.toPx()))
         }
 
 

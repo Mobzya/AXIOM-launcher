@@ -556,6 +556,12 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 particleCount = world.sand.grains.count { it.owner < 0 },
                 boundParticleCount = world.sand.grains.count { it.owner >= 0 },
                 totalMatterMass = world.sand.totals().mass,
+                physicsCostMs = world.physicsCostMs,
+                onStressTest = {
+                    world.populateStressScene(4600)
+                    prefs.edit().putString("matter_mode",
+                        MatterMode.DETAILED.name).apply()
+                },
                 reactionCount = world.matter.reactions,
                 planetCount = world.matter.newPlanets,
                 onMaximumBodies = {

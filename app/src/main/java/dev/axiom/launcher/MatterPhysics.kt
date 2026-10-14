@@ -67,18 +67,16 @@ internal fun reactionFor(
     fun isPair(x: MatterMaterial, y: MatterMaterial) =
         (a == x && b == y) || (a == y && b == x)
     return when {
-        isPair(MatterMaterial.HYDROGEN, MatterMaterial.OXYGEN) ->
+        isPair(MatterMaterial.HYDROGEN, MatterMaterial.OXYGEN) && temperature >= 700f ->
             MatterReaction(MatterMaterial.STEAM, 560f)
-        isPair(MatterMaterial.METHANE, MatterMaterial.OXYGEN) && temperature > 520f ->
+        isPair(MatterMaterial.METHANE, MatterMaterial.OXYGEN) && temperature >= 850f ->
             MatterReaction(MatterMaterial.CARBON, 720f)
-        isPair(MatterMaterial.IRON, MatterMaterial.OXYGEN) ->
+        isPair(MatterMaterial.IRON, MatterMaterial.OXYGEN) && temperature >= 470f ->
             MatterReaction(MatterMaterial.OXIDE, 170f)
         isPair(MatterMaterial.SILICATE, MatterMaterial.IRON) && temperature > 900f ->
             MatterReaction(MatterMaterial.MINERAL, -80f)
-        isPair(MatterMaterial.SILICATE, MatterMaterial.OXYGEN) ->
+        isPair(MatterMaterial.SILICATE, MatterMaterial.OXYGEN) && temperature >= 1550f ->
             MatterReaction(MatterMaterial.GLASS, 120f)
-        isPair(MatterMaterial.ROCK, MatterMaterial.ICE) && temperature < 360f ->
-            MatterReaction(MatterMaterial.MINERAL, -50f)
         else -> null
     }
 }
@@ -372,8 +370,8 @@ internal class MatterField(private val random: Random = Random(91)) {
                 val softened = r2 + .00025f
                 val pull = .00022f * gravity * b.mass /
                     (softened * sqrt(softened))
-                val fx = dx * pull
-                val fy = dy * pull
+                val fx = (dx * pull).coerceIn(-.6f, .6f)
+                val fy = (dy * pull).coerceIn(-.6f, .6f)
                 ax += fx
                 ay += fy
                 // Newton's third law: particles pull on bodies as well.

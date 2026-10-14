@@ -16,10 +16,20 @@ class GranularScaleTest {
         world.seed(CelestialBody(5, 2, 15f, 1f, .47f, .48f, 0f, 0f), 4620)
         assertEquals(4620, world.grains.size)
         val before = world.totals()
+        repeat(3) { world.step(1f/30f, 1f) }
         val start = System.nanoTime()
-        repeat(4) { world.step(1f/30f, 1f) }
+        var gravityMillis = 0.0
+        var contactMillis = 0.0
+        repeat(12) {
+            world.step(1f/30f, 1f)
+            gravityMillis += world.lastGravityMs
+            contactMillis += world.lastContactMs
+        }
         val millis = (System.nanoTime() - start) / 1_000_000
-        println("AXIOM scale benchmark: 4620 grains, 4 frames, ${millis}ms, " +
+        println("AXIOM warmed scale benchmark: 4620 grains, 12 frames, ${millis}ms " +
+            "(${"%.2f".format(java.util.Locale.US, millis/12.0)}ms/step); " +
+            "gravity=${"%.2f".format(java.util.Locale.US,gravityMillis/12)}ms/step, " +
+            "contacts=${"%.2f".format(java.util.Locale.US,contactMillis/12)}ms/step; " +
             "gravity rebuilds=${world.gravityRebuilds}, " +
             "last cell contacts=${world.counters.first}, " +
             "tree visits=${world.counters.second}")
@@ -30,7 +40,7 @@ class GranularScaleTest {
         assertTrue(world.grains.all { it.x.isFinite() && it.y.isFinite() &&
             it.vx.isFinite() && it.vy.isFinite() && it.heat >= 0.0 })
         assertTrue("Gravity should not rebuild every contact substep",
-            world.gravityRebuilds <= 3)
+            world.gravityRebuilds <= 8)
         assertTrue("Regression: 4620-grain batch took ${millis}ms", millis < 25000)
     }
 

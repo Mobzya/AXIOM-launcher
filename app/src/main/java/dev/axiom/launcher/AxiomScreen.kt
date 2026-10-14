@@ -145,7 +145,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
-    val world = remember { CosmicWorld() }
+    val world = remember {
+        CosmicWorld(initialMatterMode = matterModeFromPreference(
+            prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+    }
     val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -325,7 +328,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                                     else -> LabKind.WAVE
                                 })
                                 mode = AxiomMode.LAB
-                            } else world.spawnFromCorner()
+                            } else world.disturb(x, y)
                         }
                     )
                 }
@@ -550,8 +553,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     world.updateMatterMode(next)
                     prefs.edit().putString("matter_mode", next.name).apply()
                 },
-                particleCount = world.matter.particles.size,
-                boundParticleCount = world.matter.structures.sampleCount,
+                particleCount = world.sand.grains.count { it.owner < 0 },
+                boundParticleCount = world.sand.grains.count { it.owner >= 0 },
                 reactionCount = world.matter.reactions,
                 planetCount = world.matter.newPlanets,
                 onMaximumBodies = {

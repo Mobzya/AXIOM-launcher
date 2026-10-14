@@ -36,6 +36,11 @@ android {
     }
 }
 
+// Record 4600-grain benchmark timings in the GitHub Actions log.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging.showStandardStreams = true
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.compose.ui:ui")

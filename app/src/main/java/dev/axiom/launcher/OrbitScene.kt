@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import kotlin.coroutines.coroutineContext
 import kotlin.math.PI
@@ -63,8 +65,8 @@ private val neuralEdges = listOf(
 
 /**
  * Unified particle renderer. Legacy orbit/sprite artwork is deliberately not
- * called: every visible cosmic object is a set of physical bound/free samples.
- * Bound samples share the centre-of-mass transform of their parent until freed.
+ * called: every visible cosmic object is a separately simulated grain.
+ * Positions come from a compact immutable frame published by the worker.
  */
 @Composable
 internal fun CosmicEnvironment(
@@ -88,7 +90,27 @@ internal fun CosmicEnvironment(
             typeface = Typeface.create("monospace", Typeface.NORMAL)
         }
     }
-    var frameMix by remember { mutableFloatStateOf(0f) }
+    // Reuse point buffers and Android's drawPoints() batching rather than
+    // allocating / submitting 4,500 individual Compose drawCircle operations.
+    val materials = MatterMaterial.entries
+    val buffers = remember { Array(materials.size) { FloatArray(9600) } }
+    val counts = remember { IntArray(materials.size) }
+    val lightPalette = AxiomColors.palette.light
+    val nativePaints = remember(lightPalette) {
+        materials.map { material ->
+            val c = material.argb
+            val color = if (lightPalette) android.graphics.Color.rgb(
+                (android.graphics.Color.red(c)*.57f).toInt(),
+                (android.graphics.Color.green(c)*.57f).toInt(),
+                (android.graphics.Color.blue(c)*.57f).toInt()
+            ) else c
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = color
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+            }
+        }
+    }
     LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
         val slow = interacting || reducedPower || world.maxBodies >= 40 ||
             world.matterMode == MatterMode.DETAILED
@@ -103,11 +125,13 @@ internal fun CosmicEnvironment(
             val advanced = accumulator >= tickNanos
             if (advanced) {
                 accumulator -= tickNanos
-                world.step(if (slow) 1f / 30f else 1f / 60f)
+                // Heavy particle simulation NEVER blocks Compose/UI input.
+                withContext(Dispatchers.Default) {
+                    world.step(if (slow) 1f / 30f else 1f / 60f)
+                }
             }
-            if (!reducedPower || advanced) {
-                frameMix = (accumulator.toFloat() / tickNanos).coerceIn(0f, 1f)
-            }
+            // The worker's published immutable frame alone invalidates
+            // the Canvas. Avoid an unnecessary 60Hz animation invalidation.
         }
     }
 
@@ -118,23 +142,40 @@ internal fun CosmicEnvironment(
                 android.graphics.Color.BLACK else android.graphics.Color.WHITE
             drawMathMoment(world.mathMoment, dim * .55f, formulaPaint)
         }
-        // Each pixel-level grain is its own physics object. No particles are
-        // positioned relative to a fixed planet, centre, ring or template.
-        val light = AxiomColors.palette.light
-        for (p in world.sand.grains) {
-            if (p.x !in -.035f..1.035f || p.y !in -.035f..1.035f) continue
-            val base = Color(p.material.argb)
-            val tint = if (light) Color(base.red * .55f,
-                base.green * .55f, base.blue * .55f, 1f) else base
-            val pos = Offset(p.x * size.width, p.y * size.height)
-            val radius = (.75f + sqrt(p.mass) * 4f)
-                .coerceIn(.65f, 1.55f).dp.toPx()
-            val alpha = dim * (if (p.material.gas) .78f else .93f)
-            if (p.material == MatterMaterial.PLASMA && !light &&
-                p.id % 4 == 0) {
-                drawCircle(tint.copy(alpha = .10f * dim), radius * 2.4f, pos)
+        // All grains are actual independent masses. Batching by material
+        // turns thousands of draw calls into at most 16 native drawPoints.
+        val frame = world.grainFrame
+        java.util.Arrays.fill(counts, 0)
+        var i = 0
+        while (i + 3 < frame.size) {
+            val x = frame[i]
+            val y = frame[i+1]
+            val material = frame[i+3].toInt()
+            if (x >= -.035f && x <= 1.035f &&
+                y >= -.035f && y <= 1.035f &&
+                material in buffers.indices) {
+                val k = counts[material]
+                val buffer = buffers[material]
+                if (k + 1 < buffer.size) {
+                    buffer[k] = x * size.width
+                    buffer[k+1] = y * size.height
+                    counts[material] = k + 2
+                }
             }
-            drawCircle(tint.copy(alpha = alpha), radius, pos)
+            i += 4
+        }
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            for (k in materials.indices) {
+                val count = counts[k]
+                if (count == 0) continue
+                val paint = nativePaints[k]
+                paint.strokeWidth = (if (materials[k].gas) 1.9f else 2.6f) *
+                    density
+                paint.alpha = ((if (materials[k].gas) .75f else .94f) *
+                    dim * 255f).toInt().coerceIn(0,255)
+                native.drawPoints(buffers[k], 0, count, paint)
+            }
         }
         world.brushPoint?.let { brush ->
             drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),

@@ -62,11 +62,12 @@ internal class BoundStructureField {
             if (old != null) {
                 val existingMass = old.sumOf { it.mass.toDouble() }.toFloat()
                 val newCount = preferredCount(b)
+                val existingSize = old.size
                 if (old.size > newCount) {
                     coarsen(old, newCount)
                 } else if (old.size < newCount) {
                     while (old.size < newCount && old.isNotEmpty()) {
-                        val p = old[old.size % old.size]
+                        val p = old[(old.size - existingSize) % existingSize]
                         val piece = p.mass * .5f
                         p.mass -= piece
                         old.add(BoundMatter(p.dx, p.dy, piece, p.material, p.temperature))
@@ -252,10 +253,10 @@ internal class BoundStructureField {
             val mass = subset.sumOf { it.mass.toDouble() }
             if (mass == 0.0) continue
             compact.add(BoundMatter(
-                (subset.sumOf { it.dx * it.mass.toDouble() } / mass).toFloat(),
-                (subset.sumOf { it.dy * it.mass.toDouble() } / mass).toFloat(),
+                (subset.sumOf { it.dx.toDouble() * it.mass.toDouble() } / mass).toFloat(),
+                (subset.sumOf { it.dy.toDouble() * it.mass.toDouble() } / mass).toFloat(),
                 mass.toFloat(), subset.maxBy { it.mass }.material,
-                (subset.sumOf { it.temperature * it.mass.toDouble() } / mass).toFloat()
+                (subset.sumOf { it.temperature.toDouble() * it.mass.toDouble() } / mass).toFloat()
             ))
         }
         samples.clear()

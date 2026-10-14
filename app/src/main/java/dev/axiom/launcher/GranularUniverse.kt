@@ -476,6 +476,116 @@ internal class GranularUniverse {
         }
     }
 
+    /**
+     * Find physically coherent debris clouds without spawning particles or
+     * imposing a solid shape. Union-find is used ONLY to name visible objects.
+     */
+    fun discoverClumps(
+        bodies: List<CelestialBody>, maxBodies: Int, nextId: () -> Int
+    ): List<CelestialBody> {
+        if (tick % 24 != 0 || bodies.size >= maxBodies) return emptyList()
+        val parent = IntArray(grains.size) { it }
+        val sizes = IntArray(grains.size) { 1 }
+        fun root(index: Int): Int {
+            var i = index
+            while (parent[i] != i) {
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            }
+            return i
+        }
+        fun unite(a: Int, b: Int) {
+            val ra = root(a); val rb = root(b)
+            if (ra == rb) return
+            if (sizes[ra] < sizes[rb]) {
+                parent[ra] = rb; sizes[rb] += sizes[ra]
+            } else {
+                parent[rb] = ra; sizes[ra] += sizes[rb]
+            }
+        }
+        indexCells()
+        for (i in grains.indices) {
+            val a = grains[i]
+            if (a.owner >= 0) continue
+            val cx = cellCoord(a.x); val cy = cellCoord(a.y)
+            var visited = 0
+            for (y in max(0, cy-1)..min(gridWidth-1, cy+1))
+                for (x in max(0, cx-1)..min(gridWidth-1, cx+1)) {
+                    var j = heads[y * gridWidth + x]
+                    while (j >= 0 && visited++ < 180) {
+                        val current = j
+                        j = gridNext[current]
+                        if (current >= i) continue
+                        val b = grains[current]
+                        if (b.owner >= 0) continue
+                        val distance = hypot(a.x-b.x, a.y-b.y)
+                        val relative = hypot(a.vx-b.vx, a.vy-b.vy)
+                        if (distance < (grainRadius(a)+grainRadius(b))*2.5 &&
+                            relative < .048f) unite(i, current)
+                    }
+                }
+        }
+        val components = HashMap<Int, MutableList<Int>>()
+        for (i in grains.indices) {
+            if (grains[i].owner >= 0) continue
+            components.getOrPut(root(i)) { ArrayList() }.add(i)
+        }
+        val generated = ArrayList<CelestialBody>()
+        for (indices in components.values.sortedByDescending { it.size }) {
+            if (indices.size < 12 || bodies.size + generated.size >= maxBodies) continue
+            var mass = 0.0; var mx = 0.0; var my = 0.0
+            var mvx = 0.0; var mvy = 0.0
+            var minX = Double.POSITIVE_INFINITY; var maxX = Double.NEGATIVE_INFINITY
+            var minY = Double.POSITIVE_INFINITY; var maxY = Double.NEGATIVE_INFINITY
+            for (i in indices) {
+                val p = grains[i]
+                val m = p.mass.toDouble()
+                mass += m; mx += m*p.x; my += m*p.y
+                mvx += m*p.vx; mvy += m*p.vy
+                minX = min(minX,p.x.toDouble()); maxX = max(maxX,p.x.toDouble())
+                minY = min(minY,p.y.toDouble()); maxY = max(maxY,p.y.toDouble())
+            }
+            if (mass < .075 || max(maxX-minX,maxY-minY) > .075) continue
+            val id = nextId()
+            for (i in indices) grains[i].owner = id
+            val p = grains[indices[0]]
+            val gas = indices.count { grains[it].material.gas } > indices.size*.75
+            generated.add(CelestialBody(id, if (gas) 15 else 2,
+                mass.toFloat(), 1.25f, (mx/mass).toFloat(), (my/mass).toFloat(),
+                (mvx/mass).toFloat(), (mvy/mass).toFloat(),
+                lifetime = 3600f, material = p.material,
+                stellarClass = if (gas) StellarClass.CLOUD else StellarClass.PLANET))
+        }
+        return generated
+    }
+
+    /**
+     * Gravitational capture changes only object ownership in the UI. It does
+     * not glue the particles, alter accelerations, or destroy momentum.
+     */
+    fun mergeCaptureLabels(bodies: List<CelestialBody>): List<CelestialBody> {
+        if (tick % 18 != 0) return bodies
+        val retained = bodies.toMutableList()
+        for (i in retained.indices) {
+            val a = retained[i]
+            if (a.mass <= 0f) continue
+            for (j in i + 1 until retained.size) {
+                val b = retained[j]
+                if (b.mass <= 0f) continue
+                val distance = hypot(a.x-b.x,a.y-b.y)
+                val relative = hypot(a.vx-b.vx,a.vy-b.vy)
+                if (distance > (structureRadius(a)+structureRadius(b))*.7f ||
+                    relative > .037f) continue
+                val winner = if (a.mass >= b.mass) a.id else b.id
+                val loser = if (winner == a.id) b.id else a.id
+                for (p in grains) if (p.owner == loser) p.owner = winner
+                if (winner == a.id) retained[j] = b.copy(mass = 0f)
+                else retained[i] = a.copy(mass = 0f)
+            }
+        }
+        return retained.filter { it.mass > 0f }
+    }
+
     /** Capture is classification only: every grain still follows its own forces. */
     fun relabelCaptured(bodies: List<CelestialBody>) {
         if (tick % 9 != 0) return

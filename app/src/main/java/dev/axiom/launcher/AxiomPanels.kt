@@ -236,6 +236,8 @@ internal fun AxiomSettings(
     particleCount: Int,
     boundParticleCount: Int,
     totalMatterMass: Double,
+    physicsCostMs: Float,
+    onStressTest: () -> Unit,
     reactionCount: Int,
     planetCount: Int,
     wallsEnabled: Boolean,
@@ -370,14 +372,15 @@ internal fun AxiomSettings(
         Text("Каждая песчинка движется независимо: гравитация притягивает её " +
             "к остальным, а контактное давление и удары не дают " +
             "скоплению схлопнуться в точку. Масса и число песчинок " +
-            "не изменяются при столкновении.",
+            "не изменяются при столкновении. Плавление, испарение и " +
+            "ионизация расходуют тепло на фазовые переходы.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(14.dp))
         listOf(
             Triple(MatterMode.BALANCED, "Умеренный",
                 "До 850 самостоятельных частиц · меньше физических подшагов"),
             Triple(MatterMode.DETAILED, "Проработанный",
-                "До 4800 самостоятельных частиц · точнее расчёт, выше нагрузка")
+                "До 4800 самостоятельных частиц · адаптивная гравитация и потоки")
         ).forEach { (choice, title, description) ->
             val selected = matterMode == choice
             val shape = RoundedCornerShape(17.dp)
@@ -405,6 +408,18 @@ internal fun AxiomSettings(
             fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         Text("Общая масса: ${"%.4f".format(java.util.Locale.US, totalMatterMass)} " +
             "· количество частиц неизменно при столкновениях",
+            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
+        Text("Последний расчёт физики: " +
+            "${"%.1f".format(java.util.Locale.US, physicsCostMs)} мс. " +
+            "Цель 30 FPS: до 33 мс без гарантии для любого устройства.",
+            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
+        Spacer(Modifier.height(13.dp))
+        Text("▸  Нагрузочный тест: 4600 песчинок",
+            color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onStressTest)
+                .padding(vertical = 14.dp))
+        Text("Явно добавляет вещество в сцену и включает подробный режим. " +
+            "События и столкновения новых песчинок не создают.",
             color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {

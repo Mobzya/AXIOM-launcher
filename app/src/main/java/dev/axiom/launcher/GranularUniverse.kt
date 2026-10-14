@@ -32,7 +32,16 @@ internal data class SandGrain(
     var heat: Double,
     var material: MatterMaterial,
     var owner: Int = -1
-)
+) {
+    // Physical mass is immutable, so both radii are immutable as well.
+    // Recomputing sqrt(mass) for EVERY neighboring pair was a major cost
+    // in dense 4600+ clouds; now the square roots run only at grain creation.
+    val collisionRadius: Double =
+        (.00135 * sqrt(mass.coerceAtLeast(.00001f) / .01f))
+            .coerceIn(.00042, .0028)
+    val visualRadius: Float =
+        (.75f + sqrt(mass) * 4f).coerceIn(.65f, 1.55f)
+}
 
 internal data class GrainTotals(
     val mass: Double, val momentumX: Double, val momentumY: Double,
@@ -132,7 +141,7 @@ internal class GranularUniverse {
             val p = grains[i]; val j = i * 4
             frame[j] = p.x
             frame[j+1] = p.y
-            frame[j+2] = (.75f + sqrt(p.mass) * 4f).coerceIn(.65f, 1.55f)
+            frame[j+2] = p.visualRadius
             frame[j+3] = p.material.ordinal.toFloat()
         }
         return frame
@@ -269,9 +278,7 @@ internal class GranularUniverse {
         p.material = next
     }
 
-    private fun grainRadius(p: SandGrain): Double =
-        (.00135 * sqrt(p.mass.coerceAtLeast(.00001f) / .01f))
-            .coerceIn(.00042, .0028)
+    private fun grainRadius(p: SandGrain): Double = p.collisionRadius
 
     private fun capacity() {
         val n = grains.size
@@ -429,7 +436,9 @@ internal class GranularUniverse {
         }
     }
 
-    private fun forNearby(action: (Int, Int, Double, Double, Double) -> Unit) {
+    private inline fun forNearby(
+        action: (Int, Int, Double, Double, Double) -> Unit
+    ) {
         forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
             val cx = cellX[i]

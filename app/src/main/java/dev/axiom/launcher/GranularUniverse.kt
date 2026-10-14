@@ -1,0 +1,477 @@
+package dev.axiom.launcher
+
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * Genuine moving grains. There are no fixed local coordinates, springs to a
+ * prescribed silhouette, particle emitters or implicit mergers in this solver.
+ * Every grain carries the same mass before and after a collision.
+ *
+ * Gravity: softened inverse-square, approximated with a Barnes-Hut quadtree.
+ * Contact: pairwise repulsive potential + inelastic normal impulse. Kinetic
+ * energy dissipated by an impulse is explicitly moved to internal heat.
+ * Integrator: kick-drift-kick, subdivided to resolve short range contacts.
+ *
+ * The integer owner is a display/selection label only. It NEVER exerts forces
+ * and is never used to move or position a particle.
+ */
+internal data class SandGrain(
+    val id: Int,
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    val mass: Float,
+    var heat: Double,
+    val material: MatterMaterial,
+    var owner: Int = -1
+)
+
+internal data class GrainTotals(
+    val mass: Double, val momentumX: Double, val momentumY: Double,
+    val kinetic: Double, val internal: Double
+)
+
+internal class GranularUniverse {
+    val grains: MutableList<SandGrain> = ArrayList()
+    var mode: MatterMode = MatterMode.BALANCED
+        private set
+
+    private val gravityConstant = 0.000028
+    private val softeningSquared = .0032 * .0032
+    private val contactStiffness = .012
+    private val specificHeat = 0.000001
+    private var nextGrainId = 1
+    private var pulseSerial = -1
+    private var tick = 0
+    private var ax = DoubleArray(0)
+    private var ay = DoubleArray(0)
+    private var gridNext = IntArray(0)
+    private val gridWidth = 224
+    private val heads = IntArray(gridWidth * gridWidth)
+    private val gridCellSize = 1.6 / gridWidth
+
+    // Primitive quadtree buffers, reused across physics steps.
+    private var maxNodes = 0
+    private var nodeCount = 0
+    private var nodeCx = DoubleArray(0)
+    private var nodeCy = DoubleArray(0)
+    private var nodeHalf = DoubleArray(0)
+    private var nodeMass = DoubleArray(0)
+    private var nodeMx = DoubleArray(0)
+    private var nodeMy = DoubleArray(0)
+    private var nodeIndex = IntArray(0)
+    private var child = IntArray(0)
+    private var root = 0
+
+    fun updateMode(value: MatterMode) { mode = value }
+    fun clear() {
+        grains.clear()
+        nextGrainId = 1
+        tick = 0
+        pulseSerial = -1
+    }
+
+    /** Explicit initial or user-created objects only; never called by an impact. */
+    fun seed(body: CelestialBody, requested: Int = if (mode ==
+        MatterMode.DETAILED) 300 else 118) {
+        if (grains.size >= mode.maxParticles) return
+        val n = min(requested, mode.maxParticles - grains.size)
+        if (n <= 0) return
+        val radius = structureRadius(body) * .85
+        val goldenAngle = PI * (3.0 - sqrt(5.0))
+        for (i in 0 until n) {
+            // Deterministic disc packing. No egg shape or pinned lattice:
+            // every point is integrated independently from the first frame.
+            val angle = goldenAngle * i
+            val r = radius * sqrt((i + .5) / n.toDouble())
+            val rx = r * cos(angle)
+            val ry = r * sin(angle)
+            val type = when (body.stellarClass) {
+                StellarClass.STAR, StellarClass.QUASAR ->
+                    if (i % 5 == 0) MatterMaterial.HELIUM
+                    else if (i % 7 == 0) MatterMaterial.PLASMA
+                    else MatterMaterial.HYDROGEN
+                StellarClass.CLOUD -> if (i % 4 == 0) MatterMaterial.ICE
+                    else body.material
+                StellarClass.PLANET -> when (i % 13) {
+                    0 -> MatterMaterial.IRON
+                    1 -> MatterMaterial.SILICATE
+                    2 -> MatterMaterial.CARBON
+                    else -> body.material
+                }
+            }
+            grains.add(SandGrain(
+                nextGrainId++, body.x + rx.toFloat(), body.y + ry.toFloat(),
+                body.vx, body.vy, body.mass / n,
+                body.mass.toDouble() / n * specificHeat *
+                    body.temperature.coerceAtLeast(1f), type, body.id
+            ))
+        }
+    }
+
+    /** Mass, momentum and internal energy of actual grains, no proxy bodies. */
+    fun totals(): GrainTotals {
+        var mass = 0.0; var px = 0.0; var py = 0.0
+        var kinetic = 0.0; var internal = 0.0
+        for (p in grains) {
+            val m = p.mass.toDouble()
+            mass += m
+            px += m * p.vx; py += m * p.vy
+            kinetic += .5 * m * (p.vx * p.vx + p.vy * p.vy)
+            internal += p.heat
+        }
+        return GrainTotals(mass, px, py, kinetic, internal)
+    }
+
+    /** Expensive exact energy diagnostic, intentionally outside the frame loop. */
+    fun totalEnergy(gravity: Float): Double {
+        val t = totals()
+        var energy = t.kinetic + t.internal
+        val g = gravityConstant * gravity
+        for (i in grains.indices) for (j in i + 1 until grains.size) {
+            val a = grains[i]; val b = grains[j]
+            val dx = (b.x - a.x).toDouble()
+            val dy = (b.y - a.y).toDouble()
+            val dist = sqrt(dx*dx + dy*dy + softeningSquared)
+            energy -= g * a.mass.toDouble() * b.mass / dist
+            val overlap = grainRadius(a) + grainRadius(b) - hypot(dx, dy)
+            if (overlap > 0) energy += .5 * contactStiffness * overlap * overlap
+        }
+        return energy
+    }
+
+    private fun grainRadius(p: SandGrain): Double =
+        (.00135 * sqrt(p.mass.coerceAtLeast(.00001f) / .01f))
+            .coerceIn(.00042, .0028)
+
+    private fun capacity() {
+        val n = grains.size
+        if (ax.size < n) {
+            ax = DoubleArray(n); ay = DoubleArray(n)
+            gridNext = IntArray(n)
+        }
+        val required = max(128, n * 10)
+        if (maxNodes < required) {
+            maxNodes = required
+            nodeCx = DoubleArray(maxNodes); nodeCy = DoubleArray(maxNodes)
+            nodeHalf = DoubleArray(maxNodes)
+            nodeMass = DoubleArray(maxNodes)
+            nodeMx = DoubleArray(maxNodes); nodeMy = DoubleArray(maxNodes)
+            nodeIndex = IntArray(maxNodes)
+            child = IntArray(maxNodes * 4)
+        }
+    }
+
+    private fun newNode(x: Double, y: Double, half: Double): Int {
+        val id = nodeCount++
+        check(id < maxNodes) { "Quadtree capacity exceeded" }
+        nodeCx[id] = x; nodeCy[id] = y; nodeHalf[id] = half
+        nodeMass[id] = 0.0; nodeMx[id] = 0.0; nodeMy[id] = 0.0
+        nodeIndex[id] = -1
+        val base = id * 4
+        for (k in 0..3) child[base + k] = -1
+        return id
+    }
+
+    private fun quadrant(node: Int, p: SandGrain): Int =
+        (if (p.x.toDouble() >= nodeCx[node]) 1 else 0) or
+            (if (p.y.toDouble() >= nodeCy[node]) 2 else 0)
+
+    private fun insertInto(node: Int, index: Int, depth: Int) {
+        val p = grains[index]
+        val mass = p.mass.toDouble()
+        nodeMass[node] += mass
+        nodeMx[node] += mass * p.x
+        nodeMy[node] += mass * p.y
+        if (nodeIndex[node] == -1 && child[node*4] == -1 &&
+            child[node*4+1] == -1 && child[node*4+2] == -1 &&
+            child[node*4+3] == -1) {
+            nodeIndex[node] = index
+            return
+        }
+        if (depth >= 22 || nodeHalf[node] < 1e-9) {
+            nodeIndex[node] = -2  // Degenerate aggregated bucket.
+            return
+        }
+        val previous = nodeIndex[node]
+        if (previous >= 0) {
+            nodeIndex[node] = -1
+            insertChild(node, previous, depth)
+        }
+        insertChild(node, index, depth)
+    }
+
+    private fun insertChild(node: Int, index: Int, depth: Int) {
+        val quad = quadrant(node, grains[index])
+        val offset = node * 4 + quad
+        var c = child[offset]
+        if (c < 0) {
+            val half = nodeHalf[node] * .5
+            c = newNode(
+                nodeCx[node] + (if (quad and 1 != 0) half else -half),
+                nodeCy[node] + (if (quad and 2 != 0) half else -half),
+                half
+            )
+            child[offset] = c
+        }
+        insertInto(c, index, depth + 1)
+    }
+
+    private fun buildTree() {
+        nodeCount = 0
+        if (grains.isEmpty()) return
+        var minX = Double.POSITIVE_INFINITY; var maxX = Double.NEGATIVE_INFINITY
+        var minY = Double.POSITIVE_INFINITY; var maxY = Double.NEGATIVE_INFINITY
+        for (p in grains) {
+            minX = min(minX, p.x.toDouble()); maxX = max(maxX, p.x.toDouble())
+            minY = min(minY, p.y.toDouble()); maxY = max(maxY, p.y.toDouble())
+        }
+        val span = max(maxX - minX, maxY - minY).coerceAtLeast(.02) * .501
+        root = newNode((minX + maxX) * .5, (minY + maxY) * .5, span)
+        for (i in grains.indices) insertInto(root, i, 0)
+    }
+
+    private fun addTreeGravity(index: Int, node: Int, g: Double, theta: Double) {
+        val mass = nodeMass[node]
+        if (mass <= 0) return
+        val p = grains[index]
+        val dx = nodeMx[node] / mass - p.x
+        val dy = nodeMy[node] / mass - p.y
+        val d2 = dx*dx + dy*dy
+        if (nodeIndex[node] == index) return
+        val contains = abs(p.x.toDouble() - nodeCx[node]) <= nodeHalf[node] &&
+            abs(p.y.toDouble() - nodeCy[node]) <= nodeHalf[node]
+        val leaf = nodeIndex[node] != -1
+        if (leaf || (!contains && nodeHalf[node]*2 /
+                sqrt(d2 + softeningSquared) < theta)) {
+            val inv = 1.0 / ((d2 + softeningSquared) *
+                sqrt(d2 + softeningSquared))
+            ax[index] += g * mass * dx * inv
+            ay[index] += g * mass * dy * inv
+            return
+        }
+        for (q in 0..3) {
+            val c = child[node * 4 + q]
+            if (c >= 0) addTreeGravity(index, c, g, theta)
+        }
+    }
+
+    private fun cellCoord(x: Float): Int =
+        (((x + .3) / 1.6) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
+
+    private fun indexCells() {
+        java.util.Arrays.fill(heads, -1)
+        for (i in grains.indices) {
+            val p = grains[i]
+            val bucket = cellCoord(p.y) * gridWidth + cellCoord(p.x)
+            gridNext[i] = heads[bucket]
+            heads[bucket] = i
+        }
+    }
+
+    private fun forNearby(action: (Int, Int, Double, Double, Double) -> Unit) {
+        for (i in grains.indices) {
+            val a = grains[i]
+            val cx = cellCoord(a.x)
+            val cy = cellCoord(a.y)
+            for (y in max(0, cy-1)..min(gridWidth-1, cy+1)) {
+                for (x in max(0, cx-1)..min(gridWidth-1, cx+1)) {
+                    var j = heads[y * gridWidth + x]
+                    while (j >= 0) {
+                        val other = j
+                        j = gridNext[other]
+                        if (other <= i) continue
+                        val b = grains[other]
+                        val dx = (b.x - a.x).toDouble()
+                        val dy = (b.y - a.y).toDouble()
+                        val distance = sqrt(dx*dx + dy*dy)
+                        if (distance < grainRadius(a) + grainRadius(b))
+                            action(i, other, dx, dy, distance)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun accelerations(gravity: Float) {
+        java.util.Arrays.fill(ax, 0, grains.size, 0.0)
+        java.util.Arrays.fill(ay, 0, grains.size, 0.0)
+        buildTree()
+        val theta = if (mode == MatterMode.DETAILED) .36 else .52
+        val g = gravityConstant * gravity
+        for (i in grains.indices) addTreeGravity(i, root, g, theta)
+        indexCells()
+        forNearby { i, j, dx, dy, d ->
+            val a = grains[i]; val b = grains[j]
+            val overlap = grainRadius(a) + grainRadius(b) - d
+            val nx: Double
+            val ny: Double
+            if (d > 1e-9) { nx = dx/d; ny = dy/d }
+            else {
+                val t = ((a.id xor b.id) * .6180339887)
+                nx = cos(t); ny = sin(t)
+            }
+            val force = contactStiffness * overlap
+            ax[i] -= force * nx / a.mass
+            ay[i] -= force * ny / a.mass
+            ax[j] += force * nx / b.mass
+            ay[j] += force * ny / b.mass
+        }
+    }
+
+    /**
+     * Equal-and-opposite impulses and proper kinetic-to-thermal conversion;
+     * no radial spray, no arbitrary drag, no change to particle count.
+     */
+    private fun resolveContacts() {
+        indexCells()
+        forNearby { i, j, dx, dy, distance ->
+            val a = grains[i]; val b = grains[j]
+            val d = distance.coerceAtLeast(1e-9)
+            val nx = if (distance > 1e-9) dx/d
+                else cos((a.id + b.id) * .618)
+            val ny = if (distance > 1e-9) dy/d
+                else sin((a.id + b.id) * .618)
+            val before = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
+            if (before >= 0) return@forNearby
+            val invA = 1.0 / a.mass
+            val invB = 1.0 / b.mass
+            // 0.45 restitution; lost *mechanical* energy becomes heat.
+            val restitution = if (a.material.gas && b.material.gas) .72 else .45
+            val impulse = -(1.0 + restitution) * before / (invA + invB)
+            val avx = a.vx.toDouble() - impulse * invA * nx
+            val avy = a.vy.toDouble() - impulse * invA * ny
+            val bvx = b.vx.toDouble() + impulse * invB * nx
+            val bvy = b.vy.toDouble() + impulse * invB * ny
+            val lost = .5 * (1.0 - restitution*restitution) *
+                before*before / (invA + invB)
+            // Keep heat in a separate energy reservoir, not an extra particle.
+            a.heat += lost * .5
+            b.heat += lost * .5
+            a.vx = avx.toFloat(); a.vy = avy.toFloat()
+            b.vx = bvx.toFloat(); b.vy = bvy.toFloat()
+            // Labels affect the UI only. Real separation is physics-driven.
+            if (abs(before) > .065 && a.owner != b.owner) {
+                a.owner = -1; b.owner = -1
+            }
+        }
+    }
+
+    /** Draw explosion energy from local material heat; never add energy. */
+    private fun releaseHeatAsMotion(episode: CosmicEpisode) {
+        if (episode.kind == CosmicEventKind.QUIET ||
+            episode.serial == pulseSerial) return
+        pulseSerial = episode.serial
+        if (episode.kind !in listOf(CosmicEventKind.NOVA,
+            CosmicEventKind.SOLAR_FLARE, CosmicEventKind.PARTICLE_CASCADE,
+            CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION)) return
+        val candidates = grains.indices.filter { i ->
+            val p = grains[i]
+            hypot(p.x - episode.x, p.y - episode.y) < .40f &&
+                p.heat > 0
+        }
+        for (k in 0 until candidates.size - 1 step 2) {
+            val a = grains[candidates[k]]
+            val b = grains[candidates[k+1]]
+            val rx = (b.x - a.x).toDouble()
+            val ry = (b.y - a.y).toDouble()
+            val d = sqrt(rx*rx+ry*ry).coerceAtLeast(1e-8)
+            var nx = rx/d; var ny = ry/d
+            val vrel = (b.vx-a.vx)*nx+(b.vy-a.vy)*ny
+            if (vrel < 0) { nx = -nx; ny = -ny }
+            val available = (a.heat + b.heat) * .12
+            if (available <= 0) continue
+            val inv = 1.0/a.mass + 1.0/b.mass
+            val speedAlong = abs(vrel)
+            val dp = (sqrt(speedAlong*speedAlong + 2*inv*available) -
+                speedAlong) / inv
+            val applied = speedAlong*dp + .5*inv*dp*dp
+            if (!applied.isFinite() || applied <= 0) continue
+            val ha = a.heat / (a.heat+b.heat)
+            a.heat -= applied * ha
+            b.heat -= applied * (1-ha)
+            a.vx = (a.vx - dp/a.mass*nx).toFloat()
+            a.vy = (a.vy - dp/a.mass*ny).toFloat()
+            b.vx = (b.vx + dp/b.mass*nx).toFloat()
+            b.vy = (b.vy + dp/b.mass*ny).toFloat()
+            a.owner = -1; b.owner = -1
+        }
+    }
+
+    fun step(dt: Float, gravity: Float, episode: CosmicEpisode = CosmicEpisode()) {
+        if (grains.isEmpty() || dt <= 0f) return
+        releaseHeatAsMotion(episode)
+        capacity()
+        val substeps = if (mode == MatterMode.DETAILED) 4 else 3
+        val h = min(dt.toDouble(), .034) / substeps
+        repeat(substeps) {
+            accelerations(gravity)
+            for (i in grains.indices) {
+                val p = grains[i]
+                p.vx = (p.vx + (ax[i] * h * .5)).toFloat()
+                p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
+                p.x = (p.x + p.vx * h).toFloat()
+                p.y = (p.y + p.vy * h).toFloat()
+            }
+            accelerations(gravity)
+            for (i in grains.indices) {
+                val p = grains[i]
+                p.vx = (p.vx + (ax[i] * h * .5)).toFloat()
+                p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
+            }
+            resolveContacts()
+        }
+        tick++
+    }
+
+    /** Display proxies, always calculated FROM grains, never used as forces. */
+    fun summarizeBodies(previous: List<CelestialBody>): List<CelestialBody> {
+        data class Sum(
+            var mass: Double = 0.0, var x: Double = 0.0,
+            var y: Double = 0.0, var vx: Double = 0.0,
+            var vy: Double = 0.0
+        )
+        val sums = HashMap<Int, Sum>()
+        for (p in grains) {
+            if (p.owner < 0) continue
+            val sum = sums.getOrPut(p.owner) { Sum() }
+            sum.mass += p.mass
+            sum.x += p.x * p.mass; sum.y += p.y * p.mass
+            sum.vx += p.vx * p.mass; sum.vy += p.vy * p.mass
+        }
+        return previous.mapNotNull { b ->
+            val s = sums[b.id] ?: return@mapNotNull null
+            b.copy(mass = s.mass.toFloat(),
+                x = (s.x/s.mass).toFloat(), y = (s.y/s.mass).toFloat(),
+                vx = (s.vx/s.mass).toFloat(), vy = (s.vy/s.mass).toFloat())
+        }
+    }
+
+    /** Capture is classification only: every grain still follows its own forces. */
+    fun relabelCaptured(bodies: List<CelestialBody>) {
+        if (tick % 9 != 0) return
+        for (p in grains) {
+            if (p.owner >= 0) continue
+            var nearest: CelestialBody? = null
+            var score = Double.POSITIVE_INFINITY
+            for (b in bodies) {
+                val dx = p.x-b.x; val dy = p.y-b.y
+                val dist = hypot(dx,dy)
+                val relative = hypot(p.vx-b.vx,p.vy-b.vy)
+                if (dist < structureRadius(b)*1.25f &&
+                    relative < .05f && dist < score) {
+                    nearest = b; score = dist.toDouble()
+                }
+            }
+            if (nearest != null) p.owner = nearest.id
+        }
+    }
+}

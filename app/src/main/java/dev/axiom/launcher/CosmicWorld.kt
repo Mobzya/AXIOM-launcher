@@ -318,43 +318,35 @@ internal class CosmicWorld(
                 CosmicEventKind.DUAL_RING -> 17f
                 else -> 1f
             },
-            x = .25f + random.nextFloat() * .5f,
-            y = .20f + random.nextFloat() * .50f,
+            // A singularity forms *around existing massive matter*, rather
+            // than at an invented invisible attractor.
+            x = if (kind == CosmicEventKind.SINGULARITY)
+                bodies.maxByOrNull { it.mass }?.x ?: .5f
+                else .25f + random.nextFloat() * .5f,
+            y = if (kind == CosmicEventKind.SINGULARITY)
+                bodies.maxByOrNull { it.mass }?.y ?: .4f
+                else .20f + random.nextFloat() * .50f,
             serial = eventSerial
         )
         // Events now redistribute pre-existing particle energy. No automatic
         // spawning: even a supernova must not create new atoms or mass.
     }
 
-    /** Visual math/ML is now an independent ambient layer, not a cinematic event. */
-    private fun chooseEvent(): CosmicEventKind {
-        // One rare backdrop per ~1365 eligible event slots on average;
-        // each individual scene occurs about once per 4096 slots.
-        val rare = rareCosmicEvent(random.nextInt(16384))
-        return rare ?: when (random.nextInt(400)) {
-        in 0..54 -> CosmicEventKind.METEORS
-        in 55..94 -> CosmicEventKind.LENS
-        in 95..131 -> CosmicEventKind.NOVA
-        in 132..164 -> CosmicEventKind.PULSAR
-        in 165..191 -> CosmicEventKind.WORMHOLE
-        in 192..218 -> CosmicEventKind.NEBULA
-        in 219..244 -> CosmicEventKind.ENCOUNTER
-        in 245..266 -> CosmicEventKind.FILAMENT
-        in 267..281 -> CosmicEventKind.RING_WAVE
-        in 282..291 -> CosmicEventKind.RADIATION
-        in 292..297 -> CosmicEventKind.REACTION
-        in 298..315 -> CosmicEventKind.ECHO_SHELL
-        in 316..332 -> CosmicEventKind.TIDAL_CAPTURE
-        in 333..346 -> CosmicEventKind.POLAR_JET
-        in 347..359 -> CosmicEventKind.ORBITAL_RESONANCE
-        in 360..371 -> CosmicEventKind.STELLAR_NURSERY
-        in 372..380 -> CosmicEventKind.DARK_FLOW
-        in 381..388 -> CosmicEventKind.GEOMETRY_SHIFT
-        in 389..393 -> CosmicEventKind.SOLAR_FLARE
-        in 394..396 -> CosmicEventKind.DUAL_RING
-        in 397..398 -> CosmicEventKind.PARTICLE_CASCADE
-        else -> CosmicEventKind.SINGULARITY
-        }
+    /**
+     * Only events that operate on real grains are scheduled automatically.
+     * Historical names remain valid for terminal commands/old saves, but no
+     * geometric-only anomalies compete with the physical simulation.
+     */
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(100)) {
+        in 0..20 -> CosmicEventKind.METEORS
+        in 21..34 -> CosmicEventKind.SINGULARITY
+        in 35..46 -> CosmicEventKind.NOVA
+        in 47..57 -> CosmicEventKind.SOLAR_FLARE
+        in 58..67 -> CosmicEventKind.PARTICLE_CASCADE
+        in 68..77 -> CosmicEventKind.REACTION
+        in 78..85 -> CosmicEventKind.NEBULA
+        in 86..92 -> CosmicEventKind.GALAXY_COLLISION
+        else -> CosmicEventKind.STELLAR_NURSERY
     }
 
     @Synchronized

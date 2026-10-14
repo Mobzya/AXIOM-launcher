@@ -54,9 +54,16 @@ internal class GranularUniverse {
     private var ax = DoubleArray(0)
     private var ay = DoubleArray(0)
     private var gridNext = IntArray(0)
-    private val gridWidth = 224
-    private val heads = IntArray(gridWidth * gridWidth)
-    private val gridCellSize = 1.6 / gridWidth
+    private var cellX = IntArray(0)
+    private var cellY = IntArray(0)
+    // Hashing UNBOUNDED signed cell coordinates avoids piling offscreen
+    // particles into a single clamped edge bucket (formerly an O(N²) freeze).
+    private val gridCellSize = .0064
+    private val gridHashMask = 16383
+    private val heads = IntArray(gridHashMask + 1)
+    private var contactChecks = 0L
+    private var gravityNodesVisited = 0L
+    val counters: Pair<Long, Long> get() = contactChecks to gravityNodesVisited
 
     // Primitive quadtree buffers, reused across physics steps.
     private var maxNodes = 0
@@ -181,6 +188,8 @@ internal class GranularUniverse {
         if (ax.size < n) {
             ax = DoubleArray(n); ay = DoubleArray(n)
             gridNext = IntArray(n)
+            cellX = IntArray(n)
+            cellY = IntArray(n)
         }
         val required = max(128, n * 10)
         if (maxNodes < required) {
@@ -264,6 +273,7 @@ internal class GranularUniverse {
     }
 
     private fun addTreeGravity(index: Int, node: Int, g: Double, theta: Double) {
+        gravityNodesVisited++
         val mass = nodeMass[node]
         if (mass <= 0) return
         val p = grains[index]
@@ -288,37 +298,55 @@ internal class GranularUniverse {
         }
     }
 
-    private fun cellCoord(x: Float): Int =
-        (((x + .3) / 1.6) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
+    private fun cellCoord(value: Float): Int =
+        kotlin.math.floor(value.toDouble() / gridCellSize).toInt()
+
+    private fun bucket(cx: Int, cy: Int): Int =
+        ((cx * 73856093) xor (cy * 19349663)) and gridHashMask
 
     private fun indexCells() {
         java.util.Arrays.fill(heads, -1)
         for (i in grains.indices) {
             val p = grains[i]
-            val bucket = cellCoord(p.y) * gridWidth + cellCoord(p.x)
-            gridNext[i] = heads[bucket]
-            heads[bucket] = i
+            val x = cellCoord(p.x)
+            val y = cellCoord(p.y)
+            cellX[i] = x
+            cellY[i] = y
+            val slot = bucket(x, y)
+            gridNext[i] = heads[slot]
+            heads[slot] = i
         }
     }
 
     private fun forNearby(action: (Int, Int, Double, Double, Double) -> Unit) {
-        for (i in grains.indices) {
+        forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
-            val cx = cellCoord(a.x)
-            val cy = cellCoord(a.y)
-            for (y in max(0, cy-1)..min(gridWidth-1, cy+1)) {
-                for (x in max(0, cx-1)..min(gridWidth-1, cx+1)) {
-                    var j = heads[y * gridWidth + x]
+            val cx = cellX[i]
+            val cy = cellY[i]
+            var contacts = 0
+            for (y in cy - 1..cy + 1) {
+                for (x in cx - 1..cx + 1) {
+                    var j = heads[bucket(x, y)]
                     while (j >= 0) {
                         val other = j
                         j = gridNext[other]
-                        if (other <= i) continue
+                        if (other <= i || cellX[other] != x ||
+                            cellY[other] != y) continue
                         val b = grains[other]
                         val dx = (b.x - a.x).toDouble()
+                        if (abs(dx) > .0056) continue
                         val dy = (b.y - a.y).toDouble()
-                        val distance = sqrt(dx*dx + dy*dy)
-                        if (distance < grainRadius(a) + grainRadius(b))
-                            action(i, other, dx, dy, distance)
+                        if (abs(dy) > .0056) continue
+                        contactChecks++
+                        val limit = grainRadius(a) + grainRadius(b)
+                        val distance2 = dx * dx + dy * dy
+                        if (distance2 < limit * limit) {
+                            action(i, other, dx, dy, sqrt(distance2))
+                            // Prevent unbounded work in a pathological fully
+                            // collapsed cell. Each accepted pair is symmetric;
+                            // skipping excess contacts cannot create momentum.
+                            if (++contacts >= 80) continue@forNearbyParticle
+                        }
                     }
                 }
             }
@@ -326,6 +354,8 @@ internal class GranularUniverse {
     }
 
     private fun accelerations(gravity: Float) {
+        contactChecks = 0
+        gravityNodesVisited = 0
         java.util.Arrays.fill(ax, 0, grains.size, 0.0)
         java.util.Arrays.fill(ay, 0, grains.size, 0.0)
         buildTree()
@@ -552,15 +582,16 @@ internal class GranularUniverse {
         for (i in grains.indices) {
             val a = grains[i]
             if (a.owner >= 0) continue
-            val cx = cellCoord(a.x); val cy = cellCoord(a.y)
+            val cx = cellX[i]; val cy = cellY[i]
             var visited = 0
-            for (y in max(0, cy-1)..min(gridWidth-1, cy+1))
-                for (x in max(0, cx-1)..min(gridWidth-1, cx+1)) {
-                    var j = heads[y * gridWidth + x]
+            for (y in cy - 1..cy + 1)
+                for (x in cx - 1..cx + 1) {
+                    var j = heads[bucket(x, y)]
                     while (j >= 0 && visited++ < 180) {
                         val current = j
                         j = gridNext[current]
-                        if (current >= i) continue
+                        if (current >= i || cellX[current] != x ||
+                            cellY[current] != y) continue
                         val b = grains[current]
                         if (b.owner >= 0) continue
                         val distance = hypot(a.x-b.x, a.y-b.y)

@@ -126,6 +126,11 @@ internal class CosmicWorld(seed: Int = 42) {
         private set
     var dust by mutableStateOf<List<ImpactDust>>(emptyList())
         private set
+    private fun seedStartingMatter() {
+        bodies = bodies.map { matter.seedOrbit(it, 26) }
+        previousBodies = bodies
+    }
+    init { seedStartingMatter() }
     fun updateMaximumBodies(value: Int) {
         maxBodies=value.coerceIn(12,64)
         if(bodies.size>maxBodies){
@@ -141,12 +146,18 @@ internal class CosmicWorld(seed: Int = 42) {
     private fun initialBodies(): List<CelestialBody> {
         // Deliberately no permanent massive object in the center.
         return listOf(
-            CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f, lifetime = 95f),
-            CelestialBody(2, 3, .7f, 2.2f, .83f, .28f, -.008f, .003f, .7f, lifetime = 96f),
-            CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f, lifetime = 92f),
-            CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f, lifetime = 90f),
-            CelestialBody(5, 6, 2.1f, 1.12f, .38f, .80f, .015f, -.009f, .3f, lifetime = 120f),
-            CelestialBody(6, 8, 1.7f, 1.50f, .73f, .44f, -.014f, -.005f, 2f, lifetime = 110f)
+            CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f,
+                lifetime = 95f, material = MatterMaterial.ROCK),
+            CelestialBody(2, 3, .7f, 2.2f, .83f, .28f, -.008f, .003f, .7f,
+                lifetime = 96f, material = MatterMaterial.HYDROGEN, temperature = 900f),
+            CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f,
+                lifetime = 92f, material = MatterMaterial.SILICATE),
+            CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f,
+                lifetime = 90f, material = MatterMaterial.ICE, temperature = 160f),
+            CelestialBody(5, 6, 2.1f, 1.12f, .38f, .80f, .015f, -.009f, .3f,
+                lifetime = 120f, material = MatterMaterial.IRON),
+            CelestialBody(6, 8, 1.7f, 1.50f, .73f, .44f, -.014f, -.005f, 2f,
+                lifetime = 110f, material = MatterMaterial.METHANE, temperature = 410f)
         )
     }
 
@@ -200,7 +211,7 @@ internal class CosmicWorld(seed: Int = 42) {
             lifetime = if(giant) 105f else if (burst) 20f + random.nextFloat() * 15f
                        else 39f + random.nextFloat() * 37f,
             sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f,
-            material = materialForKind(if(giant) 97 else random.nextInt(1, 105)),
+            material = materialForKind(if(giant) 97 else 1 + random.nextInt(96)),
             temperature = if(giant) 850f else 180f + random.nextFloat()*920f
         )
         bodies = bodies + body
@@ -500,6 +511,7 @@ internal class CosmicWorld(seed: Int = 42) {
         lastEncounter = "none"
         dust=emptyList()
         matter.clear()
+        seedStartingMatter()
         impactMoments.clear()
         clearReplay()
     }

@@ -51,7 +51,7 @@ class GranularScaleTest {
         assertEquals(mass, world.totals().mass, 1e-6)
         // Each substep traverses the contact grid twice: once for symmetric
         // contact forces and once for restitution/heat transfer.
-        assertTrue(world.counters.first <= 4600L*80*2)
+        assertTrue(world.counters.first <= 4600L*32*2)
         assertTrue("Dense-cloud neighbor scan regressed: ${millis}ms",
             millis < 25000)
     }

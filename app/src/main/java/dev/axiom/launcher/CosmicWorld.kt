@@ -559,7 +559,7 @@ internal class CosmicWorld(
         }
 
         val prior = bodies
-        sand.step(h, gravity, episode)
+        sand.step(h, gravity, episode, wallsEnabled)
         previousBodies = prior
         var current = sand.summarizeBodies(prior)
         sand.relabelCaptured(current)

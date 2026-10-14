@@ -459,7 +459,7 @@ internal class GranularUniverse {
                             // Prevent unbounded work in a pathological fully
                             // collapsed cell. Each accepted pair is symmetric;
                             // skipping excess contacts cannot create momentum.
-                            if (++contacts >= 80) continue@forNearbyParticle
+                            if (++contacts >= 32) continue@forNearbyParticle
                         }
                     }
                 }
@@ -665,13 +665,21 @@ internal class GranularUniverse {
         currentEvent = episode
         releaseHeatAsMotion(episode)
         capacity()
-        val substeps = if (mode == MatterMode.DETAILED) 4 else 3
+        // Soft contact springs remain stable at h <= .017 for normal grain
+        // masses. A 4600-grain cloud no longer repeats contact broad-phase
+        // four times per displayed frame.
+        val substeps = when {
+            grains.size > 2400 -> 2
+            mode == MatterMode.DETAILED -> 3
+            else -> 2
+        }
         val h = min(dt.toDouble(), .034) / substeps
         // Position-dependent forces are identical at a substep boundary.
         // Reuse its acceleration for the next half-kick instead of rebuilding
         // the tree and neighbour grid twice at the same coordinates.
-        // At thousands of grains gravitational motion is smooth over two
-        // frames; short-range contact impulses still update every substep.
+        // At thousands of grains gravity is smooth over two frames.
+        // Contact forces run on each substep, restitution is evaluated once
+        // after the complete drift, preserving reciprocal pair impulses.
         // This adaptive cadence removes several expensive tree rebuilds.
         val refresh = grains.size < 2800 || tick % 2 == 0
         accelerations(gravity, refresh)
@@ -709,8 +717,11 @@ internal class GranularUniverse {
                 p.vx = (p.vx + (ax[i] * h * .5)).toFloat()
                 p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
             }
-            resolveContacts()
         }
+        // The independent collision impulse pass is needed once per frame,
+        // not once per microscopic force substep. This reduces work without
+        // fixing any particle to an object or changing its mass.
+        resolveContacts()
         tick++
         if (tick % thermoInterval == 0) {
             for (p in grains) phaseChange(p)

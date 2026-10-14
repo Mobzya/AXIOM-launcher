@@ -669,8 +669,9 @@ internal class CosmicWorld(seed: Int = 42) {
             }
         }
 
-        // Distinct family mechanics; simple linear pass with bounded acceleration.
-        addSpeciesForces(current,elapsed,ax,ay)
+        // No kind-number-dependent pseudo forces: the physical centre-of-mass
+        // trajectories use mutual gravity, contacts and external event fields.
+        // Stars/quasars differ through their bound composition and material winds.
 
         // Touch-controlled gravity: one bounded softened acceleration field.
         val well = brushPoint

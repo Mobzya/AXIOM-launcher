@@ -2,6 +2,7 @@ package dev.axiom.launcher
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.PI
 import kotlin.math.cos
@@ -70,6 +71,8 @@ internal class CosmicWorld(
     val matter = MatterField(Random(seed + 109))
     val sand = GranularUniverse()
     var grainFrame by mutableStateOf(FloatArray(0))
+        private set
+    var physicsCostMs by mutableFloatStateOf(0f)
         private set
     private fun publishGrains() { grainFrame = sand.renderFrame() }
     var matterMode by mutableStateOf(initialMatterMode)
@@ -201,6 +204,39 @@ internal class CosmicWorld(
             sand.seed(giantBody, 50)
             publishGrains()
         }
+    }
+
+    /**
+     * Explicit reproducible device stress scene. Adds real grains from outside
+     * only on deliberate user input, never from impact or scheduled events.
+     */
+    @Synchronized
+    fun populateStressScene(target: Int = 4600) {
+        updateMatterMode(MatterMode.DETAILED)
+        val goal = target.coerceIn(500, matterMode.maxParticles)
+        if (sand.grains.size >= goal) return
+        val slots = (maxBodies - bodies.size).coerceAtLeast(1)
+        val per = kotlin.math.ceil((goal-sand.grains.size).toDouble()/slots)
+            .toInt().coerceAtLeast(1)
+        var added = 0
+        while (sand.grains.size < goal && added < slots) {
+            val n = min(per, goal - sand.grains.size)
+            val theta = 2.0 * PI * added / slots
+            val px = (.50 + .32 * cos(theta)).toFloat()
+            val py = (.50 + .30 * sin(theta)).toFloat()
+            val vx = (-.008 * sin(theta)).toFloat()
+            val vy = (.008 * cos(theta)).toFloat()
+            val body = CelestialBody(
+                idSequence++, 2 + added % 24, n / 80f, 1f,
+                px, py, vx, vy, lifetime = 3600f,
+                material = if (added % 3 == 0)
+                    MatterMaterial.ICE else MatterMaterial.ROCK
+            )
+            sand.seed(body, n)
+            bodies += body
+            added++
+        }
+        publishGrains()
     }
 
     @Synchronized
@@ -559,6 +595,7 @@ internal class CosmicWorld(
     @Synchronized
     fun step(dt: Float) {
         if (timeScale == 0f) return
+        val startedAt = System.nanoTime()
         val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
         elapsed += h
         inspectAge += h
@@ -618,5 +655,7 @@ internal class CosmicWorld(
             if (particleReplay.size > 32) particleReplay.removeFirst()
             replayTimer = 0f
         }
+        physicsCostMs = ((System.nanoTime()-startedAt) / 1_000_000.0)
+            .toFloat()
     }
 }

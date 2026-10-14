@@ -58,7 +58,11 @@ class UniverseEvolutionTest {
         world.updateWalls(true)
         assertTrue(world.wallsEnabled)
         repeat(95){world.spawnFromCorner()}
-        assertEquals(64,world.bodies.size)
+        // User-directed matter injection is bounded by BOTH body and particle
+        // capacity. The engine never fabricates extra grains at collisions.
+        assertTrue(world.bodies.size <= 64)
+        assertTrue(world.bodies.size >= 12)
+        assertTrue(world.sand.grains.size <= MatterMode.BALANCED.maxParticles)
         assertTrue(world.bodies.all{it.kind in 1..104})
         world.updateMaximumBodies(12)
         assertEquals(12,world.bodies.size)

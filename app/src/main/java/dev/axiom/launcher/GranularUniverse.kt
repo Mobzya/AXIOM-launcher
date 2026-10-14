@@ -453,11 +453,18 @@ internal class GranularUniverse {
     private inline fun forNearby(
         action: (Int, Int, Double, Double, Double) -> Unit
     ) {
+        // In 2D a grain usually contacts about six neighbours. 24
+        // candidate checks and 18 accepted pairs leave room for turbulent
+        // packing without scanning thousands of overlapping candidates.
+        // All accepted forces remain symmetric; only oversaturated
+        // contacts are approximated, never converted into rigid bodies.
+        val maxChecks = if (grains.size >= 2400) 24 else 64
         forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
             val cx = cellX[i]
             val cy = cellY[i]
             var contacts = 0
+            var checked = 0
             for (y in cy - 1..cy + 1) {
                 for (x in cx - 1..cx + 1) {
                     var j = heads[bucket(x, y)]
@@ -475,6 +482,7 @@ internal class GranularUniverse {
                         val dy = (b.y - a.y).toDouble()
                         if (abs(dy) > .0056) continue
                         contactChecks++
+                        if (++checked > maxChecks) continue@forNearbyParticle
                         val limit = grainRadius(a) + grainRadius(b)
                         val distance2 = dx * dx + dy * dy
                         if (distance2 < limit * limit) {
@@ -482,7 +490,7 @@ internal class GranularUniverse {
                             // Prevent unbounded work in a pathological fully
                             // collapsed cell. Each accepted pair is symmetric;
                             // skipping excess contacts cannot create momentum.
-                            if (++contacts >= 32) continue@forNearbyParticle
+                            if (++contacts >= 18) continue@forNearbyParticle
                         }
                     }
                 }

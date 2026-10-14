@@ -544,67 +544,49 @@ internal class GranularUniverse {
         indexCells()
         forNearby { i, j, dx, dy, d ->
             val a = grains[i]; val b = grains[j]
-            val overlap = grainRadius(a) + grainRadius(b) - d
             val nx: Double
             val ny: Double
             if (d > 1e-9) { nx = dx/d; ny = dy/d }
             else {
-                val t = ((a.id xor b.id) * .6180339887)
-                nx = cos(t); ny = sin(t)
+                val angle = (a.id xor b.id) * .6180339887
+                nx = cos(angle); ny = sin(angle)
             }
+            val overlap = grainRadius(a) + grainRadius(b) - d
             val force = contactStiffness * overlap
             ax[i] -= force * nx / a.mass
             ay[i] -= force * ny / a.mass
             ax[j] += force * nx / b.mass
             ay[j] += force * ny / b.mass
-        }
-    }
 
-    /**
-     * Equal-and-opposite impulses and proper kinetic-to-thermal conversion;
-     * no radial spray, no arbitrary drag, no change to particle count.
-     */
-    private fun resolveContacts() {
-        indexCells()
-        forNearby { i, j, dx, dy, distance ->
-            val a = grains[i]; val b = grains[j]
-            val d = distance.coerceAtLeast(1e-9)
-            val nx = if (distance > 1e-9) dx/d
-                else cos((a.id + b.id) * .618)
-            val ny = if (distance > 1e-9) dy/d
-                else sin((a.id + b.id) * .618)
-            val before = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
-            if (before >= 0) return@forNearby
-            val invA = 1.0 / a.mass
-            val invB = 1.0 / b.mass
-            // 0.45 restitution; lost *mechanical* energy becomes heat.
-            val restitution = if (a.material.gas && b.material.gas) .72 else .45
-            val impulse = -(1.0 + restitution) * before / (invA + invB)
-            val avx = a.vx.toDouble() - impulse * invA * nx
-            val avy = a.vy.toDouble() - impulse * invA * ny
-            val bvx = b.vx.toDouble() + impulse * invB * nx
-            val bvy = b.vy.toDouble() + impulse * invB * ny
-            val lost = .5 * (1.0 - restitution*restitution) *
-                before*before / (invA + invB)
-            // Conduct energy between genuine contacting grains, without
-            // any thermal source or sink. A bounded fraction avoids negative
-            // energies and stiff thermal modes at high densities.
-            val tempA = a.heat / a.mass
-            val tempB = b.heat / b.mass
-            val amount = (tempA - tempB) *
-                min(a.mass, b.mass) * .035
-            val transfer = amount.coerceIn(-b.heat * .25, a.heat * .25)
+            // Resolve the impulse on THIS SAME broad-phase visit. This
+            // removes an extra grid traversal and catches fast grains before
+            // they cross through each other between substeps.
+            val approaching = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny
+            if (approaching < 0) {
+                val invA = 1.0/a.mass
+                val invB = 1.0/b.mass
+                val restitution = if (a.material.gas && b.material.gas)
+                    .72 else .45
+                val impulse = -(1.0+restitution)*approaching/(invA+invB)
+                a.vx = (a.vx - impulse*invA*nx).toFloat()
+                a.vy = (a.vy - impulse*invA*ny).toFloat()
+                b.vx = (b.vx + impulse*invB*nx).toFloat()
+                b.vy = (b.vy + impulse*invB*ny).toFloat()
+                val lost = .5*(1.0-restitution*restitution) *
+                    approaching*approaching/(invA+invB)
+                a.heat += lost * .5
+                b.heat += lost * .5
+                if (abs(approaching) > .065 && a.owner != b.owner) {
+                    a.owner = -1; b.owner = -1
+                }
+            }
+            // Thermal conduction is likewise pairwise: moving heat between
+            // two existing grains changes no energy or particle count.
+            val amount = (a.heat/a.mass - b.heat/b.mass) *
+                min(a.mass,b.mass) * .035
+            val transfer = amount.coerceIn(-b.heat*.25, a.heat*.25)
             a.heat -= transfer
             b.heat += transfer
-            // Keep heat in a separate energy reservoir, not an extra particle.
-            a.heat += lost * .5
-            b.heat += lost * .5
-            a.vx = avx.toFloat(); a.vy = avy.toFloat()
-            b.vx = bvx.toFloat(); b.vy = bvy.toFloat()
-            // Labels affect the UI only. Real separation is physics-driven.
-            if (abs(before) > .065 && a.owner != b.owner) {
-                a.owner = -1; b.owner = -1
-            }
         }
     }
 
@@ -718,9 +700,9 @@ internal class GranularUniverse {
         // Position-dependent forces are identical at a substep boundary.
         // Reuse its acceleration for the next half-kick instead of rebuilding
         // the tree and neighbour grid twice at the same coordinates.
-        // At thousands of grains gravity is smooth over two frames.
-        // Contact forces run on each substep, restitution is evaluated once
-        // after the complete drift, preserving reciprocal pair impulses.
+        // Gravity is smooth over two frames at high density. Spring
+        // pressure AND reciprocal impulses are evaluated together each
+        // substep; a second collision grid traversal is unnecessary.
         // This adaptive cadence removes several expensive tree rebuilds.
         val refresh = grains.size < 2800 || tick % 2 == 0
         accelerations(gravity, refresh)
@@ -759,10 +741,6 @@ internal class GranularUniverse {
                 p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
             }
         }
-        // The independent collision impulse pass is needed once per frame,
-        // not once per microscopic force substep. This reduces work without
-        // fixing any particle to an object or changing its mass.
-        resolveContacts()
         tick++
         if (tick % thermoInterval == 0) {
             for (p in grains) phaseChange(p)

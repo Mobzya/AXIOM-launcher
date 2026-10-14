@@ -69,8 +69,12 @@ internal class CosmicWorld(
     // Only sand is integrated and rendered by the active cosmic simulation.
     val matter = MatterField(Random(seed + 109))
     val sand = GranularUniverse()
+    var grainFrame by mutableStateOf(FloatArray(0))
+        private set
+    private fun publishGrains() { grainFrame = sand.renderFrame() }
     var matterMode by mutableStateOf(initialMatterMode)
         private set
+    @Synchronized
     fun updateMatterMode(value: MatterMode) {
         matterMode = value
         matter.setMode(value)
@@ -126,8 +130,8 @@ internal class CosmicWorld(
     private var brushPrevY = 0f
     private var brushGestureDistance = 0f
     private var brushInitialBodyCount = 0
-    private val replayBuffer = ArrayDeque<List<CelestialBody>>(100)
-    private val particleReplay = ArrayDeque<List<SandGrain>>(100)
+    private val replayBuffer = ArrayDeque<List<CelestialBody>>(32)
+    private val particleReplay = ArrayDeque<GranularUniverse.Snapshot>(32)
     private var replayTimer = 0f
     private var cascadeBudget = 0
     var maxBodies by mutableStateOf(23)
@@ -141,8 +145,10 @@ internal class CosmicWorld(
         sand.updateMode(matterMode)
         bodies.forEach { sand.seed(it) }
         previousBodies = bodies
+        publishGrains()
     }
     init { seedStartingMatter() }
+    @Synchronized
     fun updateMaximumBodies(value: Int) {
         maxBodies=value.coerceIn(12,64)
         if(bodies.size>maxBodies){
@@ -150,6 +156,7 @@ internal class CosmicWorld(
             previousBodies=bodies
         }
     }
+    @Synchronized
     fun updateWalls(enabled: Boolean) {wallsEnabled=enabled}
 
     var lastEncounter by mutableStateOf("none")
@@ -176,6 +183,7 @@ internal class CosmicWorld(
         )
     }
 
+    @Synchronized
     fun spawnGiant(kind: Int = 97) {
         if (bodies.size >= maxBodies || bodies.any { it.kind in 97..104 }) return
         val chosen=kind.coerceIn(97,104)
@@ -191,14 +199,17 @@ internal class CosmicWorld(
         if (sand.grains.size + 50 <= matterMode.maxParticles) {
             bodies += giantBody
             sand.seed(giantBody, 50)
+            publishGrains()
         }
     }
 
+    @Synchronized
     fun updateGravity(value: Float) {
         if (value.isFinite()) gravity = value.coerceIn(.25f, 2.2f)
     }
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
+    @Synchronized
     fun spawnFromCorner(burst: Boolean = false) {
         if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles) return
         val corner = random.nextInt(4)
@@ -250,8 +261,10 @@ internal class CosmicWorld(
         // Retain capacity for the full body limit instead of exhausting
         // the free-grain budget after only a handful of arrivals.
         sand.seed(body, minOf(18, matterMode.maxParticles - sand.grains.size))
+        publishGrains()
     }
 
+    @Synchronized
     fun trigger(kind: CosmicEventKind) {
         // Mathematical diagrams and cinematic events occupy separate time slots.
         // An event replaces any math lesson rather than rendering across its text.
@@ -344,6 +357,7 @@ internal class CosmicWorld(
         }
     }
 
+    @Synchronized
     fun summonMath(requested: MathKind? = null) {
         // An explicitly requested lesson takes priority over ongoing scenery.
         if (episode.kind != CosmicEventKind.QUIET) {
@@ -367,6 +381,7 @@ internal class CosmicWorld(
      * Touching a live mathematical construction advances its derivation.
      * Touching elsewhere produces a local impulse.
      */
+    @Synchronized
     fun interact(x: Float, y: Float) {
         val m = mathMoment
         if (m.active && x in (m.x - .04f)..(m.x + .43f) &&
@@ -380,6 +395,7 @@ internal class CosmicWorld(
         disturb(x, y)
     }
 
+    @Synchronized
     fun disturb(x: Float, y: Float) {
         val px = x.coerceIn(0f, 1f)
         val py = y.coerceIn(0f, 1f)
@@ -395,8 +411,10 @@ internal class CosmicWorld(
         // Body summaries are UI-only views, but must reflect the grain
         // velocities immediately after an intentional user impulse.
         bodies = sand.summarizeBodies(bodies)
+        publishGrains()
     }
 
+    @Synchronized
     fun updateTimeScale(next: Float) {
         require(next.isFinite())
         timeScale = when {
@@ -408,6 +426,7 @@ internal class CosmicWorld(
         }
     }
 
+    @Synchronized
     fun startBrush(x: Float, y: Float) {
         brushStartX = x.coerceIn(0f, 1f)
         brushStartY = y.coerceIn(0f, 1f)
@@ -419,6 +438,7 @@ internal class CosmicWorld(
         brushPoint = SpaceRipple(brushStartX, brushStartY)
     }
 
+    @Synchronized
     fun moveBrush(x: Float, y: Float) {
         val px = x.coerceIn(0f, 1f)
         val py = y.coerceIn(0f, 1f)
@@ -433,6 +453,7 @@ internal class CosmicWorld(
      * analogous to the separate explicit create-body command. A tap simply
      * nudges existing grains; ordinary collisions never instantiate grains.
      */
+    @Synchronized
     fun endBrush() {
         val point = brushPoint ?: return
         if (brushGestureDistance > .065f && bodies.size < maxBodies &&
@@ -447,15 +468,18 @@ internal class CosmicWorld(
                 lifetime = 3600f)
             sand.seed(newBody, 18)
             bodies += newBody
+            publishGrains()
         } else {
             sand.perturb(point.x, point.y,
                 (.025f + brushGestureDistance * .20f).coerceAtMost(.085f))
             bodies = sand.summarizeBodies(bodies)
+            publishGrains()
         }
         brushPoint = null
         brushMass = 0f
     }
 
+    @Synchronized
     fun spawnBinary() {
         if (bodies.size > maxBodies-2) return
         val x = .20f + random.nextFloat() * .56f
@@ -469,33 +493,39 @@ internal class CosmicWorld(
         if (sand.grains.size + 80 > matterMode.maxParticles) return
         bodies = bodies + left + right
         sand.seed(left, 40); sand.seed(right, 40)
+        publishGrains()
         lastEncounter = "binary"
     }
 
     /** Deterministic rewind of stored physical frames; excludes app UI state.
      * The small bounded buffer intentionally does not persist user history.
      */
+    @Synchronized
     fun rewind(seconds: Int = 3): Boolean {
         if (replayBuffer.isEmpty() || particleReplay.isEmpty()) return false
-        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) * 10)
+        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) * 4)
             .coerceAtLeast(0)
         val snapshot = replayBuffer.elementAt(index)
         sand.restore(particleReplay.elementAt(index))
+        publishGrains()
         bodies = snapshot
         previousBodies = snapshot
         return true
     }
 
+    @Synchronized
     fun clearReplay() {
         replayBuffer.clear()
         particleReplay.clear()
         replayTimer = 0f
     }
 
+    @Synchronized
     fun shiftPerspective(dx: Float) {
         depthShift = (depthShift + dx).coerceIn(-1f, 1f)
     }
 
+    @Synchronized
     fun reset() {
         bodies = initialBodies()
         previousBodies = bodies
@@ -534,6 +564,7 @@ internal class CosmicWorld(
      * No old collision fragments, arbitrary kicks, timers spawning fresh
      * objects, or lifetime-based destruction run during a physics frame.
      */
+    @Synchronized
     fun step(dt: Float) {
         if (timeScale == 0f) return
         val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
@@ -586,12 +617,13 @@ internal class CosmicWorld(
         val newborns = sand.discoverClumps(current, maxBodies, ::newBodyId)
         current = sand.mergeCaptureLabels(current + newborns)
         bodies = sand.summarizeBodies(current)
+        publishGrains()
         replayTimer += h
-        if (replayTimer >= .1f) {
+        if (replayTimer >= .25f) {
             replayBuffer.addLast(prior)
             particleReplay.addLast(sand.snapshot())
-            if (replayBuffer.size > 100) replayBuffer.removeFirst()
-            if (particleReplay.size > 100) particleReplay.removeFirst()
+            if (replayBuffer.size > 32) replayBuffer.removeFirst()
+            if (particleReplay.size > 32) particleReplay.removeFirst()
             replayTimer = 0f
         }
     }

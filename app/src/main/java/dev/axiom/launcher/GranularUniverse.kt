@@ -30,13 +30,14 @@ internal data class SandGrain(
     var vy: Float,
     val mass: Float,
     var heat: Double,
-    val material: MatterMaterial,
+    var material: MatterMaterial,
     var owner: Int = -1
 )
 
 internal data class GrainTotals(
     val mass: Double, val momentumX: Double, val momentumY: Double,
-    val kinetic: Double, val internal: Double
+    val kinetic: Double, val internal: Double,
+    val chemical: Double = 0.0
 )
 
 internal class GranularUniverse {
@@ -48,6 +49,8 @@ internal class GranularUniverse {
     private val softeningSquared = .0032 * .0032
     private val contactStiffness = 3.2
     private val specificHeat = 0.000001
+    private var currentEvent = CosmicEpisode()
+    private val thermoInterval = 8
     private var nextGrainId = 1
     private var pulseSerial = -1
     private var tick = 0
@@ -195,21 +198,22 @@ internal class GranularUniverse {
     /** Mass, momentum and internal energy of actual grains, no proxy bodies. */
     fun totals(): GrainTotals {
         var mass = 0.0; var px = 0.0; var py = 0.0
-        var kinetic = 0.0; var internal = 0.0
+        var kinetic = 0.0; var internal = 0.0; var chemical = 0.0
         for (p in grains) {
             val m = p.mass.toDouble()
             mass += m
             px += m * p.vx; py += m * p.vy
             kinetic += .5 * m * (p.vx * p.vx + p.vy * p.vy)
             internal += p.heat
+            chemical += chemicalPotential(p.material) * m
         }
-        return GrainTotals(mass, px, py, kinetic, internal)
+        return GrainTotals(mass, px, py, kinetic, internal, chemical)
     }
 
     /** Expensive exact energy diagnostic, intentionally outside the frame loop. */
     fun totalEnergy(gravity: Float): Double {
         val t = totals()
-        var energy = t.kinetic + t.internal
+        var energy = t.kinetic + t.internal + t.chemical
         val g = gravityConstant * gravity
         for (i in grains.indices) for (j in i + 1 until grains.size) {
             val a = grains[i]; val b = grains[j]
@@ -221,6 +225,45 @@ internal class GranularUniverse {
             if (overlap > 0) energy += .5 * contactStiffness * overlap * overlap
         }
         return energy
+    }
+
+    // Specific phase enthalpies, measured in the same toy energy units as
+    // kinetic energy. Heat + phase enthalpy remains invariant on transitions.
+    private fun chemicalPotential(m: MatterMaterial): Double = when (m) {
+        MatterMaterial.WATER -> .000030
+        MatterMaterial.STEAM -> .000150
+        MatterMaterial.PLASMA -> .000220
+        MatterMaterial.GLASS -> .000090
+        else -> 0.0
+    }
+
+    private fun phaseChange(p: SandGrain) {
+        val temperature = p.heat / (p.mass * specificHeat)
+        val next = when (p.material) {
+            MatterMaterial.ICE -> if (temperature >= 290.0)
+                MatterMaterial.WATER else null
+            MatterMaterial.WATER -> when {
+                temperature > 420.0 -> MatterMaterial.STEAM
+                temperature < 260.0 -> MatterMaterial.ICE
+                else -> null
+            }
+            MatterMaterial.STEAM -> if (temperature < 340.0)
+                MatterMaterial.WATER else null
+            MatterMaterial.HYDROGEN -> if (temperature > 4000.0)
+                MatterMaterial.PLASMA else null
+            MatterMaterial.PLASMA -> if (temperature < 2500.0)
+                MatterMaterial.HYDROGEN else null
+            MatterMaterial.SILICATE -> if (temperature > 1700.0)
+                MatterMaterial.GLASS else null
+            MatterMaterial.GLASS -> if (temperature < 1400.0)
+                MatterMaterial.SILICATE else null
+            else -> null
+        } ?: return
+        val delta = (chemicalPotential(next) -
+            chemicalPotential(p.material)) * p.mass
+        if (delta > p.heat) return // Cannot spend energy we do not have.
+        p.heat = (p.heat - delta).coerceAtLeast(0.0)
+        p.material = next
     }
 
     private fun grainRadius(p: SandGrain): Double =
@@ -398,6 +441,50 @@ internal class GranularUniverse {
         }
     }
 
+    /**
+     * A transient black-hole analogue: a handful of EXISTING central grains
+     * create a stronger compact, pairwise and reciprocal gravitational field.
+     * No external static attractor or new invisible mass is instantiated.
+     * The changing event coupling does external work at its boundaries:
+     * global energy is not exactly conserved while this anomaly is active.
+     */
+    private fun compactCoreGravity(event: CosmicEpisode, g: Double) {
+        if (grains.size < 3) return
+        val nearest = IntArray(8) { -1 }
+        val distance = DoubleArray(8) { Double.POSITIVE_INFINITY }
+        for (i in grains.indices) {
+            val p = grains[i]
+            val dx = p.x - event.x; val dy = p.y - event.y
+            val r2 = (dx*dx + dy*dy).toDouble()
+            if (r2 >= distance[7]) continue
+            var k = 7
+            while (k > 0 && r2 < distance[k-1]) {
+                distance[k] = distance[k-1]
+                nearest[k] = nearest[k-1]; k--
+            }
+            distance[k] = r2; nearest[k] = i
+        }
+        for (i in grains.indices) {
+            val p = grains[i]
+            val rr = hypot(p.x-event.x,p.y-event.y)
+            if (rr > .30f) continue
+            for (core in nearest) {
+                if (core < 0 || core == i) continue
+                val q = grains[core]
+                val dx = (q.x-p.x).toDouble()
+                val dy = (q.y-p.y).toDouble()
+                val d2 = dx*dx+dy*dy+.0000008
+                val force = g * 5.0 * p.mass * q.mass /
+                    (d2 * sqrt(d2))
+                val fx = force * dx; val fy = force * dy
+                ax[i] += fx / p.mass
+                ay[i] += fy / p.mass
+                ax[core] -= fx / q.mass
+                ay[core] -= fy / q.mass
+            }
+        }
+    }
+
     private fun accelerations(gravity: Float, refreshGravity: Boolean) {
         if (refreshGravity) {
             gravityRebuilds++
@@ -409,6 +496,8 @@ internal class GranularUniverse {
                 if (mode == MatterMode.DETAILED) .48 else .56
             val g = gravityConstant * gravity
             for (i in grains.indices) addTreeGravity(i, root, g, theta)
+            if (currentEvent.kind == CosmicEventKind.SINGULARITY)
+                compactCoreGravity(currentEvent, g)
             var mx = 0.0; var my = 0.0; var total = 0.0
             for (i in grains.indices) {
                 val m = grains[i].mass.toDouble()
@@ -469,6 +558,16 @@ internal class GranularUniverse {
             val bvy = b.vy.toDouble() + impulse * invB * ny
             val lost = .5 * (1.0 - restitution*restitution) *
                 before*before / (invA + invB)
+            // Conduct energy between genuine contacting grains, without
+            // any thermal source or sink. A bounded fraction avoids negative
+            // energies and stiff thermal modes at high densities.
+            val tempA = a.heat / a.mass
+            val tempB = b.heat / b.mass
+            val amount = (tempA - tempB) *
+                min(a.mass, b.mass) * .035
+            val transfer = amount.coerceIn(-b.heat * .25, a.heat * .25)
+            a.heat -= transfer
+            b.heat += transfer
             // Keep heat in a separate energy reservoir, not an extra particle.
             a.heat += lost * .5
             b.heat += lost * .5
@@ -486,12 +585,16 @@ internal class GranularUniverse {
         if (episode.kind == CosmicEventKind.QUIET ||
             episode.serial == pulseSerial) return
         pulseSerial = episode.serial
-        if (episode.kind !in listOf(CosmicEventKind.NOVA,
+        if (episode.kind !in listOf(CosmicEventKind.METEORS,
+            CosmicEventKind.NOVA,
             CosmicEventKind.SOLAR_FLARE, CosmicEventKind.PARTICLE_CASCADE,
-            CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION)) return
+            CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION,
+            CosmicEventKind.POLAR_JET, CosmicEventKind.RING_WAVE)) return
         val candidates = grains.indices.filter { i ->
             val p = grains[i]
-            hypot(p.x - episode.x, p.y - episode.y) < .40f &&
+            (episode.kind == CosmicEventKind.METEORS &&
+                p.y < .48f ||
+                hypot(p.x - episode.x, p.y - episode.y) < .40f) &&
                 p.heat > 0
         }
         for (k in 0 until candidates.size - 1 step 2) {
@@ -501,6 +604,11 @@ internal class GranularUniverse {
             val ry = (b.y - a.y).toDouble()
             val d = sqrt(rx*rx+ry*ry).coerceAtLeast(1e-8)
             var nx = rx/d; var ny = ry/d
+            if (episode.kind == CosmicEventKind.METEORS) {
+                // Opposite impulses on existing dust: incoming meteors plus
+                // physical recoil elsewhere. The pair keeps total momentum.
+                nx = .24; ny = .970772
+            }
             val vrel = (b.vx-a.vx)*nx+(b.vy-a.vy)*ny
             if (vrel < 0) { nx = -nx; ny = -ny }
             val available = (a.heat + b.heat) * .12
@@ -527,6 +635,7 @@ internal class GranularUniverse {
         episode: CosmicEpisode = CosmicEpisode(), walls: Boolean = false
     ) {
         if (grains.isEmpty() || dt <= 0f) return
+        currentEvent = episode
         releaseHeatAsMotion(episode)
         capacity()
         val substeps = if (mode == MatterMode.DETAILED) 4 else 3
@@ -576,6 +685,9 @@ internal class GranularUniverse {
             resolveContacts()
         }
         tick++
+        if (tick % thermoInterval == 0) {
+            for (p in grains) phaseChange(p)
+        }
     }
 
     /** Display proxies, always calculated FROM grains, never used as forces. */

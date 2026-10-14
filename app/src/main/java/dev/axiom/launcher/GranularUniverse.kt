@@ -418,8 +418,11 @@ internal class GranularUniverse {
                     while (j >= 0) {
                         val other = j
                         j = gridNext[other]
-                        if (other <= i || cellX[other] != x ||
-                            cellY[other] != y) continue
+                        // Every linked bucket is ordered by DESCENDING
+                        // insertion index. Once <= i, no later pair is valid.
+                        // This prevents the collapsed-cloud O(N²) tail scan.
+                        if (other <= i) break
+                        if (cellX[other] != x || cellY[other] != y) continue
                         val b = grains[other]
                         val dx = (b.x - a.x).toDouble()
                         if (abs(dx) > .0056) continue

@@ -206,10 +206,12 @@ internal class CosmicWorld(seed: Int = 42) {
         val depth = .65f + random.nextFloat() * 2.6f
         val giant = !burst && bodies.none { it.kind in 97..104 } &&
             random.nextInt(720) == 0
+        val chosenKind = if (burst) 1 else if (giant) 97 + random.nextInt(8)
+            else 1 + random.nextInt(96)
+        val chosenClass = stellarClassFromKind(chosenKind)
         val body = CelestialBody(
             id = idSequence++,
-            kind = if (burst) 1 else if(giant) 97+random.nextInt(8)
-                else 1 + random.nextInt(96),
+            kind = chosenKind,
             mass = if(giant) 3.8f + random.nextFloat()*1.5f
                 else .30f + random.nextFloat() * 1.35f,
             depth = depth,
@@ -217,10 +219,19 @@ internal class CosmicWorld(seed: Int = 42) {
             vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
             lifetime = 3600f,
             sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f,
-            material = materialForKind(if(giant) 97 else 1 + random.nextInt(96)),
-            temperature = if(giant) 5200f else 180f + random.nextFloat()*920f,
-            stellarClass = if (giant) StellarClass.QUASAR else
-                stellarClassFromKind(if (burst) 1 else random.nextInt(1, 97))
+            material = when (chosenClass) {
+                StellarClass.QUASAR -> MatterMaterial.PLASMA
+                StellarClass.STAR -> MatterMaterial.HYDROGEN
+                StellarClass.CLOUD -> MatterMaterial.METHANE
+                StellarClass.PLANET -> materialForKind(chosenKind)
+            },
+            temperature = when (chosenClass) {
+                StellarClass.QUASAR -> 5200f
+                StellarClass.STAR -> 3200f
+                StellarClass.CLOUD -> 190f
+                StellarClass.PLANET -> 180f + random.nextFloat() * 920f
+            },
+            stellarClass = chosenClass
         )
         bodies = bodies + body
         matter.structures.ensure(body)

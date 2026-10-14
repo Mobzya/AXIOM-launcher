@@ -102,7 +102,7 @@ internal class GranularUniverse {
 
     /** Explicit initial or user-created objects only; never called by an impact. */
     fun seed(body: CelestialBody, requested: Int = if (mode ==
-        MatterMode.DETAILED) 300 else 118) {
+        MatterMode.DETAILED) 300 else 76) {
         if (grains.size >= mode.maxParticles) return
         val n = min(requested, mode.maxParticles - grains.size)
         if (n <= 0) return

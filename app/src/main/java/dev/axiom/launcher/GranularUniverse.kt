@@ -453,8 +453,11 @@ internal class GranularUniverse {
         capacity()
         val substeps = if (mode == MatterMode.DETAILED) 4 else 3
         val h = min(dt.toDouble(), .034) / substeps
+        // Position-dependent forces are identical at a substep boundary.
+        // Reuse its acceleration for the next half-kick instead of rebuilding
+        // the tree and neighbour grid twice at the same coordinates.
+        accelerations(gravity)
         repeat(substeps) {
-            accelerations(gravity)
             for (i in grains.indices) {
                 val p = grains[i]
                 p.vx = (p.vx + (ax[i] * h * .5)).toFloat()

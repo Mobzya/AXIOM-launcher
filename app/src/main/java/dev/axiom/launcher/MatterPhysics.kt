@@ -142,8 +142,39 @@ internal class MatterField(private val random: Random = Random(91)) {
 
     fun setMode(next: MatterMode) {
         mode = next
-        // Do not discard mass when switching to a smaller particle budget.
-        // Existing packets finish coalescing, but no extra ones can spawn.
+        coarsenTo(next.maxParticles)
+    }
+
+    /** Resolution-only LOD: preserve packet mass and weighted momentum exactly. */
+    private fun coarsenTo(targetCount: Int) {
+        if (particles.size <= targetCount) return
+        val batchSize = (particles.size + targetCount - 1) / targetCount
+        val ordered = particles.sortedWith(compareBy<MatterParticle> {
+            it.material.ordinal
+        }.thenBy { cell(it.x) }.thenBy { cell(it.y) }.thenBy { it.x })
+        val compact = ArrayList<MatterParticle>(targetCount)
+        for (start in ordered.indices step batchSize) {
+            val end = min(start + batchSize, ordered.size)
+            var mass = 0.0
+            var x = 0.0; var y = 0.0
+            var vx = 0.0; var vy = 0.0; var temp = 0.0
+            for (i in start until end) {
+                val p = ordered[i]
+                val m = p.mass.toDouble()
+                mass += m
+                x += p.x * m; y += p.y * m
+                vx += p.vx * m; vy += p.vy * m
+                temp += p.temperature * m
+            }
+            val source = ordered[start]
+            compact.add(MatterParticle(source.id,
+                (x / mass).toFloat(), (y / mass).toFloat(),
+                (vx / mass).toFloat(), (vy / mass).toFloat(),
+                mass.toFloat(), (temp / mass).toFloat(), source.material,
+                source.age))
+        }
+        particles.clear()
+        particles.addAll(compact)
     }
 
     fun clear() {
@@ -180,11 +211,16 @@ internal class MatterField(private val random: Random = Random(91)) {
     /**
      * Transfer part of BOTH bodies' mass into symmetric particle ejecta.
      * Opposite-pair velocities sum to zero around each parent's velocity.
-     * At the hard particle cap an impact remains an ordinary inelastic bounce.
+     * When the budget fills, old packets combine into heavier LOD packets.
      */
     fun emitImpact(
         first: CelestialBody, second: CelestialBody, speed: Float
     ): Pair<CelestialBody, CelestialBody> {
+        if (particles.size + mode.burstPerBody * 2 > mode.maxParticles) {
+            // Level-of-detail coarsening makes room for EVERY new collision
+            // without silently destroying previously simulated mass.
+            coarsenTo((mode.maxParticles * .74f).toInt())
+        }
         val room = (mode.maxParticles - particles.size).coerceAtLeast(0)
         if (room < 4) return first to second
         val count = min(mode.burstPerBody, room / 2).let { it - it % 2 }

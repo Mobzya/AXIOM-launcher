@@ -551,6 +551,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     prefs.edit().putString("matter_mode", next.name).apply()
                 },
                 particleCount = world.matter.particles.size,
+                boundParticleCount = world.matter.structures.sampleCount,
                 reactionCount = world.matter.reactions,
                 planetCount = world.matter.newPlanets,
                 onMaximumBodies = {

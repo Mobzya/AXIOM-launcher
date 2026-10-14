@@ -149,8 +149,8 @@ internal class MatterField(private val random: Random = Random(91)) {
         if (particles.size <= targetCount) return
         val batchSize = (particles.size + targetCount - 1) / targetCount
         val ordered = particles.sortedWith(compareBy<MatterParticle> {
-            it.material.ordinal
-        }.thenBy { cell(it.x) }.thenBy { cell(it.y) }.thenBy { it.x })
+            cell(it.y)
+        }.thenBy { cell(it.x) }.thenBy { it.material.ordinal }.thenBy { it.x })
         val compact = ArrayList<MatterParticle>(targetCount)
         for (start in ordered.indices step batchSize) {
             val end = min(start + batchSize, ordered.size)

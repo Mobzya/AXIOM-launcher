@@ -235,6 +235,7 @@ internal fun AxiomSettings(
     onMatterMode: (MatterMode) -> Unit,
     particleCount: Int,
     boundParticleCount: Int,
+    totalMatterMass: Double,
     reactionCount: Int,
     planetCount: Int,
     wallsEnabled: Boolean,
@@ -402,6 +403,9 @@ internal fun AxiomSettings(
         Text("Частицы в скоплениях: $boundParticleCount · вне скоплений: $particleCount. " +
             "Все частицы имеют собственные скорость и гравитацию.", color = AX_GRAY,
             fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Text("Общая масса: ${"%.4f".format(java.util.Locale.US, totalMatterMass)} " +
+            "· количество частиц неизменно при столкновениях",
+            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             listOf(MatterMaterial.ROCK to "Камни",

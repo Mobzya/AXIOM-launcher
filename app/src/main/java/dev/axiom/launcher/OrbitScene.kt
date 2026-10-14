@@ -60,6 +60,11 @@ private val neuralEdges = listOf(
     7 to 10, 8 to 10, 9 to 10
 )
 
+/**
+ * Unified particle renderer. Legacy orbit/sprite artwork is deliberately not
+ * called: every visible cosmic object is a set of physical bound/free samples.
+ * Bound samples share the centre-of-mass transform of their parent until freed.
+ */
 @Composable
 internal fun CosmicEnvironment(
     world: CosmicWorld,
@@ -67,213 +72,94 @@ internal fun CosmicEnvironment(
     modifier: Modifier = Modifier
 ) {
     val dim by animateFloatAsState(
-        targetValue = if (interacting) .23f else 1f,
-        animationSpec = tween(560), label = "quiet space"
+        targetValue = if (interacting) .28f else 1f,
+        animationSpec = tween(450), label = "particle background"
     )
-    val paint = remember {
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.WHITE
-            typeface = Typeface.create("monospace", Typeface.NORMAL)
-        }
-    }
-    // Automatically respect Android's power saver and a critically low battery.
     val context = LocalContext.current
     val reducedPower = remember(context, interacting) {
-        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val battery = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val capacity = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        pm.isPowerSaveMode || capacity in 0..15
+        power.isPowerSaveMode || capacity in 0..15
     }
-    // Paint at display refresh rate, but integrate physics at stable 60/30 Hz.
-    // Interpolation makes motion continuous on 90/120-Hz displays.
     var frameMix by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
         val slow = interacting || reducedPower || world.maxBodies >= 40 ||
             world.matterMode == MatterMode.DETAILED
-        val targetNanos = if (slow) 33_333_333L else 16_666_667L
-        var previous = withFrameNanos { it }
+        val tickNanos = if (slow) 33_333_333L else 16_666_667L
+        var lastTime = withFrameNanos { it }
         var accumulator = 0L
         while (coroutineContext.isActive) {
             val now = withFrameNanos { it }
-            accumulator = (accumulator + (now - previous).coerceIn(0L, 70_000_000L))
-                .coerceAtMost(targetNanos * 2L)
-            previous = now
-            val stepped = accumulator >= targetNanos
-            if (stepped) {
-                accumulator -= targetNanos
+            accumulator = (accumulator + (now - lastTime).coerceIn(0L, 70_000_000L))
+                .coerceAtMost(tickNanos * 2)
+            lastTime = now
+            val advanced = accumulator >= tickNanos
+            if (advanced) {
+                accumulator -= tickNanos
                 world.step(if (slow) 1f / 30f else 1f / 60f)
             }
-            // Avoid extra display-rate redraws when Android requests battery saving.
-            if (!reducedPower || stepped) {
-                frameMix = (accumulator.toFloat() / targetNanos.toFloat())
-                    .coerceIn(0f, 1f)
+            if (!reducedPower || advanced) {
+                frameMix = (accumulator.toFloat() / tickNanos).coerceIn(0f, 1f)
             }
         }
     }
 
     Canvas(modifier) {
-        paint.color = if (AxiomColors.palette.light) android.graphics.Color.BLACK
-            else android.graphics.Color.WHITE
-        val t = world.elapsed
-        val unit = min(size.width, size.height)
+        val light = AxiomColors.palette.light
         val perspective = world.depthShift
-
-        // Very rare full-sky background appears only behind all UI controls.
-        drawRareBackdrop(world.episode)
-        drawUltraRareBackdrop(world.episode)
-
-        // 3-layer star volume. Greater z means further / dimmer / slower motion.
-        starLayers.forEachIndexed { i, star ->
-            // White daytime mode keeps the same physics but a cleaner sky.
-            if (AxiomColors.palette.light && i % 3 == 0) return@forEachIndexed
-            val z = star.z
-            var px = ((star.x + .005f * t / z + perspective * .027f / z) % 1.04f)
-            var py = star.y + .009f * sin(t * .055f + i) / z
-            if (world.episode.kind in listOf(CosmicEventKind.LENS,
-                    CosmicEventKind.SINGULARITY)) {
-                val ep = world.episode
-                val dx = px-ep.x
-                val dy = py-ep.y
-                val d2 = dx*dx+dy*dy+.035f
-                val lens = .0009f*ep.alpha/d2
-                px += lens*dx
-                py += lens*dy
-            }
-            val shimmer = .82f + .18f * sin(t * (.18f + i % 3 * .025f) + i)
-            val opacity = ((.17f + .24f / z) * shimmer * dim).coerceIn(0f, .54f)
-            drawCircle(White.copy(alpha = opacity),
-                radius = star.radius.dp.toPx() / (z * .55f).coerceAtLeast(.8f),
-                center = Offset(px * size.width, py * size.height))
-        }
-
-        // A few vector-depth "dust" planes, not blue gradients or fullscreen blur.
-        for (layer in 1..3) {
-            val z = layer.toFloat() + .7f
-            val x = (.24f + .28f * layer + perspective * .025f / z) * size.width
-            val y = (.20f + .16f * (layer % 3)) * size.height
-            drawCircle(White.copy(alpha = .012f * dim),
-                radius = unit * (.16f / z),
-                center = Offset(x, y),
-                style = Stroke(.7.dp.toPx()))
-        }
-
-        val scene = world.episode
-        // Keep the scene readable: no decorative object or equation may cover
-        // a mathematical lesson, and search suppresses lessons entirely.
-        val lesson = world.mathMoment.takeIf { !interacting && it.active }
-        // Temporally coherent procedural events, blending with ordinary space.
-        if (scene.kind != CosmicEventKind.QUIET && scene.alpha > .005f) {
-            drawEpisode(scene, t, dim, unit, paint)
-        }
-
-        world.remnants.forEach { remnant ->
-            val hidden = lesson != null &&
-                remnant.x in (lesson.x - .17f)..(lesson.x + .52f) &&
-                remnant.y in (lesson.y - .17f)..(lesson.y + .40f)
-            if (hidden) return@forEach
-            val life = (1f - remnant.age / remnant.lifetime).coerceIn(0f, 1f)
-            val c = Offset(remnant.x * size.width, remnant.y * size.height)
-            when (remnant.kind) {
-                CosmicEventKind.NOVA -> {
-                    drawCircle(White.copy(alpha = dim * life * .24f),
-                        unit * (.09f + .19f * remnant.age / remnant.lifetime),
-                        c, style = Stroke(.7.dp.toPx()))
+        // No legacy drawEpisode, drawBody, backdrops, or silhouette sprites.
+        val oldBodies = world.previousBodies
+        world.bodies.forEach { body ->
+            val old = oldBodies.firstOrNull { it.id == body.id } ?: body
+            val cx = old.x + (body.x - old.x) * frameMix +
+                perspective * .01f / body.depth.coerceAtLeast(.4f)
+            val cy = old.y + (body.y - old.y) * frameMix
+            val rotation = body.rotation * .12f
+            val cr = cos(rotation)
+            val sr = sin(rotation)
+            val centerRadius = structureRadius(body)
+            for (cell in world.matter.structures.points(body.id)) {
+                val px = cx + cell.dx * cr - cell.dy * sr
+                val py = cy + cell.dx * sr + cell.dy * cr
+                if (px !in -.03f..1.03f || py !in -.03f..1.03f) continue
+                val source = Color(cell.material.argb)
+                val pigment = if (light) Color(
+                    source.red * .57f, source.green * .57f,
+                    source.blue * .57f, 1f
+                ) else source
+                val hot = cell.material == MatterMaterial.PLASMA
+                val gas = cell.material.gas
+                val radius = (.78f + sqrt(cell.mass) * (if (hot) 7.8f else 6f))
+                    .coerceIn(.6f, if (world.matterMode == MatterMode.DETAILED) 2.0f else 2.5f)
+                    .dp.toPx()
+                val a = dim * (if (gas) .75f else .96f)
+                drawCircle(pigment.copy(alpha = a), radius,
+                    Offset(px * size.width, py * size.height))
+                if (hot && !light && cell.dx * cell.dx + cell.dy * cell.dy <
+                    centerRadius * centerRadius * .5f) {
+                    drawCircle(pigment.copy(alpha = .13f * dim),
+                        radius * 2.7f, Offset(px * size.width, py * size.height))
                 }
-CosmicEventKind.SINGULARITY -> {
-                    drawCircle(White.copy(alpha = dim * life * .19f),
-                        unit * .055f, c, style = Stroke(.65.dp.toPx()))
-                    drawCircle(White.copy(alpha = dim * life * .08f),
-                        unit * .11f, c, style = Stroke(.65.dp.toPx()))
-                }
-                CosmicEventKind.WORMHOLE, CosmicEventKind.PULSAR -> {
-                    drawCircle(White.copy(alpha = dim * life * .13f),
-                        unit * (.028f + .11f * (1f-life)), c,
-                        style = Stroke(.65.dp.toPx()))
-                }
-                else -> Unit
             }
         }
 
-        world.ripples.forEach { ripple ->
-            val hidden = lesson != null &&
-                ripple.x in (lesson.x - .16f)..(lesson.x + .50f) &&
-                ripple.y in (lesson.y - .16f)..(lesson.y + .38f)
-            if (hidden) return@forEach
-            val life = (1f - ripple.age / 1.7f).coerceIn(0f, 1f)
-            drawCircle(
-                White.copy(alpha = life * life * dim * .27f),
-                radius = unit * (.015f + .22f * (1f - life)),
-                center = Offset(ripple.x * size.width, ripple.y * size.height),
-                style = Stroke(1.dp.toPx())
-            )
+        // Free matter has its own mass, velocity, temperature and interactions.
+        // It is never drawn as a legacy texture or a massless cosmetic spark.
+        for (p in world.matter.particles) {
+            if (p.x !in -.03f..1.03f || p.y !in -.03f..1.03f) continue
+            val source = Color(p.material.argb)
+            val pigment = if (light) Color(source.red * .57f,
+                source.green * .57f, source.blue * .57f, 1f) else source
+            val radius = (1.0f + sqrt(p.mass) * 7f).coerceAtMost(3.5f).dp.toPx()
+            val alpha = dim * if (p.material.gas) .65f else .92f
+            drawCircle(pigment.copy(alpha = alpha), radius,
+                Offset(p.x * size.width, p.y * size.height))
         }
         world.brushPoint?.let { brush ->
-            val c=Offset(brush.x*size.width,brush.y*size.height)
-            val radius=unit*(.07f+world.brushMass*.02f)
-            drawCircle(White.copy(alpha=dim*.30f),radius,c,
-                style=Stroke(1.dp.toPx()))
-            drawCircle(White.copy(alpha=dim*.14f),radius*1.7f,c,
-                style=Stroke(.65.dp.toPx()))
-            drawCircle(White.copy(alpha=dim*.76f),3.dp.toPx(),c)
+            drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),
+                Offset(brush.x * size.width, brush.y * size.height))
         }
-
-        // Mathematical information belongs to the atmospheric layer.
-        // Even a giant cosmic body is drawn above the ML/maths backdrop.
-        if (!interacting && scene.kind == CosmicEventKind.QUIET) {
-            drawMathMoment(world.mathMoment, dim*.60f, paint)
-        }
-
-        // Bright, massless impact dust; capped independently of real physics.
-        world.dust.forEach { p ->
-            val life=(1f-p.age/p.lifetime).coerceIn(0f,1f)
-            drawCircle(White.copy(alpha=dim*life*life*.65f),
-                radius=(.6f+life*1.3f).dp.toPx(),
-                center=Offset(p.x*size.width,p.y*size.height))
-        }
-
-        // Mass-bearing material packets: physical clusters, not cosmetic sprites.
-        // One circle per packet; the linked-cell engine handles interactions.
-        val lightBackdrop = AxiomColors.palette.light
-        world.matter.particles.forEach { p ->
-            val raw = Color(p.material.argb)
-            val pigment = if (lightBackdrop) Color(
-                red = raw.red * .58f, green = raw.green * .58f,
-                blue = raw.blue * .58f, alpha = 1f) else raw
-            val center = Offset(p.x * size.width, p.y * size.height)
-            val radius = (1.05f + kotlin.math.sqrt(p.mass) * 7f).dp.toPx()
-            val alpha = dim * (if (p.material.gas) .58f else .83f)
-            if (p.material.gas && world.matterMode == MatterMode.DETAILED &&
-                p.id % 4 == 0) {
-                drawCircle(pigment.copy(alpha = alpha * .12f),
-                    radius * 3.5f, center)
-            }
-            drawCircle(pigment.copy(alpha = alpha), radius, center)
-        }
-
-        // Actual material bodies always own the highest COSMIC depth layer.
-        val mix = frameMix
-        val oldBodies = world.previousBodies
-        world.bodies.sortedByDescending { it.depth }.forEach { b ->
-        val old = oldBodies.firstOrNull { it.id == b.id } ?: b
-        val visualX = old.x + (b.x - old.x) * mix
-        val visualY = old.y + (b.y - old.y) * mix
-        val factor = (1f / b.depth).coerceIn(.38f, 1.45f)
-        val fadeIn = (b.age / 1.8f).coerceIn(0f, 1f)
-        val fadeOut = ((b.lifetime - b.age) / 3f).coerceIn(0f, 1f)
-        val opacity = dim * (.20f + .57f * factor) * fadeIn * fadeOut
-        val drawX = visualX + perspective * .026f * factor
-        val origin = Offset(drawX * size.width, visualY * size.height)
-        drawBody(b, origin, unit * factor, opacity, t)
-        val rawTint = Color(b.material.argb)
-        val rim = if (lightBackdrop) Color(
-            red = rawTint.red * .56f, green = rawTint.green * .56f,
-            blue = rawTint.blue * .56f) else rawTint
-        drawCircle(rim.copy(alpha = opacity * .8f),
-            radius = (unit * contactSize(b) * factor).coerceAtLeast(2.dp.toPx()),
-            center = origin, style = Stroke(.85.dp.toPx()))
-        }
-
-
     }
 }
 

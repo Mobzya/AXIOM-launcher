@@ -415,6 +415,13 @@ internal class MatterField(private val random: Random = Random(91)) {
             if (landed || (!walls && (p.x !in -.2f..1.2f ||
                     p.y !in -.2f..1.2f))) dead[i] = true
         }
-        for (i in count - 1 downTo 0) if (dead[i]) particles.removeAt(i)
+        // Stable O(N) compaction: removeAt(i) from an ArrayList in a loop
+        // would otherwise introduce large frame-time spikes after collisions.
+        var destination = 0
+        for (i in 0 until count) if (!dead[i]) {
+            if (destination != i) particles[destination] = particles[i]
+            destination++
+        }
+        while (particles.size > destination) particles.removeAt(particles.lastIndex)
     }
 }

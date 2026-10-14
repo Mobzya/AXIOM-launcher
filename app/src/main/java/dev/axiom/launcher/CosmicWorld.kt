@@ -80,8 +80,7 @@ internal class CosmicWorld(
     @Synchronized
     fun updateMatterMode(value: MatterMode) {
         matterMode = value
-        matter.setMode(value)
-        matter.structures.setMode(value, bodies)
+        // Old invisible rigid samples need no allocation on mode changes.
         sand.updateMode(value)
     }
     private val impactMoments = HashMap<Long, Float>()

@@ -47,7 +47,9 @@ internal data class CelestialBody(
     val rotation: Float = 0f,
     val age: Float = 0f,
     val lifetime: Float = 58f,
-    val sizeFactor: Float = 1f
+    val sizeFactor: Float = 1f,
+    val material: MatterMaterial = MatterMaterial.ROCK,
+    val temperature: Float = 300f
 )
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
@@ -59,6 +61,15 @@ internal data class CosmicRemnant(
 
 internal class CosmicWorld(seed: Int = 42) {
     private val random = Random(seed)
+    val matter = MatterField(Random(seed + 109))
+    var matterMode by mutableStateOf(MatterMode.BALANCED)
+        private set
+    fun updateMatterMode(value: MatterMode) {
+        matterMode = value
+        matter.setMode(value)
+    }
+    private val impactMoments = HashMap<Long, Float>()
+    private fun newBodyId(): Int = idSequence++
     var bodies by mutableStateOf<List<CelestialBody>>(initialBodies())
         private set
     var ripples by mutableStateOf<List<SpaceRipple>>(emptyList())
@@ -148,7 +159,8 @@ internal class CosmicWorld(seed: Int = 42) {
             .22f+random.nextFloat()*.56f,
             (random.nextFloat()-.5f)*.015f,
             (random.nextFloat()-.5f)*.015f,
-            lifetime=48f+random.nextFloat()*45f,sizeFactor=1.1f)
+            lifetime=48f+random.nextFloat()*45f,sizeFactor=1.1f,
+            material=MatterMaterial.HYDROGEN,temperature=1700f)
     }
 
     fun updateGravity(value: Float) {
@@ -187,7 +199,9 @@ internal class CosmicWorld(seed: Int = 42) {
             vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
             lifetime = if(giant) 105f else if (burst) 20f + random.nextFloat() * 15f
                        else 39f + random.nextFloat() * 37f,
-            sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f
+            sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f,
+            material = materialForKind(if(giant) 97 else random.nextInt(1, 105)),
+            temperature = if(giant) 850f else 180f + random.nextFloat()*920f
         )
         bodies = bodies + body
     }
@@ -485,6 +499,8 @@ internal class CosmicWorld(seed: Int = 42) {
         cascadeBudget = 0
         lastEncounter = "none"
         dust=emptyList()
+        matter.clear()
+        impactMoments.clear()
         clearReplay()
     }
 
@@ -845,8 +861,8 @@ internal class CosmicWorld(seed: Int = 42) {
                 next += if(wallsEnabled) reflectAtWalls(candidate) else candidate
             }
         }
-        // Resolve touching, approaching pairs with a momentum-conserving impulse.
-        // Slow encounters may subsequently coalesce; fast ones scatter.
+        // Resolve contacts. Every new approaching contact creates *physical* debris:
+        // its mass is deducted from the colliding bodies, not copied from them.
         for (i in next.indices) for (j in i + 1 until next.size) {
             val a = next[i]
             val b = next[j]
@@ -859,47 +875,25 @@ internal class CosmicWorld(seed: Int = 42) {
             val velocities = collide(a, b)
             if (velocities.avx == a.vx && velocities.avy == a.vy &&
                 velocities.bvx == b.vx && velocities.bvy == b.vy) continue
-            next[i] = a.copy(vx = velocities.avx, vy = velocities.avy)
-            next[j] = b.copy(vx = velocities.bvx, vy = velocities.bvy)
-        }
-        // A single energetic impact can break a massive rock into 2–4 real
-        // bodies. Debris obeys gravity, contributes mass and can reaccrete.
-        // Tiny bright particles are a separate bounded, massless cosmetic layer.
-        var extraShards: List<CelestialBody> = emptyList()
-        if (next.size < maxBodies-1) {
-            collision@ for(i in next.indices)for(j in i+1 until next.size) {
-                val a=next[i]
-                val b=next[j]
-                val d=hypot(a.x-b.x,a.y-b.y)
-                val relativeSpeed=hypot(a.vx-b.vx,a.vy-b.vy)
-                if(d > (contactSize(a)+contactSize(b))*1.2f ||
-                    relativeSpeed < .11f ||
-                    kotlin.math.abs(a.depth-b.depth)>.48f) continue
-                val target=if(a.kind in listOf(2,7,21,31,34) &&
-                    a.age>2f && a.mass>.95f) i else
-                    if(b.kind in listOf(2,7,21,31,34) &&
-                        b.age>2f && b.mass>.95f) j else -1
-                if(target<0)continue
-                val rock=next[target]
-                val free=maxBodies-next.size
-                val breakup=splitAsteroid(rock,idSequence,
-                    (free+1).coerceIn(2,4))
-                if(breakup.pieces.size<2)continue
-                next[target]=breakup.pieces[0]
-                extraShards=breakup.pieces.drop(1)
-                idSequence+=extraShards.size
-                val sparks=List(12) { q ->
-                    val angle=q*6.2831853f/12f + rock.rotation
-                    val speed=.08f+(q%4)*.035f
-                    ImpactDust(rock.x,rock.y,
-                        rock.vx+cos(angle)*speed,
-                        rock.vy+sin(angle)*speed,
-                        lifetime=1.8f+(q%4)*.3f)
-                }
-                dust=(dust+sparks).takeLast(88)
-                ripples=(ripples+SpaceRipple(rock.x,rock.y)).takeLast(4)
-                break@collision
+            val key = (minOf(a.id, b.id).toLong() shl 32) or
+                (maxOf(a.id, b.id).toLong() and 0xffffffffL)
+            val speed = hypot(a.vx - b.vx, a.vy - b.vy)
+            val bouncedA = a.copy(vx = velocities.avx, vy = velocities.avy)
+            val bouncedB = b.copy(vx = velocities.bvx, vy = velocities.bvy)
+            if (elapsed - (impactMoments[key] ?: -100f) >= .60f) {
+                val debris = matter.emitImpact(bouncedA, bouncedB, speed)
+                next[i] = debris.first
+                next[j] = debris.second
+                impactMoments[key] = elapsed
+                ripples = (ripples + SpaceRipple((a.x + b.x)*.5f,
+                    (a.y + b.y)*.5f)).takeLast(4)
+            } else {
+                next[i] = bouncedA
+                next[j] = bouncedB
             }
+        }
+        if (impactMoments.size > 256) {
+            impactMoments.entries.removeAll { elapsed - it.value > 2f }
         }
         val compact = ArrayList<CelestialBody>(next.size)
         val consumed = HashSet<Int>()
@@ -945,8 +939,7 @@ internal class CosmicWorld(seed: Int = 42) {
             replayTimer = 0f
         }
         previousBodies = current
-        if(extraShards.isNotEmpty()) compact.addAll(
-            extraShards.take(maxBodies-compact.size))
+        matter.step(h, gravity, compact, maxBodies, ::newBodyId, wallsEnabled)
         bodies = compact
         if (chain) {
             if (bodies.size < maxBodies) {

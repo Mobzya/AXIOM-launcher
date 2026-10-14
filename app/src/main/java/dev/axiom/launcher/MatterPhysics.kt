@@ -462,6 +462,8 @@ internal class MatterField(private val random: Random = Random(91)) {
                             relative < .017f &&
                             max(a.temperature, b.temperature) < 1100f
                         if (chemistry != null || solidCapture || gasCollapse) {
+                            val originalA = a.mass
+                            val originalB = b.mass
                             val mass = a.mass + b.mass
                             a.vx = (a.vx * a.mass + b.vx * b.mass) / mass
                             a.vy = (a.vy * a.mass + b.vy * b.mass) / mass
@@ -475,8 +477,11 @@ internal class MatterField(private val random: Random = Random(91)) {
                                 a.material = chemistry.product
                                 reactions++
                             } else if (a.material != b.material) {
-                                a.material = if (a.mass >= b.mass * 2f)
-                                    a.material else MatterMaterial.MINERAL
+                                // A gravitational gas mixture is not a solid mineral.
+                                a.material = if (gasCollapse) {
+                                    if (originalA >= originalB) a.material else b.material
+                                } else if (originalA >= originalB) a.material
+                                else b.material
                             }
                             dead[bIndex] = true
                         } else {
@@ -535,7 +540,9 @@ internal class MatterField(private val random: Random = Random(91)) {
                     vx = (body.vx * body.mass + p.vx * p.mass) / mass,
                     vy = (body.vy * body.mass + p.vy * p.mass) / mass,
                     temperature = (body.temperature * body.mass +
-                        p.temperature * p.mass) / mass
+                        p.temperature * p.mass) / mass,
+                    stellarClass = if (body.stellarClass == StellarClass.CLOUD &&
+                        mass > .75f) StellarClass.STAR else body.stellarClass
                 )
                 landed = true
                 break

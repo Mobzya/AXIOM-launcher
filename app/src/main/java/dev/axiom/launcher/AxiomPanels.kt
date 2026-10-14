@@ -366,16 +366,17 @@ internal fun AxiomSettings(
         Text("ФИЗИКА ВЕЩЕСТВА", color = AX_DARK, fontSize = 10.sp,
             fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
         Spacer(Modifier.height(9.dp))
-        Text("Планеты, звёзды и квазары состоят из связанных частиц. " +
-            "При ударе или сильных приливных силах вещество освобождается, " +
-            "движется независимо и способно собираться в новые тела.",
+        Text("Каждая песчинка движется независимо: гравитация притягивает её " +
+            "к остальным, а контактное давление и удары не дают " +
+            "скоплению схлопнуться в точку. Масса и число песчинок " +
+            "не изменяются при столкновении.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(14.dp))
         listOf(
             Triple(MatterMode.BALANCED, "Умеренный",
-                "До 850 свободных частиц · компактные связанные структуры"),
+                "До 850 самостоятельных частиц · меньше физических подшагов"),
             Triple(MatterMode.DETAILED, "Проработанный",
-                "До 4800 свободных частиц · плотные структуры и высокий расход батареи")
+                "До 4800 самостоятельных частиц · точнее расчёт, выше нагрузка")
         ).forEach { (choice, title, description) ->
             val selected = matterMode == choice
             val shape = RoundedCornerShape(17.dp)
@@ -398,8 +399,8 @@ internal fun AxiomSettings(
                 Text(if (selected) "◉" else "○", color = AX_WHITE, fontSize = 22.sp)
             }
         }
-        Text("Связанные частицы: $boundParticleCount · свободные: $particleCount · " +
-            "реакции: $reactionCount · новых планет: $planetCount", color = AX_GRAY,
+        Text("Частицы в скоплениях: $boundParticleCount · вне скоплений: $particleCount. " +
+            "Все частицы имеют собственные скорость и гравитацию.", color = AX_GRAY,
             fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {

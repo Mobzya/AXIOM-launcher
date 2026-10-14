@@ -49,7 +49,8 @@ internal data class CelestialBody(
     val lifetime: Float = 58f,
     val sizeFactor: Float = 1f,
     val material: MatterMaterial = MatterMaterial.ROCK,
-    val temperature: Float = 300f
+    val temperature: Float = 300f,
+    val stellarClass: StellarClass = StellarClass.PLANET
 )
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
@@ -67,6 +68,7 @@ internal class CosmicWorld(seed: Int = 42) {
     fun updateMatterMode(value: MatterMode) {
         matterMode = value
         matter.setMode(value)
+        matter.structures.setMode(value, bodies)
     }
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++
@@ -127,7 +129,7 @@ internal class CosmicWorld(seed: Int = 42) {
     var dust by mutableStateOf<List<ImpactDust>>(emptyList())
         private set
     private fun seedStartingMatter() {
-        bodies = bodies.map { matter.seedOrbit(it, 26) }
+        matter.structures.reconcile(bodies)
         previousBodies = bodies
     }
     init { seedStartingMatter() }
@@ -136,6 +138,7 @@ internal class CosmicWorld(seed: Int = 42) {
         if(bodies.size>maxBodies){
             bodies=bodies.take(maxBodies)
             previousBodies=bodies
+            matter.structures.reconcile(bodies)
         }
     }
     fun updateWalls(enabled: Boolean) {wallsEnabled=enabled}
@@ -147,17 +150,19 @@ internal class CosmicWorld(seed: Int = 42) {
         // Deliberately no permanent massive object in the center.
         return listOf(
             CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f,
-                lifetime = 95f, material = MatterMaterial.ROCK),
+                lifetime = 3600f, material = MatterMaterial.ROCK),
             CelestialBody(2, 3, .7f, 2.2f, .83f, .28f, -.008f, .003f, .7f,
-                lifetime = 96f, material = MatterMaterial.HYDROGEN, temperature = 900f),
+                lifetime = 3600f, material = MatterMaterial.HYDROGEN,
+                temperature = 3400f, stellarClass = StellarClass.STAR),
             CelestialBody(3, 4, 1.2f, .95f, .76f, .77f, -.015f, -.007f, 1.5f,
-                lifetime = 92f, material = MatterMaterial.SILICATE),
+                lifetime = 3600f, material = MatterMaterial.SILICATE),
             CelestialBody(4, 5, .4f, 2.7f, .23f, .63f, .013f, -.005f, 2.4f,
-                lifetime = 90f, material = MatterMaterial.ICE, temperature = 160f),
+                lifetime = 3600f, material = MatterMaterial.ICE, temperature = 160f),
             CelestialBody(5, 6, 2.1f, 1.12f, .38f, .80f, .015f, -.009f, .3f,
-                lifetime = 120f, material = MatterMaterial.IRON),
+                lifetime = 3600f, material = MatterMaterial.IRON),
             CelestialBody(6, 8, 1.7f, 1.50f, .73f, .44f, -.014f, -.005f, 2f,
-                lifetime = 110f, material = MatterMaterial.METHANE, temperature = 410f)
+                lifetime = 3600f, material = MatterMaterial.PLASMA,
+                temperature = 5400f, stellarClass = StellarClass.QUASAR)
         )
     }
 
@@ -170,8 +175,9 @@ internal class CosmicWorld(seed: Int = 42) {
             .22f+random.nextFloat()*.56f,
             (random.nextFloat()-.5f)*.015f,
             (random.nextFloat()-.5f)*.015f,
-            lifetime=48f+random.nextFloat()*45f,sizeFactor=1.1f,
-            material=MatterMaterial.HYDROGEN,temperature=1700f)
+            lifetime=3600f,sizeFactor=1.1f,
+            material=MatterMaterial.PLASMA,temperature=5200f,
+            stellarClass=StellarClass.QUASAR)
     }
 
     fun updateGravity(value: Float) {
@@ -208,13 +214,15 @@ internal class CosmicWorld(seed: Int = 42) {
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
             vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
-            lifetime = if(giant) 105f else if (burst) 20f + random.nextFloat() * 15f
-                       else 39f + random.nextFloat() * 37f,
+            lifetime = 3600f,
             sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f,
             material = materialForKind(if(giant) 97 else 1 + random.nextInt(96)),
-            temperature = if(giant) 850f else 180f + random.nextFloat()*920f
+            temperature = if(giant) 5200f else 180f + random.nextFloat()*920f,
+            stellarClass = if (giant) StellarClass.QUASAR else
+                stellarClassFromKind(if (burst) 1 else random.nextInt(1, 97))
         )
         bodies = bodies + body
+        matter.structures.ensure(body)
     }
 
     fun trigger(kind: CosmicEventKind) {
@@ -884,6 +892,8 @@ internal class CosmicWorld(seed: Int = 42) {
             if (kotlin.math.abs(b.x-a.x) >= range ||
                 kotlin.math.abs(b.y-a.y) >= range ||
                 kotlin.math.abs(b.depth-a.depth) > .5f) continue
+            val relativeSpeed = hypot(a.vx - b.vx, a.vy - b.vy)
+            if (relativeSpeed < .055f) continue
             val velocities = collide(a, b)
             if (velocities.avx == a.vx && velocities.avy == a.vy &&
                 velocities.bvx == b.vx && velocities.bvy == b.vy) continue
@@ -892,7 +902,8 @@ internal class CosmicWorld(seed: Int = 42) {
             val speed = hypot(a.vx - b.vx, a.vy - b.vy)
             val bouncedA = a.copy(vx = velocities.avx, vy = velocities.avy)
             val bouncedB = b.copy(vx = velocities.bvx, vy = velocities.bvy)
-            if (elapsed - (impactMoments[key] ?: -100f) >= .60f) {
+            if (speed > .075f &&
+                elapsed - (impactMoments[key] ?: -100f) >= .60f) {
                 val debris = matter.emitImpact(bouncedA, bouncedB, speed)
                 next[i] = debris.first
                 next[j] = debris.second
@@ -917,26 +928,32 @@ internal class CosmicWorld(seed: Int = 42) {
                 b.id !in consumed &&
                 kotlin.math.abs(a.depth-b.depth) < .4f &&
                 hypot(a.x-b.x,a.y-b.y) <
-                    (contactSize(a)+contactSize(b))*.87f &&
-                hypot(a.vx-b.vx,a.vy-b.vy) <
-                    (if(a.kind in 35..96 || b.kind in 35..96)
-                        .038f else .018f) &&
-                a.mass + b.mass <= 7f
+                    (contactSize(a)+contactSize(b))*1.15f &&
+                hypot(a.vx-b.vx,a.vy-b.vy) < .055f
             }
             if (partner == null) compact += a
             else {
                 val b = next[partner]
                 val combinedMass = a.mass + b.mass
-                compact += a.copy(
+                val merged = a.copy(
                     mass = combinedMass,
                     x = (a.x*a.mass+b.x*b.mass)/combinedMass,
                     y = (a.y*a.mass+b.y*b.mass)/combinedMass,
                     vx = (a.vx*a.mass+b.vx*b.mass)/combinedMass,
                     vy = (a.vy*a.mass+b.vy*b.mass)/combinedMass,
                     lifetime = maxOf(a.lifetime,b.lifetime)+12f,
-                    sizeFactor = (maxOf(a.sizeFactor,b.sizeFactor)*1.035f)
-                        .coerceAtMost(1.8f)
+                    sizeFactor = maxOf(a.sizeFactor,b.sizeFactor),
+                    temperature = (a.temperature*a.mass + b.temperature*b.mass)/combinedMass,
+                    stellarClass = if(a.stellarClass == StellarClass.QUASAR ||
+                        b.stellarClass == StellarClass.QUASAR) StellarClass.QUASAR
+                        else if(a.stellarClass == StellarClass.STAR ||
+                            b.stellarClass == StellarClass.STAR) StellarClass.STAR
+                        else if(a.stellarClass == StellarClass.CLOUD ||
+                            b.stellarClass == StellarClass.CLOUD) StellarClass.CLOUD
+                        else StellarClass.PLANET
                 )
+                matter.structures.merge(a,b,merged)
+                compact += merged
                 consumed += b.id
                 ripples = (ripples + SpaceRipple(a.x,a.y)).takeLast(4)
             }
@@ -951,7 +968,9 @@ internal class CosmicWorld(seed: Int = 42) {
             replayTimer = 0f
         }
         previousBodies = current
-        matter.step(h, gravity, compact, maxBodies, ::newBodyId, wallsEnabled)
+        matter.releaseFromTidesAndEvents(compact, e, elapsed)
+        matter.step(h, gravity, compact, maxBodies, ::newBodyId, wallsEnabled, e)
+        matter.structures.reconcile(compact)
         bodies = compact
         if (chain) {
             if (bodies.size < maxBodies) {

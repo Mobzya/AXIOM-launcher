@@ -118,55 +118,23 @@ internal fun CosmicEnvironment(
                 android.graphics.Color.BLACK else android.graphics.Color.WHITE
             drawMathMoment(world.mathMoment, dim * .55f, formulaPaint)
         }
+        // Each pixel-level grain is its own physics object. No particles are
+        // positioned relative to a fixed planet, centre, ring or template.
         val light = AxiomColors.palette.light
-        val perspective = world.depthShift
-        // No legacy drawEpisode, drawBody, backdrops, or silhouette sprites.
-        val oldBodies = world.previousBodies
-        world.bodies.forEach { body ->
-            val old = oldBodies.firstOrNull { it.id == body.id } ?: body
-            val cx = old.x + (body.x - old.x) * frameMix +
-                perspective * .01f / body.depth.coerceAtLeast(.4f)
-            val cy = old.y + (body.y - old.y) * frameMix
-            val rotation = body.rotation * .12f
-            val cr = cos(rotation)
-            val sr = sin(rotation)
-            val centerRadius = structureRadius(body)
-            for (cell in world.matter.structures.points(body.id)) {
-                val px = cx + cell.dx * cr - cell.dy * sr
-                val py = cy + cell.dx * sr + cell.dy * cr
-                if (px !in -.03f..1.03f || py !in -.03f..1.03f) continue
-                val source = Color(cell.material.argb)
-                val pigment = if (light) Color(
-                    source.red * .57f, source.green * .57f,
-                    source.blue * .57f, 1f
-                ) else source
-                val hot = cell.material == MatterMaterial.PLASMA
-                val gas = cell.material.gas
-                val radius = (.78f + sqrt(cell.mass) * (if (hot) 7.8f else 6f))
-                    .coerceIn(.6f, if (world.matterMode == MatterMode.DETAILED) 2.0f else 2.5f)
-                    .dp.toPx()
-                val a = dim * (if (gas) .75f else .96f)
-                drawCircle(pigment.copy(alpha = a), radius,
-                    Offset(px * size.width, py * size.height))
-                if (hot && !light && cell.dx * cell.dx + cell.dy * cell.dy <
-                    centerRadius * centerRadius * .5f) {
-                    drawCircle(pigment.copy(alpha = .13f * dim),
-                        radius * 2.7f, Offset(px * size.width, py * size.height))
-                }
+        for (p in world.sand.grains) {
+            if (p.x !in -.035f..1.035f || p.y !in -.035f..1.035f) continue
+            val base = Color(p.material.argb)
+            val tint = if (light) Color(base.red * .55f,
+                base.green * .55f, base.blue * .55f, 1f) else base
+            val pos = Offset(p.x * size.width, p.y * size.height)
+            val radius = (.75f + sqrt(p.mass) * 4f)
+                .coerceIn(.65f, 1.55f).dp.toPx()
+            val alpha = dim * (if (p.material.gas) .78f else .93f)
+            if (p.material == MatterMaterial.PLASMA && !light &&
+                p.id % 4 == 0) {
+                drawCircle(tint.copy(alpha = .10f * dim), radius * 2.4f, pos)
             }
-        }
-
-        // Free matter has its own mass, velocity, temperature and interactions.
-        // It is never drawn as a legacy texture or a massless cosmetic spark.
-        for (p in world.matter.particles) {
-            if (p.x !in -.03f..1.03f || p.y !in -.03f..1.03f) continue
-            val source = Color(p.material.argb)
-            val pigment = if (light) Color(source.red * .57f,
-                source.green * .57f, source.blue * .57f, 1f) else source
-            val radius = (1.0f + sqrt(p.mass) * 7f).coerceAtMost(3.5f).dp.toPx()
-            val alpha = dim * if (p.material.gas) .65f else .92f
-            drawCircle(pigment.copy(alpha = alpha), radius,
-                Offset(p.x * size.width, p.y * size.height))
+            drawCircle(tint.copy(alpha = alpha), radius, pos)
         }
         world.brushPoint?.let { brush ->
             drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),

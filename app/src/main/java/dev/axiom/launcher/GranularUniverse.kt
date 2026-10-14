@@ -53,6 +53,10 @@ internal class GranularUniverse {
     private var tick = 0
     private var ax = DoubleArray(0)
     private var ay = DoubleArray(0)
+    private var gx = DoubleArray(0)
+    private var gy = DoubleArray(0)
+    var gravityRebuilds: Long = 0
+        private set
     private var gridNext = IntArray(0)
     private var cellX = IntArray(0)
     private var cellY = IntArray(0)
@@ -80,12 +84,52 @@ internal class GranularUniverse {
 
     fun updateMode(value: MatterMode) { mode = value }
 
-    fun snapshot(): List<SandGrain> = grains.map { it.copy() }
-
-    fun restore(snapshot: List<SandGrain>) {
+    // Stored history is packed primitives instead of hundreds of thousands
+    // of SandGrain copies retained across the rolling replay window.
+    data class Snapshot(
+        val values: FloatArray, val heat: DoubleArray, val metadata: IntArray
+    )
+    fun snapshot(): Snapshot {
+        val values = FloatArray(grains.size * 5)
+        val heat = DoubleArray(grains.size)
+        val meta = IntArray(grains.size * 3)
+        for (i in grains.indices) {
+            val p = grains[i]; val v = i * 5; val m = i * 3
+            values[v] = p.x; values[v+1] = p.y
+            values[v+2] = p.vx; values[v+3] = p.vy; values[v+4] = p.mass
+            heat[i] = p.heat
+            meta[m] = p.id; meta[m+1] = p.owner
+            meta[m+2] = p.material.ordinal
+        }
+        return Snapshot(values, heat, meta)
+    }
+    fun restore(snapshot: Snapshot) {
         grains.clear()
-        grains.addAll(snapshot.map { it.copy() })
+        val n = snapshot.heat.size
+        (grains as ArrayList<SandGrain>).ensureCapacity(n)
+        for (i in 0 until n) {
+            val v = i * 5; val m = i * 3
+            grains.add(SandGrain(
+                snapshot.metadata[m], snapshot.values[v], snapshot.values[v+1],
+                snapshot.values[v+2], snapshot.values[v+3], snapshot.values[v+4],
+                snapshot.heat[i], MatterMaterial.entries[snapshot.metadata[m+2]],
+                snapshot.metadata[m+1]
+            ))
+        }
         nextGrainId = (grains.maxOfOrNull { it.id } ?: 0) + 1
+    }
+
+    /** Immutable primitive frame for safe rendering while physics runs off UI. */
+    fun renderFrame(): FloatArray {
+        val frame = FloatArray(grains.size * 4)
+        for (i in grains.indices) {
+            val p = grains[i]; val j = i * 4
+            frame[j] = p.x
+            frame[j+1] = p.y
+            frame[j+2] = (.75f + sqrt(p.mass) * 4f).coerceIn(.65f, 1.55f)
+            frame[j+3] = p.material.ordinal.toFloat()
+        }
+        return frame
     }
 
     /** Explicit finger force; particles are never emitted by gestures. */
@@ -187,6 +231,7 @@ internal class GranularUniverse {
         val n = grains.size
         if (ax.size < n) {
             ax = DoubleArray(n); ay = DoubleArray(n)
+            gx = DoubleArray(n); gy = DoubleArray(n)
             gridNext = IntArray(n)
             cellX = IntArray(n)
             cellY = IntArray(n)
@@ -353,15 +398,32 @@ internal class GranularUniverse {
         }
     }
 
-    private fun accelerations(gravity: Float) {
+    private fun accelerations(gravity: Float, refreshGravity: Boolean) {
+        if (refreshGravity) {
+            gravityRebuilds++
+            gravityNodesVisited = 0
+            java.util.Arrays.fill(ax, 0, grains.size, 0.0)
+            java.util.Arrays.fill(ay, 0, grains.size, 0.0)
+            buildTree()
+            val theta = if (grains.size > 2400) .74 else
+                if (mode == MatterMode.DETAILED) .48 else .56
+            val g = gravityConstant * gravity
+            for (i in grains.indices) addTreeGravity(i, root, g, theta)
+            var mx = 0.0; var my = 0.0; var total = 0.0
+            for (i in grains.indices) {
+                val m = grains[i].mass.toDouble()
+                mx += ax[i] * m; my += ay[i] * m; total += m
+            }
+            val cx = if (total > 0) mx / total else 0.0
+            val cy = if (total > 0) my / total else 0.0
+            for (i in grains.indices) {
+                gx[i] = ax[i] - cx
+                gy[i] = ay[i] - cy
+            }
+        }
+        java.lang.System.arraycopy(gx, 0, ax, 0, grains.size)
+        java.lang.System.arraycopy(gy, 0, ay, 0, grains.size)
         contactChecks = 0
-        gravityNodesVisited = 0
-        java.util.Arrays.fill(ax, 0, grains.size, 0.0)
-        java.util.Arrays.fill(ay, 0, grains.size, 0.0)
-        buildTree()
-        val theta = if (mode == MatterMode.DETAILED) .36 else .52
-        val g = gravityConstant * gravity
-        for (i in grains.indices) addTreeGravity(i, root, g, theta)
         indexCells()
         forNearby { i, j, dx, dy, d ->
             val a = grains[i]; val b = grains[j]
@@ -378,23 +440,6 @@ internal class GranularUniverse {
             ay[i] -= force * ny / a.mass
             ax[j] += force * nx / b.mass
             ay[j] += force * ny / b.mass
-        }
-        // Barnes-Hut multipoles are not exactly pairwise reciprocal.
-        // Remove the tiny net numerical force from every acceleration so
-        // centre-of-mass momentum remains conserved, even for big clouds.
-        var mx = 0.0; var my = 0.0; var total = 0.0
-        for (i in grains.indices) {
-            val m = grains[i].mass.toDouble()
-            mx += ax[i] * m; my += ay[i] * m
-            total += m
-        }
-        if (total > 0.0) {
-            val correctionX = mx / total
-            val correctionY = my / total
-            for (i in grains.indices) {
-                ax[i] -= correctionX
-                ay[i] -= correctionY
-            }
         }
     }
 
@@ -489,7 +534,11 @@ internal class GranularUniverse {
         // Position-dependent forces are identical at a substep boundary.
         // Reuse its acceleration for the next half-kick instead of rebuilding
         // the tree and neighbour grid twice at the same coordinates.
-        accelerations(gravity)
+        // At thousands of grains gravitational motion is smooth over two
+        // frames; short-range contact impulses still update every substep.
+        // This adaptive cadence removes several expensive tree rebuilds.
+        val refresh = grains.size < 2800 || tick % 2 == 0
+        accelerations(gravity, refresh)
         repeat(substeps) {
             for (i in grains.indices) {
                 val p = grains[i]
@@ -517,7 +566,8 @@ internal class GranularUniverse {
                     }
                 }
             }
-            accelerations(gravity)
+            accelerations(gravity,
+                refreshGravity = grains.size <= 850 && it == substeps - 1)
             for (i in grains.indices) {
                 val p = grains[i]
                 p.vx = (p.vx + (ax[i] * h * .5)).toFloat()

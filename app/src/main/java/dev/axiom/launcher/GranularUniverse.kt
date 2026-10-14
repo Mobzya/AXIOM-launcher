@@ -87,8 +87,11 @@ internal class GranularUniverse {
             val dx = (p.x - x).toDouble()
             val dy = (p.y - y).toDouble()
             val dist = sqrt(dx*dx + dy*dy)
-            if (dist > .17 || dist < 1e-8) continue
-            val kick = strength * (1.0 - dist / .17)
+            // A fingertip's gravitational pulse has a soft falloff. A larger
+            // influence radius lets taps steer nearby planets even when their
+            // visible grains are clustered away from the exact touch point.
+            if (dist > .38 || dist < 1e-8) continue
+            val kick = strength * (1.0 - dist / .38)
             p.vx = (p.vx + kick * dx / dist).toFloat()
             p.vy = (p.vy + kick * dy / dist).toFloat()
         }

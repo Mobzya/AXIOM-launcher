@@ -42,6 +42,22 @@ internal enum class MatterMode(val maxParticles: Int, val burstPerBody: Int) {
 internal fun matterModeFromPreference(value: String?): MatterMode =
     MatterMode.entries.firstOrNull { it.name == value } ?: MatterMode.BALANCED
 
+internal fun materialForKind(kind: Int): MatterMaterial = when (kind % 13) {
+    0 -> MatterMaterial.HYDROGEN
+    1 -> MatterMaterial.ICE
+    2 -> MatterMaterial.ROCK
+    3 -> MatterMaterial.IRON
+    4 -> MatterMaterial.SILICATE
+    5 -> MatterMaterial.CARBON
+    6 -> MatterMaterial.OXYGEN
+    7 -> MatterMaterial.WATER
+    8 -> MatterMaterial.METHANE
+    9 -> MatterMaterial.PLASMA
+    10 -> MatterMaterial.SULFUR
+    11 -> MatterMaterial.HELIUM
+    else -> MatterMaterial.MINERAL
+}
+
 internal data class MatterReaction(val product: MatterMaterial, val heat: Float)
 
 /** Mass is preserved when two packets react; thermal chemistry is illustrative. */
@@ -169,8 +185,8 @@ internal class MatterField(private val random: Random = Random(91)) {
                 val dy = sin(theta)
                 particles.add(MatterParticle(
                     sequence++,
-                    source.x + dx * (.0025f + i % 4 * .00045f),
-                    source.y + dy * (.0025f + i % 4 * .00045f),
+                    source.x + dx * (contactSize(source) + .003f + i % 4 * .0004f),
+                    source.y + dy * (contactSize(source) + .003f + i % 4 * .0004f),
                     source.vx + dx * kick * variation,
                     source.vy + dy * kick * variation,
                     perParticle,
@@ -348,7 +364,7 @@ internal class MatterField(private val random: Random = Random(91)) {
                 val touch = contactSize(body) + .003f
                 val dx = body.x - p.x
                 val dy = body.y - p.y
-                if (dx * dx + dy * dy > touch * touch) continue
+                if (p.age < .6f || dx * dx + dy * dy > touch * touch) continue
                 if (hypot(body.vx - p.vx, body.vy - p.vy) > .24f) continue
                 val mass = body.mass + p.mass
                 bodies[j] = body.copy(

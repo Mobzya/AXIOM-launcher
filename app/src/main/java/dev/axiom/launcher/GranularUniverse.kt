@@ -250,7 +250,7 @@ internal class GranularUniverse {
                 temperature < 260.0 -> MatterMaterial.ICE
                 else -> null
             }
-            MatterMaterial.STEAM -> if (temperature < 340.0)
+            MatterMaterial.STEAM -> if (temperature < 295.0)
                 MatterMaterial.WATER else null
             MatterMaterial.HYDROGEN -> if (temperature > 4000.0)
                 MatterMaterial.PLASMA else null
@@ -518,7 +518,8 @@ internal class GranularUniverse {
             java.util.Arrays.fill(ax, 0, grains.size, 0.0)
             java.util.Arrays.fill(ay, 0, grains.size, 0.0)
             buildTree()
-            val theta = if (grains.size > 2400) .74 else
+            val theta = if (grains.size > 3500) .90 else
+                if (grains.size > 2400) .78 else
                 if (mode == MatterMode.DETAILED) .48 else .56
             val g = gravityConstant * gravity
             val theta2 = theta * theta

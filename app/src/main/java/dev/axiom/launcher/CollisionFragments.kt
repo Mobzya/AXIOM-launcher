@@ -54,9 +54,7 @@ internal fun splitAsteroid(body: CelestialBody, nextId: Int, capacity: Int)
 /** Normalize collision/contact radii. Unlike a fixed threshold, radius scales
  * sublinearly with mass and respects real visual body size.
  */
-internal fun contactSize(body: CelestialBody): Float =
-    ((.006f + .0055f*sqrt(body.mass.coerceAtLeast(.01f)))*
-        body.sizeFactor).coerceIn(.003f,.033f)
+internal fun contactSize(body: CelestialBody): Float = structureRadius(body)
 
 /** Reflect only when heading OUT of the field: newly spawned bodies may
  * still enter from outside corners, even with reflective walls active.

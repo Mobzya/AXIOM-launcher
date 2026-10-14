@@ -97,6 +97,23 @@ class MatterPhysicsTest {
         })
     }
 
+    @Test fun coarseningKeepsMassAndImpulseWhenReducingQuality() {
+        val field = MatterField(Random(19))
+        field.setMode(MatterMode.DETAILED)
+        for (i in 0 until 1400) {
+            field.particles.add(MatterParticle(i, (i % 60) / 60f,
+                (i % 40) / 40f, .02f, -.01f, .002f,
+                280f, MatterMaterial.entries[i % MatterMaterial.entries.size]))
+        }
+        val before = field.totalMass()
+        field.setMode(MatterMode.BALANCED)
+        assertTrue(field.particles.size <= 850)
+        assertEquals(before, field.totalMass(), 1e-5)
+        assertEquals(.02f, field.particles.sumOf {
+            (it.mass * it.vx).toDouble()
+        }.toFloat() / before.toFloat(), 1e-5f)
+    }
+
     @Test fun qualitySelectionIsSafeForUnknownBackupValues() {
         assertEquals(MatterMode.BALANCED, matterModeFromPreference("INVALID"))
         assertEquals(MatterMode.DETAILED, matterModeFromPreference("DETAILED"))

@@ -81,6 +81,9 @@ internal class GranularUniverse {
     private var nodeMass = DoubleArray(0)
     private var nodeMx = DoubleArray(0)
     private var nodeMy = DoubleArray(0)
+    private var nodeComX = DoubleArray(0)
+    private var nodeComY = DoubleArray(0)
+    private val traversalStack = IntArray(128)
     private var nodeIndex = IntArray(0)
     private var child = IntArray(0)
     private var root = 0
@@ -286,6 +289,7 @@ internal class GranularUniverse {
             nodeHalf = DoubleArray(maxNodes)
             nodeMass = DoubleArray(maxNodes)
             nodeMx = DoubleArray(maxNodes); nodeMy = DoubleArray(maxNodes)
+            nodeComX = DoubleArray(maxNodes); nodeComY = DoubleArray(maxNodes)
             nodeIndex = IntArray(maxNodes)
             child = IntArray(maxNodes * 4)
         }
@@ -358,31 +362,50 @@ internal class GranularUniverse {
         val span = max(maxX - minX, maxY - minY).coerceAtLeast(.02) * .501
         root = newNode((minX + maxX) * .5, (minY + maxY) * .5, span)
         for (i in grains.indices) insertInto(root, i, 0)
+        // Predivide once per node, not on every visit from every grain.
+        for (i in 0 until nodeCount) {
+            if (nodeMass[i] > 0.0) {
+                nodeComX[i] = nodeMx[i] / nodeMass[i]
+                nodeComY[i] = nodeMy[i] / nodeMass[i]
+            }
+        }
     }
 
-    private fun addTreeGravity(index: Int, node: Int, g: Double, theta: Double) {
-        gravityNodesVisited++
-        val mass = nodeMass[node]
-        if (mass <= 0) return
+    /**
+     * Iterative Barnes-Hut walk with a cached centre of mass. Squared
+     * opening-angle test avoids an extra sqrt at every internal node.
+     * A single sqrt is evaluated only when a multipole contributes force.
+     */
+    private fun addTreeGravity(index: Int, g: Double, theta2: Double) {
         val p = grains[index]
-        val dx = nodeMx[node] / mass - p.x
-        val dy = nodeMy[node] / mass - p.y
-        val d2 = dx*dx + dy*dy
-        if (nodeIndex[node] == index) return
-        val contains = abs(p.x.toDouble() - nodeCx[node]) <= nodeHalf[node] &&
-            abs(p.y.toDouble() - nodeCy[node]) <= nodeHalf[node]
-        val leaf = nodeIndex[node] != -1
-        if (leaf || (!contains && nodeHalf[node]*2 /
-                sqrt(d2 + softeningSquared) < theta)) {
-            val inv = 1.0 / ((d2 + softeningSquared) *
-                sqrt(d2 + softeningSquared))
-            ax[index] += g * mass * dx * inv
-            ay[index] += g * mass * dy * inv
-            return
-        }
-        for (q in 0..3) {
-            val c = child[node * 4 + q]
-            if (c >= 0) addTreeGravity(index, c, g, theta)
+        var count = 1
+        traversalStack[0] = root
+        while (count > 0) {
+            val node = traversalStack[--count]
+            gravityNodesVisited++
+            val mass = nodeMass[node]
+            if (mass <= 0.0 || nodeIndex[node] == index) continue
+            val dx = nodeComX[node] - p.x
+            val dy = nodeComY[node] - p.y
+            val r2 = dx*dx + dy*dy + softeningSquared
+            val leaf = nodeIndex[node] != -1
+            val half = nodeHalf[node]
+            val inside = !leaf &&
+                abs(p.x.toDouble() - nodeCx[node]) <= half &&
+                abs(p.y.toDouble() - nodeCy[node]) <= half
+            if (leaf || (!inside && half*half*4 < theta2*r2)) {
+                val inv = 1.0 / (r2 * sqrt(r2))
+                ax[index] += g * mass * dx * inv
+                ay[index] += g * mass * dy * inv
+            } else {
+                for (q in 0..3) {
+                    val c = child[node*4+q]
+                    if (c >= 0) {
+                        check(count < traversalStack.size)
+                        traversalStack[count++] = c
+                    }
+                }
+            }
         }
     }
 
@@ -498,7 +521,8 @@ internal class GranularUniverse {
             val theta = if (grains.size > 2400) .74 else
                 if (mode == MatterMode.DETAILED) .48 else .56
             val g = gravityConstant * gravity
-            for (i in grains.indices) addTreeGravity(i, root, g, theta)
+            val theta2 = theta * theta
+            for (i in grains.indices) addTreeGravity(i, g, theta2)
             if (currentEvent.kind == CosmicEventKind.SINGULARITY)
                 compactCoreGravity(currentEvent, g)
             var mx = 0.0; var my = 0.0; var total = 0.0

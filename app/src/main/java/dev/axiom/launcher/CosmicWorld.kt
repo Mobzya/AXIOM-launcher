@@ -247,7 +247,9 @@ internal class CosmicWorld(
             stellarClass = chosenClass
         )
         bodies = bodies + body
-        sand.seed(body, minOf(40, matterMode.maxParticles - sand.grains.size))
+        // Retain capacity for the full body limit instead of exhausting
+        // the free-grain budget after only a handful of arrivals.
+        sand.seed(body, minOf(18, matterMode.maxParticles - sand.grains.size))
     }
 
     fun trigger(kind: CosmicEventKind) {
@@ -390,6 +392,9 @@ internal class CosmicWorld(
         // An explicit finger impulse exchanges energy with the user, not with
         // a fabricated particle emitter. All masses and grain IDs remain.
         sand.perturb(px, py, .045f)
+        // Body summaries are UI-only views, but must reflect the grain
+        // velocities immediately after an intentional user impulse.
+        bodies = sand.summarizeBodies(bodies)
     }
 
     fun updateTimeScale(next: Float) {
@@ -424,14 +429,29 @@ internal class CosmicWorld(
         brushMass = (brushMass + .008f).coerceAtMost(4f)
     }
 
-    /** The release vector injects a new orbit candidate. Pure taps create a
-     * temporary gravity well instead; this is one unified long-press gesture.
+    /** A deliberate drag adds mass from outside the closed universe,
+     * analogous to the separate explicit create-body command. A tap simply
+     * nudges existing grains; ordinary collisions never instantiate grains.
      */
     fun endBrush() {
         val point = brushPoint ?: return
-        // Brushing perturbs existing matter instead of spawning a new body.
-        sand.perturb(point.x, point.y,
-            (.025f + brushGestureDistance * .20f).coerceAtMost(.085f))
+        if (brushGestureDistance > .065f && bodies.size < maxBodies &&
+            sand.grains.size + 18 <= matterMode.maxParticles) {
+            val dx = point.x - brushStartX
+            val dy = point.y - brushStartY
+            val norm = max(hypot(dx, dy), .005f)
+            val speed = (norm * .65f).coerceIn(.04f, .24f)
+            val newBody = CelestialBody(idSequence++, 3 + random.nextInt(20),
+                .5f + random.nextFloat() * 1.5f, 1.1f,
+                point.x, point.y, dx / norm * speed, dy / norm * speed,
+                lifetime = 3600f)
+            sand.seed(newBody, 18)
+            bodies += newBody
+        } else {
+            sand.perturb(point.x, point.y,
+                (.025f + brushGestureDistance * .20f).coerceAtMost(.085f))
+            bodies = sand.summarizeBodies(bodies)
+        }
         brushPoint = null
         brushMass = 0f
     }

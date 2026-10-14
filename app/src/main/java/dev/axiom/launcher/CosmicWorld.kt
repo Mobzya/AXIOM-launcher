@@ -60,13 +60,16 @@ internal data class CosmicRemnant(
     val age: Float = 0f, val lifetime: Float = 38f
 )
 
-internal class CosmicWorld(seed: Int = 42) {
+internal class CosmicWorld(
+    seed: Int = 42,
+    initialMatterMode: MatterMode = MatterMode.BALANCED
+) {
     private val random = Random(seed)
     // The old cosmetic/bonded matter field remains for older API compatibility.
     // Only sand is integrated and rendered by the active cosmic simulation.
     val matter = MatterField(Random(seed + 109))
     val sand = GranularUniverse()
-    var matterMode by mutableStateOf(MatterMode.BALANCED)
+    var matterMode by mutableStateOf(initialMatterMode)
         private set
     fun updateMatterMode(value: MatterMode) {
         matterMode = value

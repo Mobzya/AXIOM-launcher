@@ -36,6 +36,7 @@ internal object AxiomBackup {
             put("nightStart", prefs.getInt("night_start",19*60))
             put("maxBodies", prefs.getInt("max_bodies",23))
             put("walls", prefs.getBoolean("wall_mode",false))
+            put("matterMode", prefs.getString("matter_mode", MatterMode.BALANCED.name))
             put("favorites", JSONArray(
                 prefs.getStringSet("favorites", emptySet())?.sorted() ?: emptyList<String>()
             ))
@@ -78,6 +79,8 @@ internal object AxiomBackup {
             .putInt("night_start",json.optInt("nightStart",19*60).coerceIn(0,1439))
             .putInt("max_bodies",json.optInt("maxBodies",23).coerceIn(12,64))
             .putBoolean("wall_mode",json.optBoolean("walls",false))
+            .putString("matter_mode",matterModeFromPreference(
+                json.optString("matterMode",MatterMode.BALANCED.name)).name)
             .putStringSet("favorites", favorites)
             .putStringSet("space_work", work)
             .putStringSet("space_tools", tools)

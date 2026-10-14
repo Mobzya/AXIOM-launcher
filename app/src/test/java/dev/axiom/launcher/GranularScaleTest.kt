@@ -68,6 +68,17 @@ class GranularScaleTest {
         assertEquals(1, world.grains.size)
     }
 
+    @Test fun steamDoesNotOscillateBetweenPhasesAtTheLatentHeatBoundary() {
+        val world = GranularUniverse()
+        val p = SandGrain(89, .3f, .4f, 0f, 0f,
+            1f, .00044, MatterMaterial.WATER)
+        world.grains.add(p)
+        val before = world.totalEnergy(0f)
+        repeat(40) { world.step(.01f, 0f) }
+        assertEquals(MatterMaterial.STEAM, p.material)
+        assertEquals(before, world.totalEnergy(0f), 1e-10)
+    }
+
     @Test fun meteorsAndBlackHoleInteractWithExistingParticlesOnly() {
         val universe = GranularUniverse()
         val n = 128

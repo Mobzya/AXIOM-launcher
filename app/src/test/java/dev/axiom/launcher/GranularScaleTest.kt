@@ -90,6 +90,22 @@ class GranularScaleTest {
         assertTrue(abs(universe.totals().momentumX - before.momentumX) < .0001)
     }
 
+    @Test fun settingsStressSceneCanActuallyReach4600WithoutAutoCreatingMass() {
+        val world = CosmicWorld(101)
+        val before = world.sand.totals().mass
+        world.populateStressScene(4600)
+        assertEquals(MatterMode.DETAILED, world.matterMode)
+        assertEquals(4600, world.sand.grains.size)
+        assertTrue(world.bodies.size <= world.maxBodies)
+        assertTrue(world.sand.totals().mass > before)
+        val conserved = world.sand.totals().mass
+        world.trigger(CosmicEventKind.METEORS)
+        world.step(1f/60f)
+        assertEquals(4600, world.sand.grains.size)
+        assertEquals(conserved, world.sand.totals().mass, 1e-5)
+        assertEquals(4600*4, world.grainFrame.size)
+    }
+
     @Test fun packedReplayRestoresCountMaterialsAndVelocities() {
         val sand = GranularUniverse()
         sand.seed(CelestialBody(6, 2, 1f, 1f,

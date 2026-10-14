@@ -231,6 +231,11 @@ internal fun AxiomSettings(
     onSunsetMinutes: (Int) -> Unit,
     maximumBodies: Int,
     onMaximumBodies: (Int) -> Unit,
+    matterMode: MatterMode,
+    onMatterMode: (MatterMode) -> Unit,
+    particleCount: Int,
+    reactionCount: Int,
+    planetCount: Int,
     wallsEnabled: Boolean,
     onWallsEnabled: (Boolean) -> Unit,
     gravity: Float,
@@ -253,6 +258,23 @@ internal fun AxiomSettings(
     onRefresh: () -> Unit,
     onBack: () -> Unit
 ) {
+    var expandedPhysics by remember { mutableStateOf(false) }
+    var confirmReset by remember { mutableStateOf(false) }
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Перезапустить вселенную?") },
+            text = { Text("Тела, частицы и текущие события будут сброшены. Настройки сохранятся.") },
+            confirmButton = {
+                TextButton(onClick = { confirmReset = false; onResetUniverse() }) {
+                    Text("Перезапустить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Отмена") }
+            }
+        )
+    }
     Column(
         Modifier.fillMaxSize().background(AX_PANEL)
             .verticalScroll(rememberScrollState())
@@ -302,6 +324,7 @@ internal fun AxiomSettings(
                 )
             }
         }
+        if (themeMode == AxiomThemeMode.AUTO) {
         Spacer(Modifier.height(9.dp))
         Text("Авто: белая с ${scheduleLabel(sunriseMinutes)} до " +
             "${scheduleLabel(sunsetMinutes)}, остальное время чёрная. " +
@@ -337,7 +360,69 @@ internal fun AxiomSettings(
         Text("Если время совпадает, белая тема действует круглосуточно. " +
             "Доступны интервалы через 15 минут, включая переход через полночь.",
             color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
+        }
         Spacer(Modifier.height(27.dp))
+        Text("ФИЗИКА ВЕЩЕСТВА", color = AX_DARK, fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
+        Spacer(Modifier.height(9.dp))
+        Text("После столкновения появляются частицы с массой, температурой и составом. " +
+            "Они притягиваются, реагируют и могут объединяться в новые планеты.",
+            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(14.dp))
+        listOf(
+            Triple(MatterMode.BALANCED, "Умеренный",
+                "До 850 частиц · плавнее и экономнее для рабочего стола"),
+            Triple(MatterMode.DETAILED, "Проработанный",
+                "До 4800 частиц · больше осколков и реакций, высокий расход батареи")
+        ).forEach { (choice, title, description) ->
+            val selected = matterMode == choice
+            val shape = RoundedCornerShape(17.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 9.dp).clip(shape)
+                    .background(if (selected) AX_TILE else AX_SURFACE)
+                    .border(if (selected) 1.5.dp else 1.dp,
+                        if (selected) AX_WHITE else AX_BORDER, shape)
+                    .clickable { onMatterMode(choice) }
+                    .padding(15.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = AX_WHITE, fontSize = 16.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    Spacer(Modifier.height(3.dp))
+                    Text(description, color = AX_GRAY, fontSize = 12.sp,
+                        lineHeight = 18.sp)
+                }
+                Text(if (selected) "◉" else "○", color = AX_WHITE, fontSize = 22.sp)
+            }
+        }
+        Text("Сейчас: $particleCount частиц · $reactionCount реакций · " +
+            "$planetCount новых планет", color = AX_GRAY,
+            fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            listOf(MatterMaterial.ROCK to "Камни",
+                MatterMaterial.HYDROGEN to "Газы",
+                MatterMaterial.WATER to "Вода",
+                MatterMaterial.PLASMA to "Плазма").forEach { (material, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(Modifier.size(7.dp).background(Color(material.argb),
+                        RoundedCornerShape(8.dp)))
+                    Text(label, color = AX_GRAY, fontSize = 10.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(25.dp))
+        Text("▸  Тонкая настройка физики", color = AX_WHITE, fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth().clickable {
+                expandedPhysics = !expandedPhysics
+            }.padding(vertical = 12.dp))
+        Text(if (expandedPhysics) "Настройка гравитации, числа небесных тел и стен" else
+            "Нажми, чтобы раскрыть гравитацию, тела и границы",
+            color = AX_GRAY, fontSize = 11.sp)
+        if (expandedPhysics) {
+        Spacer(Modifier.height(18.dp))
         Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
             fontWeight = FontWeight.Light)
         Spacer(Modifier.height(8.dp))
@@ -370,8 +455,8 @@ internal fun AxiomSettings(
                 thumbColor=AX_WHITE,activeTrackColor=AX_WHITE,
                 inactiveTrackColor=AX_BORDER)
         )
-        Text("Больше тел — более насыщенный космос, но выше нагрузка. " +
-            "Лёгкая пыль учитывается отдельно, до 88 частиц.",
+        Text("Крупные тела и физические частицы рассчитываются отдельно. " +
+            "Число частиц определяется выбранным режимом.",
             color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
         Spacer(Modifier.height(13.dp))
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
@@ -386,6 +471,7 @@ internal fun AxiomSettings(
                 colors=SwitchDefaults.colors(
                     checkedThumbColor=AX_BLACK,checkedTrackColor=AX_WHITE,
                     uncheckedThumbColor=AX_GRAY,uncheckedTrackColor=AX_TILE))
+        }
         }
         Spacer(Modifier.height(22.dp))
         Text("Событие: ${currentEpisode.lowercase().replace('_', ' ')}",
@@ -441,7 +527,7 @@ internal fun AxiomSettings(
         HorizontalDivider(color = AX_DIVIDER)
         Text("↺  Перезапустить вселенную", color = AX_WHITE, fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
-                .clickable(onClick = onResetUniverse).padding(vertical = 19.dp))
+                .clickable { confirmReset = true }.padding(vertical = 19.dp))
         HorizontalDivider(color = AX_DIVIDER)
         Text("⟳  Обновить список приложений", color = AX_WHITE,
             fontSize = 15.sp,
@@ -472,7 +558,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM 0.13  /  REFLECTIVE UNIVERSE · PHYSICAL DEBRIS", color = AX_DARK,
+        Text("AXIOM  /  LIVING MATTER · PARTICLE UNIVERSE", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

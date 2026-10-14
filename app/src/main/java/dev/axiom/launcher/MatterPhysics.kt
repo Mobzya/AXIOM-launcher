@@ -423,12 +423,16 @@ internal class MatterField(private val random: Random = Random(91)) {
             val cx = cell(a.x)
             val cy = cell(a.y)
             var interactions = 0
-            for (gy in max(0, cy - 1)..min(gridSize - 1, cy + 1)) {
+            var examined = 0
+            // Crowded cells still have strict O(N) processing per frame:
+            // cap VISITED links, not just successful close contacts.
+            neighbors@ for (gy in max(0, cy - 1)..min(gridSize - 1, cy + 1)) {
                 for (gx in max(0, cx - 1)..min(gridSize - 1, cx + 1)) {
                     var j = cellHeads[gy * gridSize + gx]
-                    while (j >= 0) {
+                    while (j >= 0 && examined < 120 && interactions < 28) {
                         val bIndex = j
                         j = links[bIndex]
+                        examined++
                         if (bIndex <= i || dead[bIndex]) continue
                         val b = particles[bIndex]
                         val dx = b.x - a.x
@@ -501,6 +505,7 @@ internal class MatterField(private val random: Random = Random(91)) {
                             }
                         }
                     }
+                    if (examined >= 120 || interactions >= 28) break@neighbors
                 }
             }
         }

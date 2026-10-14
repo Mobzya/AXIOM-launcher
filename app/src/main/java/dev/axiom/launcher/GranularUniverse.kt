@@ -444,7 +444,10 @@ internal class GranularUniverse {
         }
     }
 
-    fun step(dt: Float, gravity: Float, episode: CosmicEpisode = CosmicEpisode()) {
+    fun step(
+        dt: Float, gravity: Float,
+        episode: CosmicEpisode = CosmicEpisode(), walls: Boolean = false
+    ) {
         if (grains.isEmpty() || dt <= 0f) return
         releaseHeatAsMotion(episode)
         capacity()
@@ -458,6 +461,25 @@ internal class GranularUniverse {
                 p.vy = (p.vy + (ay[i] * h * .5)).toFloat()
                 p.x = (p.x + p.vx * h).toFloat()
                 p.y = (p.y + p.vy * h).toFloat()
+                if (walls) {
+                    val margin = grainRadius(p).toFloat()
+                    // Perfect reflection conserves kinetic energy and mass;
+                    // incoming grains may still enter from beyond the border.
+                    if (p.x < margin && p.vx < 0f) {
+                        p.x = margin + (margin - p.x)
+                        p.vx = -p.vx
+                    } else if (p.x > 1f-margin && p.vx > 0f) {
+                        p.x = 2f*(1f-margin) - p.x
+                        p.vx = -p.vx
+                    }
+                    if (p.y < margin && p.vy < 0f) {
+                        p.y = margin + (margin - p.y)
+                        p.vy = -p.vy
+                    } else if (p.y > 1f-margin && p.vy > 0f) {
+                        p.y = 2f*(1f-margin) - p.y
+                        p.vy = -p.vy
+                    }
+                }
             }
             accelerations(gravity)
             for (i in grains.indices) {

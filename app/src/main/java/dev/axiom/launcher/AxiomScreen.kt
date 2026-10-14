@@ -152,6 +152,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         world.updateGravity(prefs.getFloat("gravity", 1f))
         world.updateMaximumBodies(prefs.getInt("max_bodies",23))
         world.updateWalls(prefs.getBoolean("wall_mode",false))
+        world.updateMatterMode(matterModeFromPreference(
+            prefs.getString("matter_mode", MatterMode.BALANCED.name)))
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -218,6 +220,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             sunEnd=prefs.getInt("night_start",19*60).coerceIn(0,1439)
             world.updateMaximumBodies(prefs.getInt("max_bodies",23))
             world.updateWalls(prefs.getBoolean("wall_mode",false))
+            world.updateMatterMode(matterModeFromPreference(
+                prefs.getString("matter_mode", MatterMode.BALANCED.name)))
             refresh++
             Toast.makeText(context, "Настройки AXIOM восстановлены", Toast.LENGTH_SHORT).show()
         }.onFailure {
@@ -541,6 +545,14 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     prefs.edit().putInt("night_start",sunEnd).apply()
                 },
                 maximumBodies = world.maxBodies,
+                matterMode = world.matterMode,
+                onMatterMode = { next ->
+                    world.updateMatterMode(next)
+                    prefs.edit().putString("matter_mode", next.name).apply()
+                },
+                particleCount = world.matter.particles.size,
+                reactionCount = world.matter.reactions,
+                planetCount = world.matter.newPlanets,
                 onMaximumBodies = {
                     world.updateMaximumBodies(it)
                     prefs.edit().putInt("max_bodies",world.maxBodies).apply()

@@ -891,8 +891,7 @@ internal class CosmicWorld(seed: Int = 42) {
             // pairs; >99% of pair checks never come close to contact.
             val range=contactSize(a)+contactSize(b)
             if (kotlin.math.abs(b.x-a.x) >= range ||
-                kotlin.math.abs(b.y-a.y) >= range ||
-                false) continue
+                kotlin.math.abs(b.y-a.y) >= range) continue
             val relativeSpeed = hypot(a.vx - b.vx, a.vy - b.vy)
             if (relativeSpeed < .055f) continue
             val velocities = collide(a, b)

@@ -561,9 +561,11 @@ internal class CosmicWorld(
         val prior = bodies
         sand.step(h, gravity, episode)
         previousBodies = prior
-        bodies = sand.summarizeBodies(prior)
-        sand.relabelCaptured(bodies)
-        bodies = sand.summarizeBodies(bodies)
+        var current = sand.summarizeBodies(prior)
+        sand.relabelCaptured(current)
+        val newborns = sand.discoverClumps(current, maxBodies, ::newBodyId)
+        current = sand.mergeCaptureLabels(current + newborns)
+        bodies = sand.summarizeBodies(current)
         replayTimer += h
         if (replayTimer >= .1f) {
             replayBuffer.addLast(prior)

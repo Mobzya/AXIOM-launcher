@@ -388,12 +388,13 @@ internal class MatterField(private val random: Random = Random(91)) {
             val eventForce = eventAcceleration(p, episode)
             ax += eventForce.first
             ay += eventForce.second
-            val thermal = ((p.temperature - 250f) / 6000f).coerceIn(0f, 1f)
-            val drag = if (p.material.gas) .012f else .003f
-            val vx = ((p.vx + ax.coerceIn(-1.8f, 1.8f) * dt) *
-                (1f - drag * dt)).coerceIn(-.7f, .7f)
-            val vy = ((p.vy + ay.coerceIn(-1.8f, 1.8f) * dt) *
-                (1f - drag * dt)).coerceIn(-.7f, .7f)
+            // Vacuum cannot exert a species-dependent drag force.
+            // Dissipation happens at contacts; radiative cooling affects
+            // temperature, not linear momentum in an arbitrary screen direction.
+            val vx = (p.vx + ax.coerceIn(-1.8f, 1.8f) * dt)
+                .coerceIn(-.7f, .7f)
+            val vy = (p.vy + ay.coerceIn(-1.8f, 1.8f) * dt)
+                .coerceIn(-.7f, .7f)
             p.vx = vx
             p.vy = vy
             p.x += vx * dt
@@ -409,8 +410,6 @@ internal class MatterField(private val random: Random = Random(91)) {
                 hypot(p.x - episode.x, p.y - episode.y) < .3f) {
                 p.temperature -= 14f * dt * episode.alpha
             }
-            // Hot gases cool and disperse; solid packets can stick together.
-            if (p.material.gas && thermal > .2f) p.vy -= .001f * thermal * dt
             p.material = equilibrateMaterial(p.material, p.temperature)
             p.age += dt
             val index = cell(p.y) * gridSize + cell(p.x)

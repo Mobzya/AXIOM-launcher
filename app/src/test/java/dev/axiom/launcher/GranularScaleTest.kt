@@ -117,6 +117,29 @@ class GranularScaleTest {
         assertEquals(4600*4, world.grainFrame.size)
     }
 
+    @Test fun stellarNurseryAndNebulaConserveGasMassAndEnergy() {
+        val world = GranularUniverse()
+        world.grains.add(SandGrain(1, .48f, .49f, .022f, .012f,
+            .2f, .00012, MatterMaterial.HYDROGEN))
+        world.grains.add(SandGrain(2, .52f, .51f, -.020f, -.011f,
+            .3f, .00009, MatterMaterial.HELIUM))
+        val before = world.totalEnergy(0f)
+        val mass = world.totals().mass
+        val px = world.totals().momentumX
+        val nursery = CosmicEpisode(CosmicEventKind.STELLAR_NURSERY, 1f,
+            18f, .5f, .5f, 40)
+        world.step(.008f, 0f, nursery)
+        assertEquals(before, world.totalEnergy(0f), 3e-8)
+        assertEquals(px, world.totals().momentumX, 3e-8)
+        val nebula = CosmicEpisode(CosmicEventKind.NEBULA, 1f,
+            18f, .5f, .5f, 41)
+        world.step(.008f, 0f, nebula)
+        assertEquals(2, world.grains.size)
+        assertEquals(mass, world.totals().mass, 1e-8)
+        assertEquals(px, world.totals().momentumX, 3e-8)
+        assertEquals(before, world.totalEnergy(0f), 3e-8)
+    }
+
     @Test fun packedReplayRestoresCountMaterialsAndVelocities() {
         val sand = GranularUniverse()
         sand.seed(CelestialBody(6, 2, 1f, 1f,

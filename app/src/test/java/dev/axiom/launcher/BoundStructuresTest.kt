@@ -84,6 +84,22 @@ class BoundStructuresTest {
             bodies.single().mass + field.totalMass().toFloat(), 1e-4f)
     }
 
+    @Test fun coolingGasClumpsCreateARealPhysicalCloud() {
+        val matter = MatterField()
+        val cloudBodies = arrayListOf<CelestialBody>()
+        matter.particles.add(MatterParticle(1, .4f, .5f, 0f, 0f,
+            .16f, 240f, MatterMaterial.HYDROGEN, age = 2f))
+        matter.particles.add(MatterParticle(2, .4003f, .5f, 0f, 0f,
+            .19f, 240f, MatterMaterial.HELIUM, age = 2f))
+        val before = matter.totalMass()
+        matter.step(1f / 60f, 1f, cloudBodies, 24, { 101 }, false)
+        assertEquals(1, cloudBodies.size)
+        assertEquals(StellarClass.CLOUD, cloudBodies.single().stellarClass)
+        assertEquals(before, cloudBodies.single().mass.toDouble(), 1e-5)
+        assertTrue(matter.particles.isEmpty())
+        assertTrue(matter.structures.points(101).size >= 48)
+    }
+
     @Test fun changingDetailNeverChangesPhysicalBodyMassOrInventory() {
         val field = BoundStructureField()
         val b = body(5, 16f, kind = StellarClass.QUASAR)

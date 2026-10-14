@@ -196,12 +196,15 @@ internal class MatterField(private val random: Random = Random(91)) {
         for (i in 0 until count) {
             val angle = i * (2 * PI).toFloat() / count
             val radius = .022f + (i % 3) * .003f
-            // Opposing positions and tangential velocities keep the disc balanced.
+            val r2 = radius * radius + .00025f
+            // Circular speed for the SAME softened potential used below.
+            val orbitalSpeed = sqrt(.00022f * source.mass * radius * radius /
+                (r2 * sqrt(r2)))
             particles.add(MatterParticle(sequence++,
                 source.x + cos(angle) * radius,
                 source.y + sin(angle) * radius,
-                source.vx - sin(angle) * .022f,
-                source.vy + cos(angle) * .022f,
+                source.vx - sin(angle) * orbitalSpeed,
+                source.vy + cos(angle) * orbitalSpeed,
                 per, source.temperature,
                 debrisType(source.material, i)))
         }

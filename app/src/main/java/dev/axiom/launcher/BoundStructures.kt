@@ -233,7 +233,11 @@ internal class BoundStructureField {
         val ejectPx = emitted.sumOf { (it.mass * it.vx).toDouble() }.toFloat()
         val ejectPy = emitted.sumOf { (it.mass * it.vy).toDouble() }.toFloat()
         val newMass = body.mass - emittedTotal
+        val ejectX = emitted.sumOf { it.mass.toDouble() * it.x.toDouble() }.toFloat()
+        val ejectY = emitted.sumOf { it.mass.toDouble() * it.y.toDouble() }.toFloat()
         val remaining = body.copy(mass = newMass,
+            x = (body.mass * body.x - ejectX) / newMass,
+            y = (body.mass * body.y - ejectY) / newMass,
             vx = (body.mass * body.vx - ejectPx) / newMass,
             vy = (body.mass * body.vy - ejectPy) / newMass)
         for (p in samples) p.mass *= 1f - fractionActual
@@ -244,8 +248,8 @@ internal class BoundStructureField {
     private fun coarsen(samples: MutableList<BoundMatter>, target: Int) {
         if (samples.size <= target) return
         val ordered = samples.sortedWith(compareBy<BoundMatter> {
-            it.material.ordinal
-        }.thenBy { it.dx }.thenBy { it.dy })
+            it.dx
+        }.thenBy { it.dy }.thenBy { it.material.ordinal })
         val compact = ArrayList<BoundMatter>(target)
         val batch = (ordered.size + target - 1) / target
         for (start in ordered.indices step batch) {

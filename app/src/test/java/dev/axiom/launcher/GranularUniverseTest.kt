@@ -82,6 +82,36 @@ class GranularUniverseTest {
         assertEquals(before.mass, engine.totals().mass, 1e-5)
     }
 
+    @Test fun crowded4600GrainUniverseBoundsContactWorkAndPreservesMatter() {
+        val engine = GranularUniverse()
+        engine.updateMode(MatterMode.DETAILED)
+        // 46 deliberately overlapping clouds stress the dense hash buckets.
+        // This used to stall despite the accepted-contact limit because the
+        // raw candidate scan was not bounded.
+        repeat(46) { i ->
+            engine.seed(CelestialBody(i + 100, 2, .5f, 1f,
+                .46f + (i % 5) * .002f, .46f + (i / 5) * .002f,
+                0f, 0f), 100)
+        }
+        assertEquals(4600, engine.grains.size)
+        val before = engine.totals()
+        val ids = engine.grains.map { it.id }.toSet()
+        val started = System.nanoTime()
+        repeat(2) { engine.step(1f / 30f, 1f) }
+        val durationMs = (System.nanoTime() - started) / 1_000_000.0
+        val after = engine.totals()
+        assertEquals(before.mass, after.mass, 1e-4)
+        assertEquals(ids, engine.grains.map { it.id }.toSet())
+        assertTrue(engine.grains.all { it.x.isFinite() && it.y.isFinite()
+            && it.vx.isFinite() && it.vy.isFinite() && it.heat >= 0.0 })
+        assertTrue("4600 grain dense-cell contact scan was unbounded: " +
+            engine.counters.first, engine.counters.first < 4600L * 3 * 64)
+        // CI is shared and is not an Android FPS benchmark. This is only
+        // a generous regression watchdog for catastrophic multi-second stalls.
+        assertTrue("4600 grain watchdog: " + durationMs + "ms",
+            durationMs < 60_000)
+    }
+
     @Test fun worldWithActiveEventHasConstantMassAndCount() {
         val world = CosmicWorld(321)
         val before = world.sand.totals()

@@ -195,8 +195,15 @@ internal class GranularUniverse {
         if (grains.size >= mode.maxParticles) return
         val n = min(requested, mode.maxParticles - grains.size)
         if (n <= 0) return
-        // Compact circular particle clouds, but WITHOUT any pinned shell.
-        val radius = structureRadius(body) * 1.03
+        // Round, but NOT overpacked: starting inside the grain's excluded
+        // volume launches a false contact explosion and turns the new planet
+        // into an egg. Derive a loose circular packing radius from actual
+        // grain count and collision radius, independently of render scale.
+        val grainRadius = (.00135 * sqrt(
+            (body.mass / n).coerceAtLeast(.00001f) / .01f))
+            .coerceIn(.00042, .0028)
+        val packingRadius = grainRadius * sqrt(n / .72) * 1.04
+        val radius = max(structureRadius(body) * 1.08, packingRadius)
         val goldenAngle = PI * (3.0 - sqrt(5.0))
         for (i in 0 until n) {
             // Deterministic disc packing. No egg shape or pinned lattice:

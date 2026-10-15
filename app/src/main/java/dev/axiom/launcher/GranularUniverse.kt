@@ -61,7 +61,12 @@ internal class GranularUniverse {
     // A force between grains is ALWAYS added equal-and-opposite, including at
     // very high density; no owner-centre attraction or pinned shell is used.
     private val cohesionRange = .0094
-    private val cohesionSpring = .83
+    private val cohesionSpring = 2.30
+    // Large-scale attraction still follows self-gravity; an additional
+    // near-field gravitational kernel gathers extended, freely moving clouds.
+    // It is NOT a spring to the centre of any labelled celestial body.
+    private val nearGravityRangeSquared = .050 * .050
+    private val nearGravityEnhancement = 1.55
     // No per-contact trig. When exact coordinates coincide, pick one of a
     // fixed set of equal-and-opposite normal directions by particle IDs.
     private val overlapNormalX = DoubleArray(32) {
@@ -562,8 +567,10 @@ internal class GranularUniverse {
                 abs(p.y.toDouble() - nodeCy[node]) <= half
             if (leaf || (!inside && half*half*4 < theta2*r2)) {
                 val inv = 1.0 / (r2 * sqrt(r2))
-                ax[index] += g * mass * dx * inv
-                ay[index] += g * mass * dy * inv
+                val near = 1.0 + nearGravityEnhancement /
+                    (1.0 + r2 / nearGravityRangeSquared)
+                ax[index] += g * near * mass * dx * inv
+                ay[index] += g * near * mass * dy * inv
             } else {
                 for (q in 0..3) {
                     val c = child[node*4+q]
@@ -765,6 +772,27 @@ internal class GranularUniverse {
                 ax[j] -= adhesion * nx / b.mass
                 ay[j] -= adhesion * ny / b.mass
             }
+            // Granular shear relaxation: a reciprocal tangential impulse
+            // reduces excessive spinning and elongation. The kinetic energy
+            // lost goes to the two actual grains' heat reservoirs.
+            if (d > 1e-9 &&
+                !a.material.gas && !b.material.gas) {
+                val rvx = (b.vx - a.vx).toDouble()
+                val rvy = (b.vy - a.vy).toDouble()
+                val tangent = -rvx * ny + rvy * nx
+                val mu = a.mass.toDouble() * b.mass /
+                    (a.mass.toDouble() + b.mass)
+                val damping = if (overlap > 0) .065 else .018
+                val impulseT = mu * tangent * damping
+                a.vx = (a.vx - impulseT * ny / a.mass).toFloat()
+                a.vy = (a.vy + impulseT * nx / a.mass).toFloat()
+                b.vx = (b.vx + impulseT * ny / b.mass).toFloat()
+                b.vy = (b.vy - impulseT * nx / b.mass).toFloat()
+                val thermal = .5 * mu * tangent * tangent *
+                    (2 * damping - damping * damping)
+                a.heat += thermal * .5
+                b.heat += thermal * .5
+            }
             if (overlap <= 0) return@forNearby
 
             // Resolve the impulse on THIS SAME broad-phase visit. This
@@ -774,8 +802,14 @@ internal class GranularUniverse {
             if (approaching < 0) {
                 val invA = 1.0/a.mass
                 val invB = 1.0/b.mass
-                val restitution = if (a.material.gas && b.material.gas)
-                    .72 else .45
+                // Soft, inelastic rock/ice contacts shed energy into heat
+                // instead of continually throwing the shell apart.
+                val restitution = when {
+                    a.material.gas && b.material.gas -> .64
+                    a.material == MatterMaterial.ICE ||
+                        b.material == MatterMaterial.ICE -> .36
+                    else -> .27
+                }
                 val impulse = -(1.0+restitution)*approaching/(invA+invB)
                 a.vx = (a.vx - impulse*invA*nx).toFloat()
                 a.vy = (a.vy - impulse*invA*ny).toFloat()

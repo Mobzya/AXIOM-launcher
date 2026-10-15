@@ -135,6 +135,7 @@ internal class CosmicWorld(
     private val replayBuffer = ArrayDeque<List<CelestialBody>>(32)
     private val particleReplay = ArrayDeque<GranularUniverse.Snapshot>(32)
     private var replayTimer = 0f
+    private var physicsFrameNumber = 0L
     private var cascadeBudget = 0
     var maxBodies by mutableStateOf(23)
         private set
@@ -580,6 +581,7 @@ internal class CosmicWorld(
         dust=emptyList()
         matter.clear()
         seedStartingMatter()
+        physicsFrameNumber = 0L
         impactMoments.clear()
         clearReplay()
     }
@@ -639,12 +641,21 @@ internal class CosmicWorld(
 
         val prior = bodies
         sand.step(h, gravity, episode, wallsEnabled)
-        previousBodies = prior
-        var current = sand.summarizeBodies(prior)
-        sand.relabelCaptured(current)
-        val newborns = sand.discoverClumps(current, maxBodies, ::newBodyId)
-        current = sand.mergeCaptureLabels(current + newborns)
-        bodies = sand.summarizeBodies(current)
+        physicsFrameNumber++
+        // Grain positions are published EVERY physics frame, but 4500-grain
+        // clouds do not need to rebuild the body's Compose State, object
+        // ownership and hierarchy at 30Hz. This throttles expensive
+        // recompositions without slowing down particle integration.
+        val updateSceneMetadata = sand.grains.size < 1600 ||
+            physicsFrameNumber % 4L == 0L
+        if (updateSceneMetadata) {
+            previousBodies = prior
+            var current = sand.summarizeBodies(prior)
+            sand.relabelCaptured(current)
+            val newborns = sand.discoverClumps(current, maxBodies, ::newBodyId)
+            current = sand.mergeCaptureLabels(current + newborns)
+            bodies = sand.summarizeBodies(current)
+        }
         publishGrains()
         replayTimer += h
         if (replayTimer >= .25f) {

@@ -186,6 +186,71 @@ class GranularUniverseTest {
         })
     }
 
+    @Test fun pulsingStarUsesExistingHeatAndPreservesGrainMomentum() {
+        val sand = GranularUniverse()
+        sand.grains.add(SandGrain(100, .48f, .5f, 0f, 0f,
+            .01f, .0001, MatterMaterial.HYDROGEN, 7))
+        sand.grains.add(SandGrain(101, .52f, .5f, 0f, 0f,
+            .01f, .0001, MatterMaterial.PLASMA, 7))
+        val before = sand.totals()
+        val ids = sand.grains.map { it.id }
+        val e1 = CosmicEpisode(CosmicEventKind.PULSAR,
+            age = .8f, duration = 17f, x = .5f, y = .5f, serial = 43)
+        sand.step(1f/60f, 0f, e1)
+        val first = sand.totals()
+        assertTrue(first.kinetic > before.kinetic)
+        assertTrue(first.internal < before.internal)
+        assertEquals(before.mass, first.mass, 1e-8)
+        assertEquals(before.momentumX, first.momentumX, 1e-7)
+        assertEquals(before.momentumY, first.momentumY, 1e-7)
+        // Same pulse ID cannot spend heat twice.
+        val heatBefore = sand.totals().internal
+        sand.step(1f/60f, 0f, e1)
+        assertEquals(heatBefore, sand.totals().internal, 1e-9)
+        val e2 = e1.copy(age = 1.5f)
+        sand.step(1f/60f, 0f, e2)
+        assertTrue(sand.totals().internal < heatBefore)
+        assertEquals(ids, sand.grains.map { it.id })
+    }
+
+    @Test fun fieryMeteorShowerAddsOnlyGenuineIncomingGrains() {
+        val world = CosmicWorld(24)
+        val before = world.sand.grains.size
+        val massBefore = world.sand.totals().mass
+        world.trigger(CosmicEventKind.METEORS)
+        val added = world.sand.grains.drop(before)
+        assertTrue(added.size in 52..78)
+        assertTrue(added.all { it.y < 0f && it.vy > .19f })
+        assertTrue(added.any { it.material == MatterMaterial.PLASMA ||
+            it.material == MatterMaterial.SULFUR })
+        assertTrue(world.sand.totals().mass > massBefore)
+        val duringMass = world.sand.totals().mass
+        repeat(10) { world.step(1f/60f) }
+        assertEquals(duringMass, world.sand.totals().mass, 1e-5)
+    }
+
+    @Test fun hotQuasarJetDoesNotFabricateMatter() {
+        val sand = GranularUniverse()
+        val star = CelestialBody(52, 3, 2f, 1f,
+            .5f, .5f, 0f, 0f,
+            material = MatterMaterial.PLASMA,
+            temperature = 6500f, stellarClass = StellarClass.QUASAR)
+        sand.seed(star, 90)
+        val ids = sand.grains.map { it.id }.toSet()
+        val before = sand.totals()
+        repeat(10) { step ->
+            val jet = CosmicEpisode(CosmicEventKind.QUASAR_JET,
+                age = step*.72f, duration = 15f,
+                x = .5f, y = .5f, serial = 55)
+            sand.step(1f/30f, 1f, jet)
+        }
+        assertEquals(ids, sand.grains.map { it.id }.toSet())
+        assertEquals(before.mass, sand.totals().mass, 1e-6)
+        assertTrue(sand.grains.all {
+            it.x.isFinite() && it.y.isFinite() && it.heat >= 0
+        })
+    }
+
     @Test fun worldWithActiveEventHasConstantMassAndCount() {
         val world = CosmicWorld(321)
         val before = world.sand.totals()

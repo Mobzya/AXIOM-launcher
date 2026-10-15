@@ -46,7 +46,9 @@ internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
         val angle = listOf(.16, 1.35, 2.56, 3.85, 5.19)[index % 5]
         val x = cx + radius * cos(angle).toFloat()
         val y = cy + radius * sin(angle).toFloat()
-        val orbital = sqrt(.000052f * starMass / radius) * .91f
+        // Correct the circular speed for the solver's near-field gravity.
+        val boost = 1f + 1.55f / (1f + radius*radius / (.05f*.05f))
+        val orbital = sqrt(.000052f * starMass * boost / radius) * .99f
         body(firstId + index, x, y, masses[index],
             composition[index],
             vx = -orbital * sin(angle).toFloat(),
@@ -136,7 +138,8 @@ internal fun GranularUniverse.seedOrbitalDisk(
             outerRadius * outerRadius * f)
         val a = golden * i
         val mass = if (rocky) .0018f else .0009f
-        val speed = sqrt(.000052 * centralMass / r) * .93
+        val near = 1.0 + 1.55 / (1.0 + r*r / (.05*.05))
+        val speed = sqrt(.000052 * centralMass * near / r) * .99
         val material = if (rocky) when (i % 7) {
             0 -> MatterMaterial.IRON
             1, 2 -> MatterMaterial.ROCK

@@ -241,6 +241,13 @@ internal class GranularUniverse {
                     else -> MatterMaterial.OXYGEN
                 }
                 StellarClass.PLANET -> when (body.material) {
+                    MatterMaterial.SULFUR -> when {
+                        sample < 29 -> MatterMaterial.SULFUR
+                        sample < 53 -> MatterMaterial.GLASS
+                        sample < 70 -> MatterMaterial.PLASMA
+                        sample < 89 -> MatterMaterial.SILICATE
+                        else -> MatterMaterial.IRON
+                    }
                     MatterMaterial.ICE, MatterMaterial.WATER -> when {
                         sample < 44 -> MatterMaterial.ICE
                         sample < 63 -> MatterMaterial.WATER
@@ -877,44 +884,58 @@ internal class GranularUniverse {
     /** Draw explosion energy from local material heat; never add energy. */
     private fun releaseHeatAsMotion(episode: CosmicEpisode) {
         if (episode.kind == CosmicEventKind.QUIET ||
-            episode.serial == pulseSerial) return
-        pulseSerial = episode.serial
+            episode.kind == CosmicEventKind.METEORS) return
+        // Hot magnetic objects emit a pulse every ~0.7s, while other
+        // events act only once. Every pulse spends existing particle heat.
+        val repeating = episode.kind == CosmicEventKind.PULSAR ||
+            episode.kind == CosmicEventKind.QUASAR_JET
+        val pulseIndex = if (repeating)
+            (episode.age / .70f).toInt().coerceIn(0, 50) else 0
+        val pulseKey = episode.serial * 64 + pulseIndex
+        if (pulseKey == pulseSerial) return
+        pulseSerial = pulseKey
         if (episode.kind == CosmicEventKind.STELLAR_NURSERY ||
             episode.kind == CosmicEventKind.ACCRETION_BURST) {
             settleNurseryGas(episode)
             return
         }
         if (episode.kind !in listOf(CosmicEventKind.NEBULA,
-            CosmicEventKind.METEORS, CosmicEventKind.COMET_SWARM,
-            CosmicEventKind.PLASMA_STORM,
+            CosmicEventKind.COMET_SWARM, CosmicEventKind.PULSAR,
+            CosmicEventKind.QUASAR_JET, CosmicEventKind.PLASMA_STORM,
             CosmicEventKind.NOVA,
             CosmicEventKind.SOLAR_FLARE, CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION,
             CosmicEventKind.POLAR_JET, CosmicEventKind.RING_WAVE)) return
         val candidates = grains.indices.filter { i ->
             val p = grains[i]
-            ((episode.kind == CosmicEventKind.METEORS ||
-                episode.kind == CosmicEventKind.COMET_SWARM) &&
-                p.y < .48f ||
-                hypot(p.x - episode.x, p.y - episode.y) < .40f) &&
+            ((episode.kind == CosmicEventKind.COMET_SWARM &&
+                p.y < .48f) ||
+                hypot(p.x - episode.x, p.y - episode.y) <
+                    if (repeating) .24f else .40f) &&
                 (episode.kind != CosmicEventKind.NEBULA ||
                     p.material.gas) &&
                 (episode.kind != CosmicEventKind.PLASMA_STORM ||
                     p.material == MatterMaterial.PLASMA ||
-                    p.material == MatterMaterial.HYDROGEN) && p.heat > 0
+                    p.material == MatterMaterial.HYDROGEN) &&
+                (!repeating || p.material.gas ||
+                    p.material == MatterMaterial.PLASMA) &&
+                p.heat > 0
         }
-        for (k in 0 until candidates.size - 1 step 2) {
+        for (k in 0 until min(candidates.size - 1,
+            if (repeating) 128 else 512) step 2) {
             val a = grains[candidates[k]]
             val b = grains[candidates[k+1]]
             val rx = (b.x - a.x).toDouble()
             val ry = (b.y - a.y).toDouble()
             val d = sqrt(rx*rx+ry*ry).coerceAtLeast(1e-8)
             var nx = rx/d; var ny = ry/d
-            if (episode.kind == CosmicEventKind.METEORS ||
-                episode.kind == CosmicEventKind.COMET_SWARM) {
-                // Opposite impulses on existing dust: incoming meteors plus
-                // physical recoil elsewhere. The pair keeps total momentum.
+            if (episode.kind == CosmicEventKind.COMET_SWARM) {
                 nx = .24; ny = .970772
+            } else if (episode.kind == CosmicEventKind.PULSAR) {
+                val angle = episode.age.toDouble() * 3.6
+                nx = cos(angle); ny = sin(angle)
+            } else if (episode.kind == CosmicEventKind.QUASAR_JET) {
+                nx = .18; ny = .9836666102
             }
             val vrel = (b.vx-a.vx)*nx+(b.vy-a.vy)*ny
             if (vrel < 0) { nx = -nx; ny = -ny }

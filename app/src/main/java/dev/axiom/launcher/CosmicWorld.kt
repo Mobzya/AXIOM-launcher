@@ -20,7 +20,7 @@ internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, S
     STELLAR_NURSERY, DARK_FLOW, GEOMETRY_SHIFT, SOLAR_FLARE,
     DUAL_RING, PARTICLE_CASCADE,
     MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC,
-    COMET_SWARM, ACCRETION_BURST, CRYSTALLIZATION, PLASMA_STORM }
+    COMET_SWARM, ACCRETION_BURST, CRYSTALLIZATION, PLASMA_STORM, QUASAR_JET }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -108,7 +108,7 @@ internal class CosmicWorld(
     private var eventSerial = 0
     // Rare external arrivals: a fresh spherical GROUP of grains, not sprites.
     private var spawnAt = 46f
-    private var eventAt = 38f
+    private var eventAt = 55f
     private var lastBurstAt = -100f
     private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
@@ -369,20 +369,64 @@ internal class CosmicWorld(
                 CosmicEventKind.ACCRETION_BURST -> 14f
                 CosmicEventKind.CRYSTALLIZATION -> 21f
                 CosmicEventKind.PLASMA_STORM -> 12f
+                CosmicEventKind.QUASAR_JET -> 15f
                 else -> 1f
             },
-            // A singularity forms *around existing massive matter*, rather
-            // than at an invented invisible attractor.
-            x = if (kind == CosmicEventKind.SINGULARITY)
-                bodies.maxByOrNull { it.mass }?.x ?: .5f
+            // Pulsars and quasars act on actual existing hot bodies, not
+            // hidden attractors. All ejection impulses consume particle heat.
+            x = if (kind == CosmicEventKind.SINGULARITY ||
+                kind == CosmicEventKind.PULSAR ||
+                kind == CosmicEventKind.QUASAR_JET)
+                bodies.filter { it.stellarClass == StellarClass.STAR ||
+                    it.stellarClass == StellarClass.QUASAR }
+                    .maxByOrNull { it.mass }?.x
+                    ?: bodies.maxByOrNull { it.mass }?.x ?: .5f
                 else .25f + random.nextFloat() * .5f,
-            y = if (kind == CosmicEventKind.SINGULARITY)
-                bodies.maxByOrNull { it.mass }?.y ?: .4f
+            y = if (kind == CosmicEventKind.SINGULARITY ||
+                kind == CosmicEventKind.PULSAR ||
+                kind == CosmicEventKind.QUASAR_JET)
+                bodies.filter { it.stellarClass == StellarClass.STAR ||
+                    it.stellarClass == StellarClass.QUASAR }
+                    .maxByOrNull { it.mass }?.y
+                    ?: bodies.maxByOrNull { it.mass }?.y ?: .4f
                 else .20f + random.nextFloat() * .50f,
             serial = eventSerial
         )
-        // Events now redistribute pre-existing particle energy. No automatic
-        // spawning: even a supernova must not create new atoms or mass.
+        // The next event starts roughly one minute after this one begins,
+        // not one minute *after* its end. Event durations stay much shorter.
+        eventAt = elapsed + 52f + random.nextFloat() * 16f
+        if (kind == CosmicEventKind.METEORS) {
+            // Only this genuinely incoming meteor shower injects external
+            // matter. Collisions, supernovae and black holes remain closed.
+            spawnMeteorShower()
+        }
+    }
+
+    /** Two or three FAST, HOT, actual granular meteorite clusters arrive
+     * from above. No cosmetic sparks, nor particles emitted by a collision. */
+    @Synchronized
+    private fun spawnMeteorShower() {
+        val waves = 2 + random.nextInt(2)
+        repeat(waves) { k ->
+            if (bodies.size >= maxBodies ||
+                sand.grains.size + 26 > matterMode.maxParticles) return@repeat
+            val x = .10f + random.nextFloat() * .80f
+            val y = -.055f - k * .042f
+            val body = CelestialBody(
+                id = idSequence++, kind = 1,
+                mass = .22f + random.nextFloat() * .18f,
+                depth = 1f, x = x, y = y,
+                vx = (random.nextFloat() - .5f) * .11f,
+                vy = .20f + random.nextFloat() * .11f,
+                lifetime = 3600f,
+                material = MatterMaterial.SULFUR,
+                temperature = 2850f + random.nextFloat() * 1000f,
+                stellarClass = StellarClass.PLANET
+            )
+            bodies += body
+            sand.seed(body, 26)
+        }
+        publishGrains()
     }
 
     /**
@@ -390,20 +434,19 @@ internal class CosmicWorld(
      * Historical names remain valid for terminal commands/old saves, but no
      * geometric-only anomalies compete with the physical simulation.
      */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(120)) {
-        in 0..14 -> CosmicEventKind.METEORS
-        in 15..28 -> CosmicEventKind.SINGULARITY
-        in 29..40 -> CosmicEventKind.NOVA
-        in 41..51 -> CosmicEventKind.SOLAR_FLARE
-        in 52..60 -> CosmicEventKind.PARTICLE_CASCADE
-        in 61..69 -> CosmicEventKind.REACTION
-        in 70..79 -> CosmicEventKind.NEBULA
-        in 80..86 -> CosmicEventKind.GALAXY_COLLISION
-        in 87..93 -> CosmicEventKind.STELLAR_NURSERY
-        in 94..101 -> CosmicEventKind.COMET_SWARM
-        in 102..109 -> CosmicEventKind.ACCRETION_BURST
-        in 110..115 -> CosmicEventKind.CRYSTALLIZATION
-        else -> CosmicEventKind.PLASMA_STORM
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(130)) {
+        in 0..19 -> CosmicEventKind.METEORS
+        in 20..35 -> CosmicEventKind.PULSAR
+        in 36..49 -> CosmicEventKind.QUASAR_JET
+        in 50..63 -> CosmicEventKind.SINGULARITY
+        in 64..75 -> CosmicEventKind.NOVA
+        in 76..87 -> CosmicEventKind.SOLAR_FLARE
+        in 88..97 -> CosmicEventKind.COMET_SWARM
+        in 98..105 -> CosmicEventKind.ACCRETION_BURST
+        in 106..113 -> CosmicEventKind.STELLAR_NURSERY
+        in 114..119 -> CosmicEventKind.PLASMA_STORM
+        in 120..124 -> CosmicEventKind.PARTICLE_CASCADE
+        else -> CosmicEventKind.CRYSTALLIZATION
     }
 
     @Synchronized
@@ -587,7 +630,7 @@ internal class CosmicWorld(
         episode = CosmicEpisode()
         depthShift = 0f
         spawnAt = 46f
-        eventAt = 38f
+        eventAt = 55f
         lastBurstAt = -100f
         tunneled.clear()
         mathMoment = MathMoment()
@@ -654,11 +697,10 @@ internal class CosmicWorld(
                         active.x, active.y)).takeLast(4)
                 }
                 episode = CosmicEpisode()
-                eventAt = elapsed + 40f
+                // Next start was scheduled when this episode began.
             } else episode = active.copy(age = active.age + h)
         } else if (!mathMoment.active && elapsed >= eventAt) {
             trigger(chooseEvent())
-            eventAt = elapsed + 90f
         }
 
         // New matter enters only through a visibly incoming, independent

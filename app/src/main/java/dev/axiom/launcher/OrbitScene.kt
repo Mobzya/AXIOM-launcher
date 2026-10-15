@@ -91,6 +91,13 @@ internal fun CosmicEnvironment(
             typeface = Typeface.create("monospace", Typeface.NORMAL)
         }
     }
+    // Cheap, physical-summary-based stellar corona. Only the grains define
+    // the visible star; these two translucent circles are light, not matter.
+    val coronaPaint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
+    }
     // Reuse point buffers and Android's drawPoints() batching rather than
     // allocating / submitting 4,500 individual Compose drawCircle operations.
     val materials = MatterMaterial.entries
@@ -190,6 +197,28 @@ internal fun CosmicEnvironment(
         }
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
+            for (body in world.bodies) {
+                if (body.stellarClass != StellarClass.STAR &&
+                    body.stellarClass != StellarClass.QUASAR &&
+                    !(world.preset == CosmicPreset.SATURN_RINGS &&
+                        body.id == 1)) continue
+                val color = when {
+                    body.stellarClass == StellarClass.QUASAR ->
+                        android.graphics.Color.rgb(125, 167, 255)
+                    body.stellarClass == StellarClass.STAR ->
+                        android.graphics.Color.rgb(255, 201, 100)
+                    else -> android.graphics.Color.rgb(173, 197, 239)
+                }
+                val radius = structureRadius(body) *
+                    min(size.width, size.height)
+                coronaPaint.color = color
+                coronaPaint.alpha = (dim * 19f).toInt().coerceIn(0,255)
+                native.drawCircle(body.x*size.width, body.y*size.height,
+                    radius*3.2f, coronaPaint)
+                coronaPaint.alpha = (dim * 31f).toInt().coerceIn(0,255)
+                native.drawCircle(body.x*size.width, body.y*size.height,
+                    radius*1.75f, coronaPaint)
+            }
             for (k in materials.indices) {
                 val count = counts[k]
                 if (count == 0) continue

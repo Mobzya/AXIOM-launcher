@@ -19,7 +19,8 @@ internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, S
     ECHO_SHELL, TIDAL_CAPTURE, POLAR_JET, ORBITAL_RESONANCE,
     STELLAR_NURSERY, DARK_FLOW, GEOMETRY_SHIFT, SOLAR_FLARE,
     DUAL_RING, PARTICLE_CASCADE,
-    MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC }
+    MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC,
+    COMET_SWARM, ACCRETION_BURST, CRYSTALLIZATION, PLASMA_STORM }
 
 internal data class CosmicEpisode(
     val kind: CosmicEventKind = CosmicEventKind.QUIET,
@@ -105,7 +106,8 @@ internal class CosmicWorld(
         private set
     private var idSequence = 50
     private var eventSerial = 0
-    private var spawnAt = 10f
+    // Rare external arrivals: a fresh spherical GROUP of grains, not sprites.
+    private var spawnAt = 46f
     private var eventAt = 38f
     private var lastBurstAt = -100f
     private val tunneled = mutableSetOf<Int>()
@@ -246,7 +248,7 @@ internal class CosmicWorld(
 
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     @Synchronized
-    fun spawnFromCorner(burst: Boolean = false) {
+    fun spawnFromCorner(burst: Boolean = false, physicalCluster: Boolean = false) {
         if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
@@ -262,17 +264,22 @@ internal class CosmicWorld(
         val dy = targetY - y
         val length = max(hypot(dx, dy), .05f)
         val speed = if (burst) .17f + random.nextFloat() * .12f
+                    else if (physicalCluster) .040f + random.nextFloat() * .037f
                     else .048f + random.nextFloat() * .085f
         val depth = .65f + random.nextFloat() * 2.6f
         val giant = !burst && bodies.none { it.kind in 97..104 } &&
             random.nextInt(720) == 0
-        val chosenKind = if (burst) 1 else if (giant) 97 + random.nextInt(8)
+        val chosenKind = if (physicalCluster)
+            listOf(2, 3, 4, 5, 6, 7, 12, 15)[random.nextInt(8)]
+            else if (burst) 1 else if (giant) 97 + random.nextInt(8)
             else 1 + random.nextInt(96)
-        val chosenClass = stellarClassFromKind(chosenKind)
+        val chosenClass = if (physicalCluster) StellarClass.PLANET
+            else stellarClassFromKind(chosenKind)
         val body = CelestialBody(
             id = idSequence++,
             kind = chosenKind,
-            mass = if(giant) 3.8f + random.nextFloat()*1.5f
+            mass = if (giant) 3.8f + random.nextFloat()*1.5f
+                else if (physicalCluster) .85f + random.nextFloat() * 1.0f
                 else .30f + random.nextFloat() * 1.35f,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
@@ -283,7 +290,11 @@ internal class CosmicWorld(
                 StellarClass.QUASAR -> MatterMaterial.PLASMA
                 StellarClass.STAR -> MatterMaterial.HYDROGEN
                 StellarClass.CLOUD -> MatterMaterial.METHANE
-                StellarClass.PLANET -> materialForKind(chosenKind)
+                StellarClass.PLANET -> if (physicalCluster)
+                    listOf(MatterMaterial.ROCK, MatterMaterial.IRON,
+                        MatterMaterial.ICE, MatterMaterial.SILICATE,
+                        MatterMaterial.CARBON)[random.nextInt(5)]
+                    else materialForKind(chosenKind)
             },
             temperature = when (chosenClass) {
                 StellarClass.QUASAR -> 5200f
@@ -296,7 +307,9 @@ internal class CosmicWorld(
         bodies = bodies + body
         // Retain capacity for the full body limit instead of exhausting
         // the free-grain budget after only a handful of arrivals.
-        sand.seed(body, minOf(18, matterMode.maxParticles - sand.grains.size))
+        sand.seed(body, minOf(if (physicalCluster)
+            72 + random.nextInt(34) else 18,
+            matterMode.maxParticles - sand.grains.size))
         publishGrains()
     }
 
@@ -352,6 +365,10 @@ internal class CosmicWorld(
                 CosmicEventKind.GEOMETRY_SHIFT -> 17f
                 CosmicEventKind.SOLAR_FLARE -> 14f
                 CosmicEventKind.DUAL_RING -> 17f
+                CosmicEventKind.COMET_SWARM -> 13f
+                CosmicEventKind.ACCRETION_BURST -> 14f
+                CosmicEventKind.CRYSTALLIZATION -> 21f
+                CosmicEventKind.PLASMA_STORM -> 12f
                 else -> 1f
             },
             // A singularity forms *around existing massive matter*, rather
@@ -373,16 +390,20 @@ internal class CosmicWorld(
      * Historical names remain valid for terminal commands/old saves, but no
      * geometric-only anomalies compete with the physical simulation.
      */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(100)) {
-        in 0..20 -> CosmicEventKind.METEORS
-        in 21..34 -> CosmicEventKind.SINGULARITY
-        in 35..46 -> CosmicEventKind.NOVA
-        in 47..57 -> CosmicEventKind.SOLAR_FLARE
-        in 58..67 -> CosmicEventKind.PARTICLE_CASCADE
-        in 68..77 -> CosmicEventKind.REACTION
-        in 78..85 -> CosmicEventKind.NEBULA
-        in 86..92 -> CosmicEventKind.GALAXY_COLLISION
-        else -> CosmicEventKind.STELLAR_NURSERY
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(120)) {
+        in 0..14 -> CosmicEventKind.METEORS
+        in 15..28 -> CosmicEventKind.SINGULARITY
+        in 29..40 -> CosmicEventKind.NOVA
+        in 41..51 -> CosmicEventKind.SOLAR_FLARE
+        in 52..60 -> CosmicEventKind.PARTICLE_CASCADE
+        in 61..69 -> CosmicEventKind.REACTION
+        in 70..79 -> CosmicEventKind.NEBULA
+        in 80..86 -> CosmicEventKind.GALAXY_COLLISION
+        in 87..93 -> CosmicEventKind.STELLAR_NURSERY
+        in 94..101 -> CosmicEventKind.COMET_SWARM
+        in 102..109 -> CosmicEventKind.ACCRETION_BURST
+        in 110..115 -> CosmicEventKind.CRYSTALLIZATION
+        else -> CosmicEventKind.PLASMA_STORM
     }
 
     @Synchronized
@@ -531,7 +552,8 @@ internal class CosmicWorld(
     @Synchronized
     fun rewind(seconds: Int = 3): Boolean {
         if (replayBuffer.isEmpty() || particleReplay.isEmpty()) return false
-        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) * 4)
+        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) *
+            if (sand.grains.size >= 1800) 1 else 4)
             .coerceAtLeast(0)
         val snapshot = replayBuffer.elementAt(index)
         sand.restore(particleReplay.elementAt(index))
@@ -564,7 +586,7 @@ internal class CosmicWorld(
         elapsed = 0f
         episode = CosmicEpisode()
         depthShift = 0f
-        spawnAt = 10f
+        spawnAt = 46f
         eventAt = 38f
         lastBurstAt = -100f
         tunneled.clear()
@@ -639,6 +661,16 @@ internal class CosmicWorld(
             eventAt = elapsed + 90f
         }
 
+        // New matter enters only through a visibly incoming, independent
+        // spherical cluster. This is deliberately infrequent and separate
+        // from collisions, which conserve the total number of grains.
+        if (elapsed >= spawnAt) {
+            spawnAt = elapsed + 66f + random.nextFloat() * 56f
+            if (bodies.size < maxBodies &&
+                sand.grains.size + 105 <= matterMode.maxParticles) {
+                spawnFromCorner(physicalCluster = true)
+            }
+        }
         val prior = bodies
         sand.step(h, gravity, episode, wallsEnabled)
         physicsFrameNumber++
@@ -658,11 +690,14 @@ internal class CosmicWorld(
         }
         publishGrains()
         replayTimer += h
-        if (replayTimer >= .25f) {
+        val heavy = sand.grains.size >= 1800
+        val snapshotInterval = if (heavy) 1f else .25f
+        val historyCapacity = if (heavy) 12 else 32
+        if (replayTimer >= snapshotInterval) {
             replayBuffer.addLast(prior)
             particleReplay.addLast(sand.snapshot())
-            if (replayBuffer.size > 32) replayBuffer.removeFirst()
-            if (particleReplay.size > 32) particleReplay.removeFirst()
+            if (replayBuffer.size > historyCapacity) replayBuffer.removeFirst()
+            if (particleReplay.size > historyCapacity) particleReplay.removeFirst()
             replayTimer = 0f
         }
         physicsCostMs = ((System.nanoTime()-startedAt) / 1_000_000.0)

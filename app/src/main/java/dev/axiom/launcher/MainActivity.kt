@@ -1,6 +1,8 @@
 package dev.axiom.launcher
 
 import android.os.Bundle
+import android.os.PowerManager
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -40,8 +42,32 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * A 120Hz-capable display may otherwise select 60Hz for the launcher.
+     * Request (do not force) its fastest mode at the current resolution.
+     * Android retains authority over frame pacing, battery and thermals.
+     */
+    private fun requestFastDisplayMode() {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (power.isPowerSaveMode) return
+        @Suppress("DEPRECATION")
+        val display = windowManager.defaultDisplay
+        val active = display.mode
+        val fast = display.supportedModes
+            .filter { it.physicalWidth == active.physicalWidth &&
+                it.physicalHeight == active.physicalHeight &&
+                it.refreshRate >= 90f }
+            .maxByOrNull { it.refreshRate } ?: return
+        val attributes = window.attributes
+        if (attributes.preferredDisplayModeId != fast.modeId) {
+            attributes.preferredDisplayModeId = fast.modeId
+            window.attributes = attributes
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        requestFastDisplayMode()
         resumeVersion++
     }
 }

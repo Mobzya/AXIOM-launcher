@@ -55,6 +55,12 @@ internal data class CelestialBody(
     val stellarClass: StellarClass = StellarClass.PLANET
 )
 
+internal data class GrainRenderPair(
+    val previous: FloatArray,
+    val current: FloatArray,
+    val committedAtNanos: Long
+)
+
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
 internal data class CosmicRemnant(
@@ -71,11 +77,23 @@ internal class CosmicWorld(
     // Only sand is integrated and rendered by the active cosmic simulation.
     val matter = MatterField(Random(seed + 109))
     val sand = GranularUniverse()
-    var grainFrame by mutableStateOf(FloatArray(0))
+    // A single immutable snapshot avoids torn old/current reads on the UI.
+    // The UI can draw at the native refresh rate while physics runs at a
+    // bounded 30/60 Hz on a separate worker.
+    var grainFrames by mutableStateOf(GrainRenderPair(
+        FloatArray(0), FloatArray(0), System.nanoTime()))
         private set
+    val grainFrame: FloatArray get() = grainFrames.current
     var physicsCostMs by mutableFloatStateOf(0f)
         private set
-    private fun publishGrains() { grainFrame = sand.renderFrame() }
+    private fun publishGrains() {
+        val next = sand.renderFrame()
+        val old = grainFrames.current
+        grainFrames = GrainRenderPair(
+            if (old.size == next.size) old else next,
+            next, System.nanoTime()
+        )
+    }
     var matterMode by mutableStateOf(initialMatterMode)
         private set
     @Synchronized

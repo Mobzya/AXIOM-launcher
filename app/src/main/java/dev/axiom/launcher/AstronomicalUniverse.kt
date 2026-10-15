@@ -444,7 +444,7 @@ internal class AstronomicalUniverse {
         lastGravityMs = (System.nanoTime() - beginning) / 1e6
     }
 
-    private fun collisions() {
+    private fun collisions(h: Double) {
         val beginning = System.nanoTime()
         indexContacts()
         contactVisits = 0
@@ -469,8 +469,39 @@ internal class AstronomicalUniverse {
                         contactVisits++
                         val r2 = dx*dx+dy*dy
                         val radii = p.collisionRadius+q.collisionRadius
-                        if (r2 >= radii*radii) continue
                         val r = sqrt(max(r2.toDouble(), 1e-16))
+                        // Dust that has escaped any gravitational core can
+                        // accrete into new bodies via *mutual*, bounded
+                        // attraction. This is never a pull toward a preset
+                        // center and never creates a new grain or mass.
+                        if (p.owner < 0 && q.owner < 0 &&
+                            r > 1e-7 && r < .006 &&
+                            hypot(p.vx-q.vx,p.vy-q.vy) < .065f) {
+                            val nx = dx/r; val ny = dy/r
+                            val invA = 1.0/p.mass
+                            val invB = 1.0/q.mass
+                            val mu = 1.0/(invA+invB)
+                            val dp = .035 * mu * h * (1.0-r/.006)
+                            p.vx = (p.vx+dp*invA*nx).toFloat()
+                            p.vy = (p.vy+dp*invA*ny).toFloat()
+                            q.vx = (q.vx-dp*invB*nx).toFloat()
+                            q.vy = (q.vy-dp*invB*ny).toFloat()
+                            // Low-speed inelastic dust sticking: symmetric
+                            // velocity relaxation with lost energy as heat.
+                            val rvx = (q.vx-p.vx).toDouble()
+                            val rvy = (q.vy-p.vy).toDouble()
+                            val damping = .006
+                            val jx = mu*damping*rvx
+                            val jy = mu*damping*rvy
+                            p.vx = (p.vx+jx*invA).toFloat()
+                            p.vy = (p.vy+jy*invA).toFloat()
+                            q.vx = (q.vx-jx*invB).toFloat()
+                            q.vy = (q.vy-jy*invB).toFloat()
+                            val lost = .5*mu*(rvx*rvx+rvy*rvy) *
+                                (2*damping-damping*damping)
+                            p.heat += lost*.5; q.heat += lost*.5
+                        }
+                        if (r2 >= radii*radii) continue
                         val nx = if (r > 1e-7) dx/r else 1.0
                         val ny = if (r > 1e-7) dy/r else .0
                         val invA = 1.0/p.mass; val invB = 1.0/q.mass
@@ -557,7 +588,7 @@ internal class AstronomicalUniverse {
                     }
                 }
             }
-            collisions()
+            collisions(h)
             cm += lastContactMs
         }
         lastGravityMs = gm; lastContactMs = cm

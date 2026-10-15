@@ -79,7 +79,7 @@ internal class CosmicWorld(
     // The old cosmetic/bonded matter field remains for older API compatibility.
     // Only sand is integrated and rendered by the active cosmic simulation.
     val matter = MatterField(Random(seed + 109))
-    val sand = GranularUniverse()
+    val sand = AstronomicalUniverse()
     // A single immutable snapshot avoids torn old/current reads on the UI.
     // The UI can draw at the native refresh rate while physics runs at a
     // bounded 30/60 Hz on a separate worker.
@@ -160,7 +160,7 @@ internal class CosmicWorld(
     private var brushGestureDistance = 0f
     private var brushInitialBodyCount = 0
     private val replayBuffer = ArrayDeque<List<CelestialBody>>(32)
-    private val particleReplay = ArrayDeque<GranularUniverse.Snapshot>(32)
+    private val particleReplay = ArrayDeque<AstronomicalUniverse.Snapshot>(32)
     private var replayTimer = 0f
     private var physicsFrameNumber = 0L
     private var cascadeBudget = 0

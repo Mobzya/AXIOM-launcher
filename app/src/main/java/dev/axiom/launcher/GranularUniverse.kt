@@ -610,6 +610,7 @@ internal class GranularUniverse {
         // Rotate the scan origin each frame so persistent overcrowding does
         // not systematically privilege the newest grains.
         val maxVisits = if (grains.size >= 2400) 88 else 256
+        val maxContacts = if (grains.size >= 2400) 11 else 18
         forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
             val cx = cellX[i]
@@ -644,8 +645,7 @@ internal class GranularUniverse {
                             // Prevent unbounded work in a pathological fully
                             // collapsed cell. Each accepted pair is symmetric;
                             // skipping excess contacts cannot create momentum.
-                            if (++contacts >=
-                                if (grains.size >= 2400) 11 else 18)
+                            if (++contacts >= maxContacts)
                                 continue@forNearbyParticle
                         }
                     }

@@ -171,7 +171,13 @@ class GranularUniverseTest {
         assertTrue(world.sand.totals().mass > originalMass)
         val newborn = world.bodies.last()
         val samples = world.sand.grains.filter { it.owner == newborn.id }
-        assertTrue(samples.all { it.vx == newborn.vx && it.vy == newborn.vy })
+        // The new engine seeds genuine low-angular-momentum material spin
+        // rather than copying one rigid-body velocity to every grain.
+        val total = samples.sumOf { it.mass.toDouble() }
+        val meanVx = samples.sumOf { it.mass * it.vx.toDouble() } / total
+        val meanVy = samples.sumOf { it.mass * it.vy.toDouble() } / total
+        assertEquals(newborn.vx.toDouble(), meanVx, .0003)
+        assertEquals(newborn.vy.toDouble(), meanVy, .0003)
         val radials = samples.map {
             hypot(it.x - newborn.x, it.y - newborn.y)
         }

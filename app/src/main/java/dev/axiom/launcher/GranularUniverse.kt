@@ -327,7 +327,16 @@ internal class GranularUniverse {
 
     /** Strength of short-range cohesion. This is material physics, not
      * a bond to the owning planet. Gas/plasma remain much less sticky. */
-    private fun stickiness(m: MatterMaterial): Double = when (m) {
+    // Precompute once. This is accessed inside the hottest contact loop.
+    private val stickinessLookup by lazy {
+        DoubleArray(MatterMaterial.entries.size) { index ->
+            stickinessOf(MatterMaterial.entries[index])
+        }
+    }
+    private fun stickiness(m: MatterMaterial): Double =
+        stickinessLookup[m.ordinal]
+
+    private fun stickinessOf(m: MatterMaterial): Double = when (m) {
         MatterMaterial.IRON -> 1.25
         MatterMaterial.ROCK, MatterMaterial.SILICATE,
         MatterMaterial.MINERAL, MatterMaterial.OXIDE -> 1.0
@@ -372,10 +381,19 @@ internal class GranularUniverse {
         // An endothermic reaction can only proceed with available heat.
         if (delta < 0 && -delta > a.heat + b.heat) return false
         val totalMass = a.mass.toDouble() + b.mass
-        val aChange = delta * a.mass / totalMass
-        val bChange = delta * b.mass / totalMass
-        a.heat += aChange
-        b.heat += bChange
+        if (delta >= 0) {
+            a.heat += delta * a.mass / totalMass
+            b.heat += delta * b.mass / totalMass
+        } else {
+            // Draw endothermic energy from each packet in proportion to
+            // its actual heat, never from a packet with insufficient heat.
+            val available = a.heat + b.heat
+            val shareA = if (available > 0) a.heat / available else .5
+            a.heat += delta * shareA
+            b.heat += delta * (1.0 - shareA)
+            a.heat = max(0.0, a.heat)
+            b.heat = max(0.0, b.heat)
+        }
         a.material = products.first
         b.material = products.second
         return true
@@ -788,7 +806,8 @@ internal class GranularUniverse {
         var previous = -1
         for (i in grains.indices) {
             val a = grains[i]
-            if (!a.material.gas ||
+            if ((event.kind == CosmicEventKind.STELLAR_NURSERY &&
+                !a.material.gas) ||
                 hypot(a.x-event.x, a.y-event.y) > .45f) continue
             if (previous < 0) { previous = i; continue }
             val b = grains[previous]
@@ -798,7 +817,8 @@ internal class GranularUniverse {
             val my = (b.vy-a.vy).toDouble()
             val totalMass = a.mass.toDouble() + b.mass
             val mu = a.mass.toDouble()*b.mass/totalMass
-            val fraction = .28
+            val fraction = if (event.kind ==
+                CosmicEventKind.ACCRETION_BURST) .12 else .28
             val lost = .5*mu*(mx*mx+my*my) *
                 (2*fraction - fraction*fraction)
             // Both grains move toward their shared centre-of-mass velocity.

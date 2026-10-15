@@ -348,15 +348,19 @@ internal class GranularUniverse {
         val ta = a.heat / (a.mass * specificHeat)
         val tb = b.heat / (b.mass * specificHeat)
         val temp = (ta + tb) * .5
-        val pair = setOf(a.material, b.material)
+        val ma = a.material; val mb = b.material
         val products: Pair<MatterMaterial, MatterMaterial> = when {
-            pair == setOf(MatterMaterial.IRON, MatterMaterial.OXYGEN) &&
+            ((ma == MatterMaterial.IRON && mb == MatterMaterial.OXYGEN) ||
+                (ma == MatterMaterial.OXYGEN && mb == MatterMaterial.IRON)) &&
                 temp >= 470.0 -> MatterMaterial.OXIDE to MatterMaterial.OXIDE
-            pair == setOf(MatterMaterial.HYDROGEN, MatterMaterial.OXYGEN) &&
+            ((ma == MatterMaterial.HYDROGEN && mb == MatterMaterial.OXYGEN) ||
+                (ma == MatterMaterial.OXYGEN && mb == MatterMaterial.HYDROGEN)) &&
                 temp >= 700.0 -> MatterMaterial.STEAM to MatterMaterial.STEAM
-            pair == setOf(MatterMaterial.METHANE, MatterMaterial.OXYGEN) &&
+            ((ma == MatterMaterial.METHANE && mb == MatterMaterial.OXYGEN) ||
+                (ma == MatterMaterial.OXYGEN && mb == MatterMaterial.METHANE)) &&
                 temp >= 850.0 -> MatterMaterial.CARBON to MatterMaterial.STEAM
-            pair == setOf(MatterMaterial.SILICATE, MatterMaterial.IRON) &&
+            ((ma == MatterMaterial.SILICATE && mb == MatterMaterial.IRON) ||
+                (ma == MatterMaterial.IRON && mb == MatterMaterial.SILICATE)) &&
                 temp >= 950.0 -> MatterMaterial.MINERAL to MatterMaterial.IRON
             else -> return false
         }
@@ -397,6 +401,9 @@ internal class GranularUniverse {
                 MatterMaterial.GLASS else null
             MatterMaterial.GLASS -> if (temperature < 1400.0)
                 MatterMaterial.SILICATE else null
+            MatterMaterial.ROCK -> if (currentEvent.kind ==
+                CosmicEventKind.CRYSTALLIZATION && temperature < 350.0)
+                MatterMaterial.MINERAL else null
             else -> null
         } ?: return
         val delta = (chemicalPotential(next) -
@@ -809,23 +816,29 @@ internal class GranularUniverse {
         if (episode.kind == CosmicEventKind.QUIET ||
             episode.serial == pulseSerial) return
         pulseSerial = episode.serial
-        if (episode.kind == CosmicEventKind.STELLAR_NURSERY) {
+        if (episode.kind == CosmicEventKind.STELLAR_NURSERY ||
+            episode.kind == CosmicEventKind.ACCRETION_BURST) {
             settleNurseryGas(episode)
             return
         }
         if (episode.kind !in listOf(CosmicEventKind.NEBULA,
-            CosmicEventKind.METEORS,
+            CosmicEventKind.METEORS, CosmicEventKind.COMET_SWARM,
+            CosmicEventKind.PLASMA_STORM,
             CosmicEventKind.NOVA,
             CosmicEventKind.SOLAR_FLARE, CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.GALAXY_COLLISION, CosmicEventKind.REACTION,
             CosmicEventKind.POLAR_JET, CosmicEventKind.RING_WAVE)) return
         val candidates = grains.indices.filter { i ->
             val p = grains[i]
-            (episode.kind == CosmicEventKind.METEORS &&
+            ((episode.kind == CosmicEventKind.METEORS ||
+                episode.kind == CosmicEventKind.COMET_SWARM) &&
                 p.y < .48f ||
                 hypot(p.x - episode.x, p.y - episode.y) < .40f) &&
                 (episode.kind != CosmicEventKind.NEBULA ||
-                    p.material.gas) && p.heat > 0
+                    p.material.gas) &&
+                (episode.kind != CosmicEventKind.PLASMA_STORM ||
+                    p.material == MatterMaterial.PLASMA ||
+                    p.material == MatterMaterial.HYDROGEN) && p.heat > 0
         }
         for (k in 0 until candidates.size - 1 step 2) {
             val a = grains[candidates[k]]
@@ -834,7 +847,8 @@ internal class GranularUniverse {
             val ry = (b.y - a.y).toDouble()
             val d = sqrt(rx*rx+ry*ry).coerceAtLeast(1e-8)
             var nx = rx/d; var ny = ry/d
-            if (episode.kind == CosmicEventKind.METEORS) {
+            if (episode.kind == CosmicEventKind.METEORS ||
+                episode.kind == CosmicEventKind.COMET_SWARM) {
                 // Opposite impulses on existing dust: incoming meteors plus
                 // physical recoil elsewhere. The pair keeps total momentum.
                 nx = .24; ny = .970772

@@ -112,6 +112,80 @@ class GranularUniverseTest {
             durationMs < 60_000)
     }
 
+    @Test fun cohesionAttractsIndependentNearbyRockGrainsWithoutMomentumSource() {
+        val engine = GranularUniverse()
+        engine.grains.add(grain(1, .491f, .5f))
+        engine.grains.add(grain(2, .496f, .5f))
+        val before = engine.totals()
+        engine.step(1f/60f, 0f)
+        assertTrue(engine.grains[0].vx > 0f)
+        assertTrue(engine.grains[1].vx < 0f)
+        assertEquals(before.mass, engine.totals().mass, 1e-8)
+        assertEquals(before.momentumX, engine.totals().momentumX, 2e-7)
+        assertEquals(2, engine.grains.size)
+    }
+
+    @Test fun hotPairChemistryBalancesChemicalPotentialAndHeat() {
+        val engine = GranularUniverse()
+        val h = SandGrain(1, .49f, .5f, 0f, 0f, .02f,
+            .02 * .000001 * 800, MatterMaterial.HYDROGEN)
+        val oxygen = SandGrain(2, .493f, .5f, 0f, 0f, .015f,
+            .015 * .000001 * 800, MatterMaterial.OXYGEN)
+        engine.grains.add(h); engine.grains.add(oxygen)
+        val before = engine.totals()
+        assertTrue(engine.reactPair(h, oxygen))
+        val after = engine.totals()
+        assertEquals(before.mass, after.mass, 1e-8)
+        assertEquals(before.momentumX, after.momentumX, 1e-8)
+        assertEquals(before.internal + before.chemical,
+            after.internal + after.chemical, 1e-10)
+        assertTrue(h.heat >= 0.0 && oxygen.heat >= 0.0)
+        assertEquals(MatterMaterial.STEAM, h.material)
+        assertEquals(MatterMaterial.STEAM, oxygen.material)
+    }
+
+    @Test fun coldPairDoesNotReactAndStarContainsMostlyGas() {
+        val engine = GranularUniverse()
+        val h = SandGrain(1, .49f, .5f, 0f, 0f, .01f,
+            .01 * .000001 * 180, MatterMaterial.HYDROGEN)
+        val oxygen = SandGrain(2, .493f, .5f, 0f, 0f, .01f,
+            .01 * .000001 * 180, MatterMaterial.OXYGEN)
+        assertTrue(!engine.reactPair(h, oxygen))
+        val star = CelestialBody(21, 3, 1.8f, 1f, .5f, .5f, 0f, 0f,
+            stellarClass = StellarClass.STAR, material = MatterMaterial.HYDROGEN)
+        engine.seed(star, 100)
+        assertTrue(engine.grains.count { it.material.gas } >= 90)
+        assertEquals(star.mass.toDouble(), engine.totals().mass, 1e-5)
+    }
+
+    @Test fun incomingPlanetIsCircularButItsGrainsAreNotPinned() {
+        val world = CosmicWorld(911)
+        val count = world.sand.grains.size
+        val originalMass = world.sand.totals().mass
+        world.spawnFromCorner(physicalCluster = true)
+        assertEquals(count + world.sand.grains.takeLast(105).count {
+            it.owner == world.bodies.last().id
+        }, world.sand.grains.size)
+        assertTrue(world.sand.grains.size >= count + 72)
+        assertTrue(world.sand.grains.size <= count + 105)
+        assertTrue(world.sand.totals().mass > originalMass)
+        val newborn = world.bodies.last()
+        val samples = world.sand.grains.filter { it.owner == newborn.id }
+        assertTrue(samples.all { it.vx == newborn.vx && it.vy == newborn.vy })
+        val radials = samples.map {
+            hypot(it.x - newborn.x, it.y - newborn.y)
+        }
+        val radius = radials.maxOrNull() ?: 0f
+        assertTrue(radius > 0f)
+        assertTrue(radials.minOrNull()!! < radius * .45f)
+        val before = samples.map { it.x to it.y }
+        repeat(10) { world.step(1f/60f) }
+        assertTrue(samples.indices.any { i ->
+            hypot(samples[i].x-before[i].first,
+                samples[i].y-before[i].second) > .00001f
+        })
+    }
+
     @Test fun worldWithActiveEventHasConstantMassAndCount() {
         val world = CosmicWorld(321)
         val before = world.sand.totals()

@@ -146,8 +146,14 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
     val world = remember {
-        CosmicWorld(initialMatterMode = matterModeFromPreference(
-            prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+        CosmicWorld(
+            initialMatterMode = matterModeFromPreference(
+                prefs.getString("matter_mode", MatterMode.BALANCED.name)),
+            initialPreset = CosmicPreset.entries.firstOrNull {
+                it.name == prefs.getString("cosmic_preset",
+                    CosmicPreset.DEEP_SPACE.name)
+            } ?: CosmicPreset.DEEP_SPACE
+        )
     }
     val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
@@ -225,6 +231,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             world.updateWalls(prefs.getBoolean("wall_mode",false))
             world.updateMatterMode(matterModeFromPreference(
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+            world.loadPreset(CosmicPreset.entries.firstOrNull {
+                it.name == prefs.getString("cosmic_preset",
+                    CosmicPreset.DEEP_SPACE.name)
+            } ?: CosmicPreset.DEEP_SPACE)
             refresh++
             Toast.makeText(context, "Настройки AXIOM восстановлены", Toast.LENGTH_SHORT).show()
         }.onFailure {
@@ -549,6 +559,12 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 },
                 maximumBodies = world.maxBodies,
                 matterMode = world.matterMode,
+                cosmicPreset = world.preset,
+                onCosmicPreset = { next ->
+                    world.loadPreset(next)
+                    prefs.edit().putString("cosmic_preset", next.name).apply()
+                    mode = AxiomMode.HOME
+                },
                 onMatterMode = { next ->
                     world.updateMatterMode(next)
                     prefs.edit().putString("matter_mode", next.name).apply()

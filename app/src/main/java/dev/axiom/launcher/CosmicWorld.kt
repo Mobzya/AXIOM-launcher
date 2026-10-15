@@ -101,9 +101,12 @@ internal class CosmicWorld(
         private set
     @Synchronized
     fun updateMatterMode(value: MatterMode) {
+        if (matterMode == value) return
         matterMode = value
-        // Old invisible rigid samples need no allocation on mode changes.
         sand.updateMode(value)
+        // In the curated orbital scenes detail mode actually changes the
+        // number of physically independent grains, not just an upper bound.
+        if (preset != CosmicPreset.DEEP_SPACE) reset()
     }
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++

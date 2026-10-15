@@ -57,6 +57,11 @@ internal class GranularUniverse {
     private val gravityConstant = 0.000028
     private val softeningSquared = .0032 * .0032
     private val contactStiffness = 3.2
+    // A compact, finite-range mutual attraction between neighbouring grains.
+    // A force between grains is ALWAYS added equal-and-opposite, including at
+    // very high density; no owner-centre attraction or pinned shell is used.
+    private val cohesionRange = .0094
+    private val cohesionSpring = .83
     // No per-contact trig. When exact coordinates coincide, pick one of a
     // fixed set of equal-and-opposite normal directions by particle IDs.
     private val overlapNormalX = DoubleArray(32) {
@@ -88,7 +93,8 @@ internal class GranularUniverse {
     private var cellY = IntArray(0)
     // Hashing UNBOUNDED signed cell coordinates avoids piling offscreen
     // particles into a single clamped edge bucket (formerly an O(N²) freeze).
-    private val gridCellSize = .0064
+    // All cohesive neighbours fit within the surrounding 3x3 grid cells.
+    private val gridCellSize = .0096
     private val gridHashMask = 16383
     private val heads = IntArray(gridHashMask + 1)
     private var contactChecks = 0L
@@ -106,7 +112,7 @@ internal class GranularUniverse {
     private var nodeMy = DoubleArray(0)
     private var nodeComX = DoubleArray(0)
     private var nodeComY = DoubleArray(0)
-    private val traversalStack = IntArray(128)
+    private val traversalStack = IntArray(512)
     private var nodeIndex = IntArray(0)
     private var child = IntArray(0)
     private var root = 0
@@ -189,7 +195,8 @@ internal class GranularUniverse {
         if (grains.size >= mode.maxParticles) return
         val n = min(requested, mode.maxParticles - grains.size)
         if (n <= 0) return
-        val radius = structureRadius(body) * 1.35
+        // Compact circular particle clouds, but WITHOUT any pinned shell.
+        val radius = structureRadius(body) * 1.03
         val goldenAngle = PI * (3.0 - sqrt(5.0))
         for (i in 0 until n) {
             // Deterministic disc packing. No egg shape or pinned lattice:
@@ -198,18 +205,57 @@ internal class GranularUniverse {
             val r = radius * sqrt((i + .5) / n.toDouble())
             val rx = r * cos(angle)
             val ry = r * sin(angle)
+            // The percentages are deterministic per individual body and
+            // class, rather than giving all planets the same chemistry.
+            val sample = ((i * 37 + body.id * 17) % 100 + 100) % 100
             val type = when (body.stellarClass) {
-                StellarClass.STAR, StellarClass.QUASAR ->
-                    if (i % 5 == 0) MatterMaterial.HELIUM
-                    else if (i % 7 == 0) MatterMaterial.PLASMA
-                    else MatterMaterial.HYDROGEN
-                StellarClass.CLOUD -> if (i % 4 == 0) MatterMaterial.ICE
-                    else body.material
-                StellarClass.PLANET -> when (i % 13) {
-                    0 -> MatterMaterial.IRON
-                    1 -> MatterMaterial.SILICATE
-                    2 -> MatterMaterial.CARBON
-                    else -> body.material
+                StellarClass.STAR -> when {
+                    sample < 72 -> MatterMaterial.HYDROGEN
+                    sample < 91 -> MatterMaterial.HELIUM
+                    sample < 98 -> MatterMaterial.PLASMA
+                    else -> MatterMaterial.OXYGEN
+                }
+                StellarClass.QUASAR -> when {
+                    sample < 49 -> MatterMaterial.PLASMA
+                    sample < 77 -> MatterMaterial.HYDROGEN
+                    sample < 94 -> MatterMaterial.HELIUM
+                    else -> MatterMaterial.IRON
+                }
+                StellarClass.CLOUD -> when {
+                    sample < 42 -> MatterMaterial.HYDROGEN
+                    sample < 60 -> MatterMaterial.HELIUM
+                    sample < 80 -> MatterMaterial.METHANE
+                    sample < 92 -> MatterMaterial.ICE
+                    else -> MatterMaterial.OXYGEN
+                }
+                StellarClass.PLANET -> when (body.material) {
+                    MatterMaterial.ICE, MatterMaterial.WATER -> when {
+                        sample < 44 -> MatterMaterial.ICE
+                        sample < 63 -> MatterMaterial.WATER
+                        sample < 77 -> MatterMaterial.SILICATE
+                        sample < 91 -> MatterMaterial.ROCK
+                        else -> MatterMaterial.IRON
+                    }
+                    MatterMaterial.IRON -> when {
+                        sample < 56 -> MatterMaterial.IRON
+                        sample < 79 -> MatterMaterial.SILICATE
+                        sample < 91 -> MatterMaterial.ROCK
+                        else -> MatterMaterial.CARBON
+                    }
+                    MatterMaterial.CARBON -> when {
+                        sample < 52 -> MatterMaterial.CARBON
+                        sample < 76 -> MatterMaterial.ROCK
+                        sample < 93 -> MatterMaterial.SILICATE
+                        else -> MatterMaterial.IRON
+                    }
+                    else -> when {
+                        sample < 36 -> body.material
+                        sample < 64 -> MatterMaterial.SILICATE
+                        sample < 80 -> MatterMaterial.ROCK
+                        sample < 91 -> MatterMaterial.IRON
+                        sample < 97 -> MatterMaterial.CARBON
+                        else -> MatterMaterial.ICE
+                    }
                 }
             }
             grains.add(SandGrain(
@@ -247,8 +293,19 @@ internal class GranularUniverse {
             val dy = (b.y - a.y).toDouble()
             val dist = sqrt(dx*dx + dy*dy + softeningSquared)
             energy -= g * a.mass.toDouble() * b.mass / dist
-            val overlap = grainRadius(a) + grainRadius(b) - hypot(dx, dy)
-            if (overlap > 0) energy += .5 * contactStiffness * overlap * overlap
+            val distance = hypot(dx, dy)
+            val overlap = grainRadius(a) + grainRadius(b) - distance
+            if (overlap > 0) energy += .5 * contactStiffness *
+                (if (a.material.gas && b.material.gas) .64 else 1.0) *
+                overlap * overlap
+            if (distance < cohesionRange) {
+                val z = distance / cohesionRange
+                val mu = a.mass * b.mass / (a.mass + b.mass)
+                val strength = cohesionSpring * mu *
+                    min(stickiness(a.material), stickiness(b.material))
+                energy -= strength * cohesionRange *
+                    (1.0 / 6 - z*z / 2 + z*z*z / 3)
+            }
         }
         return energy
     }
@@ -256,11 +313,68 @@ internal class GranularUniverse {
     // Specific phase enthalpies, measured in the same toy energy units as
     // kinetic energy. Heat + phase enthalpy remains invariant on transitions.
     private fun chemicalPotential(m: MatterMaterial): Double = when (m) {
+        MatterMaterial.HYDROGEN -> .000080
+        MatterMaterial.OXYGEN -> .000160
+        MatterMaterial.METHANE -> .000250
+        MatterMaterial.IRON -> .000310
         MatterMaterial.WATER -> .000030
         MatterMaterial.STEAM -> .000150
         MatterMaterial.PLASMA -> .000220
+        MatterMaterial.OXIDE -> .000070
         MatterMaterial.GLASS -> .000090
         else -> 0.0
+    }
+
+    /** Strength of short-range cohesion. This is material physics, not
+     * a bond to the owning planet. Gas/plasma remain much less sticky. */
+    private fun stickiness(m: MatterMaterial): Double = when (m) {
+        MatterMaterial.IRON -> 1.25
+        MatterMaterial.ROCK, MatterMaterial.SILICATE,
+        MatterMaterial.MINERAL, MatterMaterial.OXIDE -> 1.0
+        MatterMaterial.CARBON, MatterMaterial.GLASS -> .78
+        MatterMaterial.ICE -> .65
+        MatterMaterial.WATER -> .17
+        MatterMaterial.SULFUR -> .72
+        MatterMaterial.HYDROGEN, MatterMaterial.HELIUM,
+        MatterMaterial.STEAM, MatterMaterial.OXYGEN,
+        MatterMaterial.METHANE -> .045
+        MatterMaterial.PLASMA -> .012
+    }
+
+    /** Toy reactions transform existing mass packets only.
+     * The material names are effective mixtures, not stoichiometric atoms.
+     * Potential energy + heat are conserved to roundoff. */
+    internal fun reactPair(a: SandGrain, b: SandGrain): Boolean {
+        val ta = a.heat / (a.mass * specificHeat)
+        val tb = b.heat / (b.mass * specificHeat)
+        val temp = (ta + tb) * .5
+        val pair = setOf(a.material, b.material)
+        val products: Pair<MatterMaterial, MatterMaterial> = when {
+            pair == setOf(MatterMaterial.IRON, MatterMaterial.OXYGEN) &&
+                temp >= 470.0 -> MatterMaterial.OXIDE to MatterMaterial.OXIDE
+            pair == setOf(MatterMaterial.HYDROGEN, MatterMaterial.OXYGEN) &&
+                temp >= 700.0 -> MatterMaterial.STEAM to MatterMaterial.STEAM
+            pair == setOf(MatterMaterial.METHANE, MatterMaterial.OXYGEN) &&
+                temp >= 850.0 -> MatterMaterial.CARBON to MatterMaterial.STEAM
+            pair == setOf(MatterMaterial.SILICATE, MatterMaterial.IRON) &&
+                temp >= 950.0 -> MatterMaterial.MINERAL to MatterMaterial.IRON
+            else -> return false
+        }
+        val initial = a.mass * chemicalPotential(a.material) +
+            b.mass * chemicalPotential(b.material)
+        val final = a.mass * chemicalPotential(products.first) +
+            b.mass * chemicalPotential(products.second)
+        val delta = initial - final
+        // An endothermic reaction can only proceed with available heat.
+        if (delta < 0 && -delta > a.heat + b.heat) return false
+        val totalMass = a.mass.toDouble() + b.mass
+        val aChange = delta * a.mass / totalMass
+        val bChange = delta * b.mass / totalMass
+        a.heat += aChange
+        b.heat += bChange
+        a.material = products.first
+        b.material = products.second
+        return true
     }
 
     private fun phaseChange(p: SandGrain) {
@@ -485,12 +599,13 @@ internal class GranularUniverse {
                         if (cellX[other] != x || cellY[other] != y) continue
                         val b = grains[other]
                         val dx = (b.x - a.x).toDouble()
-                        if (abs(dx) > .0056) continue
+                        if (abs(dx) > cohesionRange) continue
                         val dy = (b.y - a.y).toDouble()
-                        if (abs(dy) > .0056) continue
+                        if (abs(dy) > cohesionRange) continue
                         contactChecks++
                         if (++checked > maxChecks) continue@forNearbyParticle
-                        val limit = grainRadius(a) + grainRadius(b)
+                        val limit = max(cohesionRange,
+                            grainRadius(a) + grainRadius(b))
                         val distance2 = dx * dx + dy * dy
                         if (distance2 < limit * limit) {
                             action(i, other, dx, dy, sqrt(distance2))
@@ -594,11 +709,29 @@ internal class GranularUniverse {
                 ny = overlapNormalY[slot]
             }
             val overlap = grainRadius(a) + grainRadius(b) - d
-            val force = contactStiffness * overlap
-            ax[i] -= force * nx / a.mass
-            ay[i] -= force * ny / a.mass
-            ax[j] += force * nx / b.mass
-            ay[j] += force * ny / b.mass
+            if (overlap > 0.0) {
+                // Material-dependent granular pressure, with softer gases.
+                val stiffness = if (a.material.gas && b.material.gas)
+                    contactStiffness * .64 else contactStiffness
+                val pressure = stiffness * overlap
+                ax[i] -= pressure * nx / a.mass
+                ay[i] -= pressure * ny / a.mass
+                ax[j] += pressure * nx / b.mass
+                ay[j] += pressure * ny / b.mass
+            }
+            if (d > 1e-9 && d < cohesionRange) {
+                val z = d / cohesionRange
+                val reducedMass = a.mass * b.mass / (a.mass + b.mass)
+                val adhesion = cohesionSpring * reducedMass *
+                    min(stickiness(a.material), stickiness(b.material)) *
+                    z * (1.0 - z)
+                // Reciprocal attractive forces conserve linear momentum.
+                ax[i] += adhesion * nx / a.mass
+                ay[i] += adhesion * ny / a.mass
+                ax[j] -= adhesion * nx / b.mass
+                ay[j] -= adhesion * ny / b.mass
+            }
+            if (overlap <= 0) return@forNearby
 
             // Resolve the impulse on THIS SAME broad-phase visit. This
             // removes an extra grid traversal and catches fast grains before
@@ -629,6 +762,11 @@ internal class GranularUniverse {
             val transfer = amount.coerceIn(-b.heat*.25, a.heat*.25)
             a.heat -= transfer
             b.heat += transfer
+            // Sparse activation avoids all-contact combustion; no new grain
+            // is created, and every transformation balances heat/potential.
+            if (((a.id * 31 + b.id * 17 + tick) and 63) == 0) {
+                reactPair(a, b)
+            }
         }
         contactTimeNs += System.nanoTime() - contactStart
     }

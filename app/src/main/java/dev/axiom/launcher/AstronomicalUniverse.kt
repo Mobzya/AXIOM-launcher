@@ -224,9 +224,9 @@ internal class AstronomicalUniverse {
         for (p in grains) {
             val dx = p.x - x; val dy = p.y - y
             val r2 = dx*dx + dy*dy
-            if (r2 < 1e-10f || r2 > .10f*.10f) continue
+            if (r2 < 1e-10f || r2 > .38f*.38f) continue
             val d = sqrt(r2)
-            val kick = strength * .18f * (1f - d/.10f)
+            val kick = strength * .18f * (1f - d/.38f)
             p.vx += dx / d * kick
             p.vy += dy / d * kick
         }

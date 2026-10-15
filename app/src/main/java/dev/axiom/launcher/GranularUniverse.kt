@@ -458,19 +458,26 @@ internal class GranularUniverse {
         // packing without scanning thousands of overlapping candidates.
         // All accepted forces remain symmetric; only oversaturated
         // contacts are approximated, never converted into rigid bodies.
-        val maxChecks = if (grains.size >= 2400) 24 else 64
+        val maxChecks = if (grains.size >= 2400) 32 else 64
+        // Bound *raw* bucket visits too: a dense cell may have thousands of
+        // non-contacting candidates, which bypassed the old accepted-pair cap.
+        // Rotate the scan origin each frame so persistent overcrowding does
+        // not systematically privilege the newest grains.
+        val maxVisits = if (grains.size >= 2400) 144 else 256
         forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
             val cx = cellX[i]
             val cy = cellY[i]
             var contacts = 0
             var checked = 0
+            var visits = 0
             for (y in cy - 1..cy + 1) {
                 for (x in cx - 1..cx + 1) {
                     var j = heads[bucket(x, y)]
                     while (j >= 0) {
                         val other = j
                         j = gridNext[other]
+                        if (++visits > maxVisits) continue@forNearbyParticle
                         // Every linked bucket is ordered by DESCENDING
                         // insertion index. Once <= i, no later pair is valid.
                         // This prevents the collapsed-cloud O(N²) tail scan.

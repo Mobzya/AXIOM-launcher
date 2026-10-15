@@ -233,6 +233,8 @@ internal fun AxiomSettings(
     onMaximumBodies: (Int) -> Unit,
     matterMode: MatterMode,
     onMatterMode: (MatterMode) -> Unit,
+    cosmicPreset: CosmicPreset,
+    onCosmicPreset: (CosmicPreset) -> Unit,
     particleCount: Int,
     boundParticleCount: Int,
     totalMatterMass: Double,
@@ -366,6 +368,43 @@ internal fun AxiomSettings(
             color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
         }
         Spacer(Modifier.height(27.dp))
+        Text("СЦЕНЫ ВСЕЛЕННОЙ", color = AX_DARK, fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
+        Spacer(Modifier.height(10.dp))
+        Text("Пять физических стартовых систем. Каждая планета и кольцо состоят " +
+            "из свободных песчинок; орбиты задаются лишь начальными " +
+            "скоростями. Выбор перезапускает космос, не затрагивая приложения.",
+            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(9.dp))
+        CosmicPreset.entries.forEach { choice ->
+            val selected = cosmicPreset == choice
+            val shape = RoundedCornerShape(14.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 7.dp)
+                    .clip(shape)
+                    .background(if (selected) AX_TILE else AX_SURFACE)
+                    .border(if (selected) 1.5.dp else 1.dp,
+                        if (selected) AX_WHITE else AX_BORDER, shape)
+                    .clickable { onCosmicPreset(choice) }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(choice.title, color = AX_WHITE, fontSize = 14.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold
+                            else FontWeight.Normal)
+                    Text(choice.details, color = AX_GRAY, fontSize = 11.sp,
+                        lineHeight = 16.sp)
+                }
+                Text(if (selected) "◉" else "○",
+                    color = AX_WHITE, fontSize = 20.sp)
+            }
+        }
+        Text("В системах с орбитами время по умолчанию замедлено до 0,5×. " +
+            "Кольца видны сверху — это настоящая 2D-симуляция, " +
+            "а не трёхмерная модель.",
+            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
+        Spacer(Modifier.height(25.dp))
         Text("ФИЗИКА ВЕЩЕСТВА", color = AX_DARK, fontSize = 10.sp,
             fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
         Spacer(Modifier.height(9.dp))

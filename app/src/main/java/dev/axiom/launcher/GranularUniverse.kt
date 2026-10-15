@@ -54,8 +54,10 @@ internal class GranularUniverse {
     var mode: MatterMode = MatterMode.BALANCED
         private set
 
-    private val gravityConstant = 0.000028
-    private val softeningSquared = .0032 * .0032
+    // Stronger true particle gravity but a softer short-distance core:
+    // enough capture for compact bodies without a singular central kick.
+    private val gravityConstant = 0.000052
+    private val softeningSquared = .0052 * .0052
     private val contactStiffness = 3.2
     // A compact, finite-range mutual attraction between neighbouring grains.
     // A force between grains is ALWAYS added equal-and-opposite, including at
@@ -241,6 +243,13 @@ internal class GranularUniverse {
                     else -> MatterMaterial.OXYGEN
                 }
                 StellarClass.PLANET -> when (body.material) {
+                    MatterMaterial.HYDROGEN, MatterMaterial.METHANE,
+                    MatterMaterial.HELIUM -> when {
+                        sample < 62 -> body.material
+                        sample < 83 -> MatterMaterial.HYDROGEN
+                        sample < 94 -> MatterMaterial.HELIUM
+                        else -> MatterMaterial.ICE
+                    }
                     MatterMaterial.SULFUR -> when {
                         sample < 29 -> MatterMaterial.SULFUR
                         sample < 53 -> MatterMaterial.GLASS

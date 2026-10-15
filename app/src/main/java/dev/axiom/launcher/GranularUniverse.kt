@@ -604,12 +604,12 @@ internal class GranularUniverse {
         // packing without scanning thousands of overlapping candidates.
         // All accepted forces remain symmetric; only oversaturated
         // contacts are approximated, never converted into rigid bodies.
-        val maxChecks = if (grains.size >= 2400) 32 else 64
+        val maxChecks = if (grains.size >= 2400) 20 else 64
         // Bound *raw* bucket visits too: a dense cell may have thousands of
         // non-contacting candidates, which bypassed the old accepted-pair cap.
         // Rotate the scan origin each frame so persistent overcrowding does
         // not systematically privilege the newest grains.
-        val maxVisits = if (grains.size >= 2400) 144 else 256
+        val maxVisits = if (grains.size >= 2400) 88 else 256
         forNearbyParticle@ for (i in grains.indices) {
             val a = grains[i]
             val cx = cellX[i]
@@ -644,7 +644,9 @@ internal class GranularUniverse {
                             // Prevent unbounded work in a pathological fully
                             // collapsed cell. Each accepted pair is symmetric;
                             // skipping excess contacts cannot create momentum.
-                            if (++contacts >= 18) continue@forNearbyParticle
+                            if (++contacts >=
+                                if (grains.size >= 2400) 11 else 18)
+                                continue@forNearbyParticle
                         }
                     }
                 }

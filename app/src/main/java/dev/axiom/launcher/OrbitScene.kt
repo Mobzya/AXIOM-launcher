@@ -29,7 +29,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlin.coroutines.coroutineContext
 import kotlin.math.PI
@@ -96,6 +97,7 @@ internal fun CosmicEnvironment(
     val buffers = remember { Array(materials.size) { FloatArray(9600) } }
     val counts = remember { IntArray(materials.size) }
     val lightPalette = AxiomColors.palette.light
+    var interpolatedFrameFraction by remember { mutableFloatStateOf(1f) }
     val nativePaints = remember(lightPalette) {
         materials.map { material ->
             val c = material.argb
@@ -112,26 +114,41 @@ internal fun CosmicEnvironment(
         }
     }
     LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
-        val slow = interacting || reducedPower || world.maxBodies >= 40 ||
+        val heavy = reducedPower || world.maxBodies >= 40 ||
             world.matterMode == MatterMode.DETAILED
-        val tickNanos = if (slow) 33_333_333L else 16_666_667L
-        var lastTime = withFrameNanos { it }
-        var accumulator = 0L
-        while (coroutineContext.isActive) {
-            val now = withFrameNanos { it }
-            accumulator = (accumulator + (now - lastTime).coerceIn(0L, 70_000_000L))
-                .coerceAtMost(tickNanos * 2)
-            lastTime = now
-            val advanced = accumulator >= tickNanos
-            if (advanced) {
-                accumulator -= tickNanos
-                // Heavy particle simulation NEVER blocks Compose/UI input.
-                withContext(Dispatchers.Default) {
-                    world.step(if (slow) 1f / 30f else 1f / 60f)
-                }
+        // Heavy physics is 30Hz, regular physics is 60Hz. Screen refresh is
+        // independent: phones may redraw interpolated particles at 120Hz
+        // without evaluating a 4600-particle Barnes-Hut tree 120 times.
+        val physicsPeriod = if (heavy) 33_333_333L else 16_666_667L
+        val physicsDt = if (heavy) 1f/30f else 1f/60f
+        val worker = launch(Dispatchers.Default) {
+            while (coroutineContext.isActive) {
+                val start = System.nanoTime()
+                world.step(physicsDt)
+                val spent = System.nanoTime() - start
+                val remaining = physicsPeriod - spent
+                // Never spin or queue up overdue expensive physics steps.
+                // Slow devices run at lower *simulation* throughput, while
+                // the display/input thread can still render native 120Hz.
+                delay((remaining / 1_000_000L).coerceAtLeast(1L))
             }
-            // The worker's published immutable frame alone invalidates
-            // the Canvas. Avoid an unnecessary 60Hz animation invalidation.
+        }
+        try {
+            var lastDisplay = 0L
+            val renderPeriod = if (reducedPower || interacting)
+                16_666_667L else 8_333_333L
+            while (coroutineContext.isActive) {
+                val now = withFrameNanos { it }
+                if (now - lastDisplay < renderPeriod) continue
+                lastDisplay = now
+                val frames = world.grainFrames
+                val diff = (now - frames.committedAtNanos)
+                    .coerceAtLeast(0L)
+                interpolatedFrameFraction =
+                    (diff.toFloat() / physicsPeriod).coerceIn(0f, 1f)
+            }
+        } finally {
+            worker.cancel()
         }
     }
 
@@ -144,12 +161,19 @@ internal fun CosmicEnvironment(
         }
         // All grains are actual independent masses. Batching by material
         // turns thousands of draw calls into at most 16 native drawPoints.
-        val frame = world.grainFrame
+        val snapshot = world.grainFrames
+        val frame = snapshot.current
+        val old = snapshot.previous
+        val blend = interpolatedFrameFraction
+        val canBlend = old.size == frame.size
         java.util.Arrays.fill(counts, 0)
         var i = 0
         while (i + 3 < frame.size) {
-            val x = frame[i]
-            val y = frame[i+1]
+            val x = if (canBlend)
+                old[i] + (frame[i] - old[i]) * blend else frame[i]
+            val y = if (canBlend)
+                old[i+1] + (frame[i+1] - old[i+1]) * blend
+                else frame[i+1]
             val material = frame[i+3].toInt()
             if (x >= -.035f && x <= 1.035f &&
                 y >= -.035f && y <= 1.035f &&

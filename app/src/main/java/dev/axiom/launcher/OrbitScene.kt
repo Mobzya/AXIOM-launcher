@@ -114,7 +114,7 @@ internal fun CosmicEnvironment(
         }
     }
     LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
-        val heavy = reducedPower || world.maxBodies >= 40 ||
+        val heavy = interacting || reducedPower || world.maxBodies >= 40 ||
             world.matterMode == MatterMode.DETAILED
         // Heavy physics is 30Hz, regular physics is 60Hz. Screen refresh is
         // independent: phones may redraw interpolated particles at 120Hz

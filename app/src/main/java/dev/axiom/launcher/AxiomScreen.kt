@@ -151,8 +151,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)),
             initialPreset = CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
-                    CosmicPreset.DEEP_SPACE.name)
-            } ?: CosmicPreset.DEEP_SPACE
+                    CosmicPreset.SOLAR_SYSTEM.name)
+            } ?: CosmicPreset.SOLAR_SYSTEM
         )
     }
     val lab = remember { ScienceLab() }

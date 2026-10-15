@@ -70,9 +70,12 @@ internal data class CosmicRemnant(
 
 internal class CosmicWorld(
     seed: Int = 42,
-    initialMatterMode: MatterMode = MatterMode.BALANCED
+    initialMatterMode: MatterMode = MatterMode.BALANCED,
+    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE
 ) {
     private val random = Random(seed)
+    var preset by mutableStateOf(initialPreset)
+        private set
     // The old cosmetic/bonded matter field remains for older API compatibility.
     // Only sand is integrated and rendered by the active cosmic simulation.
     val matter = MatterField(Random(seed + 109))
@@ -140,7 +143,8 @@ internal class CosmicWorld(
     private var pinnedFor = 0f
 
     // Only world simulation time changes. The app picker/keyboard remain at full speed.
-    var timeScale by mutableStateOf(1f)
+    var timeScale by mutableStateOf(
+        if (initialPreset == CosmicPreset.DEEP_SPACE) 1f else .5f)
         private set
     var brushPoint by mutableStateOf<SpaceRipple?>(null)
         private set
@@ -166,9 +170,30 @@ internal class CosmicWorld(
     private fun seedStartingMatter() {
         sand.clear()
         sand.updateMode(matterMode)
-        bodies.forEach { sand.seed(it) }
+        bodies.forEach { body ->
+            sand.seed(body, presetGrainCount(preset, body, matterMode))
+        }
+        when (preset) {
+            CosmicPreset.SATURN_RINGS -> sand.seedOrbitalDisk(
+                .50f, .49f, 8f,
+                if (matterMode == MatterMode.DETAILED) 1050 else 355,
+                .063f, .165f)
+            CosmicPreset.PROTOPLANETARY -> sand.seedOrbitalDisk(
+                .50f, .50f, 10f,
+                if (matterMode == MatterMode.DETAILED) 1800 else 475,
+                .085f, .38f, rocky = true)
+            else -> Unit
+        }
         previousBodies = bodies
         publishGrains()
+    }
+
+    /** Changing a scene resets ONLY the little toy cosmos, never launcher
+     * settings, pinned apps or system state. Every preset has its own grains. */
+    @Synchronized
+    fun loadPreset(value: CosmicPreset) {
+        preset = value
+        reset()
     }
     init { seedStartingMatter() }
     @Synchronized
@@ -186,6 +211,7 @@ internal class CosmicWorld(
         private set
 
     private fun initialBodies(): List<CelestialBody> {
+        if (preset != CosmicPreset.DEEP_SPACE) return presetBodies(preset)
         // Deliberately no permanent massive object in the center.
         return listOf(
             CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f,
@@ -413,9 +439,11 @@ internal class CosmicWorld(
         // The next event starts roughly one minute after this one begins,
         // not one minute *after* its end. Event durations stay much shorter.
         eventAt = elapsed + 52f + random.nextFloat() * 16f
-        if (kind == CosmicEventKind.METEORS) {
-            // Only this genuinely incoming meteor shower injects external
-            // matter. Collisions, supernovae and black holes remain closed.
+        if (kind == CosmicEventKind.METEORS &&
+            (preset == CosmicPreset.DEEP_SPACE ||
+                preset == CosmicPreset.PROTOPLANETARY)) {
+            // Stable orbital presets are closed scenes; meteor showers in
+            // open space inject new particles from outside, never from impacts.
             spawnMeteorShower()
         }
     }
@@ -656,7 +684,7 @@ internal class CosmicWorld(
         eventHistory = emptyList()
         inspectAge = 0f
         nextMathAt = 13f
-        timeScale = 1f
+        timeScale = if (preset == CosmicPreset.DEEP_SPACE) 1f else .5f
         brushPoint = null
         brushMass = 0f
         cascadeBudget = 0
@@ -724,8 +752,10 @@ internal class CosmicWorld(
         // New matter enters only through a visibly incoming, independent
         // spherical cluster. This is deliberately infrequent and separate
         // from collisions, which conserve the total number of grains.
-        if (elapsed >= spawnAt) {
-            spawnAt = elapsed + 66f + random.nextFloat() * 56f
+        if ((preset == CosmicPreset.DEEP_SPACE ||
+            preset == CosmicPreset.PROTOPLANETARY) &&
+            elapsed >= spawnAt) {
+            spawnAt = elapsed + 92f + random.nextFloat() * 64f
             if (bodies.size < maxBodies &&
                 sand.grains.size + 105 <= matterMode.maxParticles) {
                 spawnFromCorner(physicalCluster = true)

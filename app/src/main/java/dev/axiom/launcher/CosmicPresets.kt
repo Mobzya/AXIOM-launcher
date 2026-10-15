@@ -122,7 +122,7 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
 
 /** Actual ice/rock grain rings, with near-circular Keplerian velocities.
  * Nothing is constrained to its ring or body after spawning. */
-internal fun GranularUniverse.seedOrbitalDisk(
+internal fun AstronomicalUniverse.seedOrbitalDisk(
     cx: Float, cy: Float, centralMass: Float, count: Int,
     innerRadius: Float, outerRadius: Float, owner: Int = -1,
     rocky: Boolean = false

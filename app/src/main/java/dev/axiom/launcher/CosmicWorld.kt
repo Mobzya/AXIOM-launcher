@@ -569,6 +569,12 @@ internal class CosmicWorld(
         else -> CosmicEventKind.CRYSTALLIZATION
     }
 
+    /** One-click random cosmic event, or a user-requested power level. */
+    @Synchronized
+    fun triggerRandomEvent(intensity: CosmicEventIntensity? = null) {
+        trigger(chooseEvent(), intensity ?: chooseIntensity())
+    }
+
     private fun chooseIntensity(): CosmicEventIntensity = when (random.nextInt(100)) {
         in 0..42 -> CosmicEventIntensity.FLICKER
         in 43..82 -> CosmicEventIntensity.NORMAL

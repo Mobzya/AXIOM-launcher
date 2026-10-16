@@ -47,6 +47,7 @@ internal class AstronomicalUniverse {
     private var nextId = 1
     private var tick = 0
     private var pulseKey = -1
+    private var activeEpisode = CosmicEpisode()
     private var gravityVisits = 0L
     private var contactVisits = 0L
     var gravityRebuilds: Long = 0
@@ -404,11 +405,59 @@ internal class AstronomicalUniverse {
         if (event.kind == CosmicEventKind.QUIET ||
             event.kind == CosmicEventKind.METEORS) return
         val repeat = event.kind == CosmicEventKind.PULSAR ||
-            event.kind == CosmicEventKind.QUASAR_JET
+            event.kind == CosmicEventKind.QUASAR_JET ||
+            event.kind == CosmicEventKind.MAGNETAR_FLARE
         val k = event.serial * 128 +
             if (repeat) (event.age / .7f).toInt() else 0
         if (pulseKey == k) return
         pulseKey = k
+        val radius2 = event.intensity.radius * event.intensity.radius
+        if (event.kind == CosmicEventKind.CRYO_TIDE) {
+            // Radiative cooling into the external environment: no fictitious
+            // new ice or matter, and escaped heat is tracked explicitly.
+            val fraction = (.035 * event.intensity.heatFactor)
+                .coerceIn(.01, .34)
+            for (p in grains) {
+                val dx = p.x - event.x; val dy = p.y - event.y
+                if (dx*dx + dy*dy > radius2) continue
+                val emitted = p.heat * fraction
+                p.heat -= emitted
+                radiatedHeat += emitted
+                phaseChange(p)
+            }
+            return
+        }
+        if (event.kind == CosmicEventKind.THERMAL_SPIKE) {
+            // A shock converts RELATIVE mechanical motion into heat.
+            // Momentum of each pair is preserved; no energy is added.
+            var first: SandGrain? = null
+            var handled = 0
+            for (p in grains) {
+                val dx = p.x - event.x; val dy = p.y - event.y
+                if (dx*dx + dy*dy > radius2) continue
+                val a = first
+                if (a == null) { first = p; continue }
+                first = null
+                val invA = 1.0 / a.mass; val invB = 1.0 / p.mass
+                val mu = 1.0 / (invA + invB)
+                val relativeX = (p.vx-a.vx).toDouble()
+                val relativeY = (p.vy-a.vy).toDouble()
+                val damp = (.08 * event.intensity.heatFactor)
+                    .coerceIn(.015, .65)
+                val jx = mu*damp*relativeX
+                val jy = mu*damp*relativeY
+                a.vx = (a.vx+jx*invA).toFloat()
+                a.vy = (a.vy+jy*invA).toFloat()
+                p.vx = (p.vx-jx*invB).toFloat()
+                p.vy = (p.vy-jy*invB).toFloat()
+                val lost = .5*mu*(relativeX*relativeX+
+                    relativeY*relativeY)*(2*damp-damp*damp)
+                a.heat += lost * .5
+                p.heat += lost * .5
+                if (++handled >= 512) break
+            }
+            return
+        }
         if (event.kind !in listOf(
             CosmicEventKind.PULSAR, CosmicEventKind.QUASAR_JET,
             CosmicEventKind.NOVA, CosmicEventKind.PLASMA_STORM,
@@ -416,23 +465,30 @@ internal class AstronomicalUniverse {
             CosmicEventKind.GALAXY_COLLISION,
             CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.REACTION, CosmicEventKind.NEBULA,
-            CosmicEventKind.SINGULARITY
+            CosmicEventKind.SINGULARITY, CosmicEventKind.COSMIC_SHOCK,
+            CosmicEventKind.MAGNETAR_FLARE
         )) return
         var previous = -1
         var activated = 0
         val ang = event.age * 3.6
-        val nx = if (event.kind == CosmicEventKind.QUASAR_JET)
+        val nx = if (event.kind == CosmicEventKind.QUASAR_JET ||
+            event.kind == CosmicEventKind.MAGNETAR_FLARE)
             .18 else cos(ang.toDouble())
-        val ny = if (event.kind == CosmicEventKind.QUASAR_JET)
+        val ny = if (event.kind == CosmicEventKind.QUASAR_JET ||
+            event.kind == CosmicEventKind.MAGNETAR_FLARE)
             .9836666102 else sin(ang.toDouble())
         for (i in grains.indices) {
             val p = grains[i]
             val dx = p.x - event.x; val dy = p.y - event.y
-            if (dx*dx + dy*dy > .30f*.30f || p.heat <= 0.0) continue
+            if (dx*dx + dy*dy > radius2 || p.heat <= 0.0) continue
             if (repeat && !p.material.gas) continue
             if (previous < 0) { previous = i; continue }
             val a = grains[previous]; val b = p; previous = -1
-            val energy = (a.heat + b.heat) * if (repeat) .018 else .035
+            // Power classes modulate EXISTING thermal energy; a giant
+            // flare can spend more heat than a faint flash, never create it.
+            val energy = (a.heat + b.heat) *
+                ((if (repeat) .018 else .035) *
+                    event.intensity.heatFactor).coerceAtMost(.23)
             if (energy <= 0) continue
             val inv = 1.0/a.mass + 1.0/b.mass
             val rv = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny
@@ -457,6 +513,7 @@ internal class AstronomicalUniverse {
         java.util.Arrays.fill(fy, 0, grains.size, 0.0)
         gravityVisits = 0
         val g = gConstant * gravity
+        val compactEvent = activeEpisode.kind == CosmicEventKind.SINGULARITY
         val beginning = System.nanoTime()
         // Every source is one MONOPOLE representing the mass of a genuine
         // connected particle cloud, never a second copy of that matter.
@@ -483,8 +540,12 @@ internal class AstronomicalUniverse {
                 val dx = c.x - p.x; val dy = c.y - p.y
                 val r2 = dx*dx+dy*dy+orbitalSoft2
                 val inv = 1.0 / (r2 * sqrt(r2))
-                fx[i] += g * c.mass * dx * inv
-                fy[i] += g * c.mass * dy * inv
+                val linkedCore = compactEvent &&
+                    hypot(c.x-activeEpisode.x, c.y-activeEpisode.y) < .055
+                val fieldBoost = if (linkedCore)
+                    1.0 + .35*activeEpisode.intensity.heatFactor else 1.0
+                fx[i] += g * fieldBoost * c.mass * dx * inv
+                fy[i] += g * fieldBoost * c.mass * dy * inv
                 gravityVisits++
             }
         }
@@ -605,6 +666,7 @@ internal class AstronomicalUniverse {
         walls: Boolean = false) {
         if (grains.isEmpty() || dt <= 0f) return
         ensureCapacity()
+        activeEpisode = episode
         releaseEventHeat(episode)
         val h = min(dt, .034f).toDouble() /
             (if (grains.size < 1000) 2 else 1)

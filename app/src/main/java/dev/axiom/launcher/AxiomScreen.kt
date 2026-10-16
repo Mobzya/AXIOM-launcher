@@ -142,6 +142,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var apps by remember { mutableStateOf(emptyList<InstalledApp>()) }
     var refresh by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(AxiomMode.HOME) }
+    var observatoryOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
@@ -264,6 +265,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
     }
     fun close() {
+        observatoryOpen = false
         mode = AxiomMode.HOME
         query = ""
         atlasQuery = ""
@@ -302,7 +304,9 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             else -> null
         }
     }
-    BackHandler(mode != AxiomMode.HOME) { close() }
+    BackHandler(observatoryOpen || mode != AxiomMode.HOME) {
+        if (observatoryOpen) observatoryOpen = false else close()
+    }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
@@ -521,6 +525,44 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 keyboard?.hide()
                 focus.clearFocus()
                 mode = AxiomMode.SETTINGS
+            }
+        }
+
+        if (mode == AxiomMode.HOME && !observatoryOpen) {
+            Box(Modifier.align(Alignment.BottomEnd)
+                .padding(end = 22.dp,bottom = 30.dp)
+                .size(54.dp).clip(RoundedCornerShape(18.dp))
+                .background(Brush.linearGradient(listOf(
+                    Color(0xff527d99).copy(alpha = .48f),
+                    AX_TILE,
+                    Color(0xff746096).copy(alpha = .42f)
+                )))
+                .border(1.dp,AX_BORDER,RoundedCornerShape(18.dp))
+                .clickable { observatoryOpen = true }
+                .semantics {
+                    contentDescription = "Открыть обсерваторию и создание планет"
+                },
+                contentAlignment = Alignment.Center) {
+                Text("✦",color=AX_WHITE,fontSize=24.sp)
+            }
+        }
+        if (mode == AxiomMode.HOME && observatoryOpen) {
+            Box(Modifier.fillMaxSize()
+                .background(AX_BLACK.copy(alpha=.45f))
+                .clickable { observatoryOpen=false })
+            Box(Modifier.align(Alignment.BottomCenter)
+                .padding(horizontal=16.dp,bottom=32.dp)) {
+            UniverseControlPanel(
+                grainCount = world.sand.grains.size,
+                maxGrains = world.matterMode.maxParticles,
+                onSpawn = { material,mass -> world.createObject(material,mass) },
+                onPerturb = { power ->
+                    world.applyObservatoryImpulse(.5f,.5f,power)
+                },
+                onEvent = { power -> world.triggerRandomEvent(power) },
+                onTime = { speed -> world.updateTimeScale(speed) },
+                onDismiss = { observatoryOpen = false }
+            )
             }
         }
 
@@ -761,10 +803,16 @@ private fun CentralSearchDock(
             stiffness = Spring.StiffnessMediumLow),
         label = "search volume"
     )
+    // Subtle, directional iridescence: gradients are calculated only when
+    // the palette or focus state changes, not in every particle draw.
+    val cyan = if (AxiomColors.palette.light)
+        Color(0xff46879b) else Color(0xff83cbe0)
+    val violet = if (AxiomColors.palette.light)
+        Color(0xff8c6fb2) else Color(0xffb6a1eb)
     val colorEdge = Brush.horizontalGradient(
-        listOf(AX_WHITE.copy(alpha = .15f + .22f * halo),
-            AX_WHITE.copy(alpha = .37f + .26f * halo),
-            AX_WHITE.copy(alpha = .13f + .31f * halo))
+        listOf(cyan.copy(alpha=.36f+.35f*halo),
+            AX_WHITE.copy(alpha=.20f+.25f*halo),
+            violet.copy(alpha=.40f+.35f*halo))
     )
     Row(
         Modifier.fillMaxWidth()
@@ -789,8 +837,13 @@ private fun CentralSearchDock(
                 )
             }
             .clip(shape)
-            .background(Brush.verticalGradient(
-                listOf(AX_GLASS, AX_SURFACE.copy(alpha = .90f))))
+            .background(Brush.linearGradient(
+                listOf(
+                    cyan.copy(alpha=if(expanded) .19f else .10f),
+                    AX_GLASS,
+                    AX_SURFACE.copy(alpha=.98f),
+                    violet.copy(alpha=if(expanded) .16f else .09f)
+                )))
             .border(BorderStroke(1.dp, colorEdge), shape)
             .then(if (expanded) Modifier else Modifier.clickable(onClick = onOpen))
             .padding(horizontal = 21.dp),

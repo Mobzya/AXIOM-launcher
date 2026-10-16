@@ -127,4 +127,94 @@ class AstronomicalUniverseTest {
         assertEquals(first.mass, world.sand.totals().mass,1e-5)
         assertTrue(abs(world.physicsCostMs) < 30000)
     }
+
+    @Test fun newHeavyMetalOxidationConservesMassAndThermochemicalEnergy() {
+        val u = AstronomicalUniverse()
+        val n = SandGrain(301, .48f, .5f, 0f, 0f,
+            .02f, .02 * .000001 * 960, MatterMaterial.NICKEL)
+        val o = SandGrain(302, .481f, .5f, 0f, 0f,
+            .02f, .02 * .000001 * 960, MatterMaterial.OXYGEN)
+        u.grains.add(n); u.grains.add(o)
+        val before = u.totals()
+        assertTrue(u.reactPair(n, o))
+        val after = u.totals()
+        assertEquals(2, u.grains.size)
+        assertEquals(before.mass, after.mass, 1e-8)
+        assertEquals(before.internal + before.chemical,
+            after.internal + after.chemical, 1e-9)
+        assertEquals(1, u.reactions)
+        assertEquals(MatterMaterial.OXIDE, n.material)
+        assertEquals(MatterMaterial.OXIDE, o.material)
+    }
+
+    @Test fun faintAndCatastrophicEventsReallyHaveDifferentHeatBudgets() {
+        fun stage(intensity: CosmicEventIntensity): Pair<Double, Double> {
+            val u = AstronomicalUniverse()
+            u.grains.add(SandGrain(301,.480f,.5f,0f,0f,
+                .02f,.0002,MatterMaterial.ROCK))
+            u.grains.add(SandGrain(302,.520f,.5f,0f,0f,
+                .02f,.0002,MatterMaterial.ROCK))
+            val ep = CosmicEpisode(CosmicEventKind.COSMIC_SHOCK,
+                0f, 10f, .50f, .5f, 90, intensity)
+            val before = u.totals()
+            u.step(1f/120f, 0f, ep)
+            val after = u.totals()
+            assertEquals(before.mass, after.mass, 1e-8)
+            assertEquals(before.momentumX, after.momentumX, 1e-7)
+            assertEquals(before.momentumY, after.momentumY, 1e-7)
+            return (after.kinetic - before.kinetic) to
+                (before.internal - after.internal)
+        }
+        val faint = stage(CosmicEventIntensity.FLICKER)
+        val cataclysm = stage(CosmicEventIntensity.CATASTROPHIC)
+        assertTrue(faint.first > 0)
+        assertTrue("Major events must be visibly energetic",
+            cataclysm.first > faint.first * 4)
+        assertTrue(cataclysm.second > faint.second * 4)
+    }
+
+    @Test fun cryogenicRadiationActuallyCoolsWithoutDeletingMass() {
+        val u = AstronomicalUniverse()
+        u.grains.add(SandGrain(401, .50f, .50f, 0f, 0f, 1f,
+            .0005, MatterMaterial.WATER))
+        val before = u.totals()
+        val shock = CosmicEpisode(CosmicEventKind.CRYO_TIDE,
+            .2f, 13f, .5f, .5f, 33, CosmicEventIntensity.MAJOR)
+        u.step(1f/120f, 0f, shock)
+        val after = u.totals()
+        assertEquals(before.mass, after.mass, 1e-8)
+        assertTrue(after.internal < before.internal)
+        assertTrue(u.radiatedHeat > 0.0)
+        assertEquals(before.internal + before.chemical,
+            after.internal + after.chemical + u.radiatedHeat, 1e-9)
+    }
+
+    @Test fun titanPresetIncludesActualTinyAndHugeIndependentMatter() {
+        val universe = CosmicWorld(19, MatterMode.DETAILED,
+            CosmicPreset.TITAN_SYSTEM)
+        assertEquals(6, universe.bodies.size)
+        val titan = universe.bodies.first()
+        val dwarf = universe.bodies[1]
+        assertTrue(titan.mass / dwarf.mass > 800f)
+        assertTrue(universe.sand.grains.size > 1000)
+        val ownCounts = universe.sand.grains.groupingBy { it.owner }.eachCount()
+        assertTrue((ownCounts[titan.id] ?: 0) >= 800)
+        assertTrue((ownCounts[dwarf.id] ?: 0) in 20..75)
+        val before = universe.sand.totals()
+        repeat(12) { universe.step(1f/60f) }
+        assertEquals(before.mass, universe.sand.totals().mass, 1e-5)
+    }
+
+    @Test fun rockyPlanetsHaveLayeredBasaltNickelAndSilicates() {
+        val u = AstronomicalUniverse()
+        u.seed(CelestialBody(78,2,2f,1f,.5f,.5f,0f,0f,
+            material=MatterMaterial.ROCK), 380)
+        val composition = u.grains.map { it.material }.toSet()
+        assertTrue(MatterMaterial.IRON in composition)
+        assertTrue(MatterMaterial.NICKEL in composition)
+        assertTrue(MatterMaterial.BASALT in composition)
+        assertTrue(MatterMaterial.SILICATE in composition)
+        assertEquals(380, u.grains.size)
+    }
+
 }

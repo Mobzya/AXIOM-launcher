@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "dev.axiom.launcher"
-        minSdk = 28
+        minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.13.0"
+        versionCode = 23
+        versionName = "0.23.0-beta.1"
     }
 
     compileOptions {
@@ -34,6 +34,11 @@ android {
             )
         }
     }
+}
+
+// Record 4600-grain benchmark timings in the GitHub Actions log.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging.showStandardStreams = true
 }
 
 dependencies {

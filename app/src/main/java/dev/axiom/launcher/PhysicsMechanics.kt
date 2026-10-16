@@ -20,7 +20,7 @@ internal fun mutualGravity(
     val dx = b.x - a.x
     val dy = b.y - a.y
     val r2 = dx * dx + dy * dy + .0035f
-    val coupling = 1f / (1f + .55f * kotlin.math.abs(a.depth - b.depth))
+    val coupling = 1f // depth is visual parallax, not a third spatial coordinate
     val coefficient = (.00026f * g * coupling / (r2 * sqrt(r2)))
         .coerceAtMost(1.15f)
     return PairAcceleration(
@@ -67,7 +67,7 @@ internal fun accumulateForces(
     val dx = b.x - a.x
     val dy = b.y - a.y
     val r2 = dx * dx + dy * dy + .0035f
-    val coupling = 1f / (1f + .55f * kotlin.math.abs(a.depth - b.depth))
+    val coupling = 1f // depth is visual parallax, not a third spatial coordinate
     val coefficient = (.00026f * gravity * coupling / (r2 * sqrt(r2)))
         .coerceAtMost(1.15f)
     ax[i] += coefficient * b.mass * dx

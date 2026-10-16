@@ -1,6 +1,8 @@
 package dev.axiom.launcher
 
 import android.os.Bundle
+import android.os.PowerManager
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -40,8 +42,33 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * Pixel / Samsung / OnePlus / Xiaomi use different refresh policies.
+     * Never force an unsupported mode or overrule the user's 60 Hz / battery
+     * preference. Observe the currently active mode; the animation
+     * interpolator follows Choreographer's real display callbacks.
+     */
+    private fun configureDisplaySafely() {
+        runCatching {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (power.isPowerSaveMode) return
+            @Suppress("DEPRECATION")
+            val display = windowManager.defaultDisplay ?: return
+            val attributes = window.attributes
+            // Clear earlier vendor-preferred overrides (if any). Android
+            // chooses 60/90/120 Hz using system settings and thermal state.
+            if (attributes.preferredDisplayModeId != 0) {
+                attributes.preferredDisplayModeId = 0
+                window.attributes = attributes
+            }
+            @Suppress("UNUSED_VARIABLE")
+            val currentRefreshRate = display.refreshRate
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        configureDisplaySafely()
         resumeVersion++
     }
 }

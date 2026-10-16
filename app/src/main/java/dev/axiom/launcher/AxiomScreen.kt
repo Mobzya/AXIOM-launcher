@@ -623,6 +623,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 profilerEnabled = meter.enabled,
                 profilerSummary = meter.summary,
                 onSurprise = { world.triggerRandomEvent() },
+                onEventIntensity = { world.triggerRandomEvent(it) },
                 currentEpisode = world.episode.kind.name +
                     " / " + world.episode.intensity.label,
                 onTerminal = {

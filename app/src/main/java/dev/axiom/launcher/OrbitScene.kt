@@ -167,7 +167,7 @@ internal fun CosmicEnvironment(
             drawMathMoment(world.mathMoment, dim * .55f, formulaPaint)
         }
         // All grains are actual independent masses. Batching by material
-        // turns thousands of draw calls into at most 16 native drawPoints.
+        // uses one native drawPoints per material, even at 4800 grains.
         val snapshot = world.grainFrames
         val frame = snapshot.current
         val old = snapshot.previous
@@ -197,6 +197,37 @@ internal fun CosmicEnvironment(
         }
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
+            // Faint fronts denote the *radius and strength* of genuine
+            // thermodynamic/gravitational events. This ring has no mass.
+            val ep = world.episode
+            if (ep.kind == CosmicEventKind.COSMIC_SHOCK ||
+                ep.kind == CosmicEventKind.CRYO_TIDE ||
+                ep.kind == CosmicEventKind.THERMAL_SPIKE ||
+                ep.kind == CosmicEventKind.MAGNETAR_FLARE ||
+                ep.kind == CosmicEventKind.NOVA ||
+                ep.kind == CosmicEventKind.SINGULARITY) {
+                val color = when (ep.kind) {
+                    CosmicEventKind.CRYO_TIDE ->
+                        android.graphics.Color.rgb(113, 210, 239)
+                    CosmicEventKind.MAGNETAR_FLARE ->
+                        android.graphics.Color.rgb(182, 143, 255)
+                    CosmicEventKind.SINGULARITY ->
+                        android.graphics.Color.rgb(157, 172, 198)
+                    else -> android.graphics.Color.rgb(255, 131, 89)
+                }
+                coronaPaint.color = color
+                coronaPaint.style = Paint.Style.STROKE
+                coronaPaint.strokeWidth =
+                    (1.2f + ep.intensity.heatFactor.toFloat()*.42f)*density
+                coronaPaint.alpha = (ep.alpha * dim * 92f)
+                    .toInt().coerceIn(0, 150)
+                val radius = ep.intensity.radius *
+                    min(size.width, size.height) *
+                    (.20f + .80f*ep.progress)
+                native.drawCircle(ep.x*size.width, ep.y*size.height,
+                    radius, coronaPaint)
+                coronaPaint.style = Paint.Style.FILL
+            }
             for (body in world.bodies) {
                 if (body.stellarClass != StellarClass.STAR &&
                     body.stellarClass != StellarClass.QUASAR &&

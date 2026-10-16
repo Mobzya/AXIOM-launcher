@@ -233,9 +233,9 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
         }
         14 -> { // Mandelbrot / Julia escape contours with actual iteration
             val julia=moment.kind==MathKind.JULIA
-            for(i in 0..43)for(j in 0..22){
-                val x=(i/43f-.5f)*2.6f
-                val y=(j/22f-.5f)*1.7f
+            for(i in 0..27)for(j in 0..15){
+                val x=(i/27f-.5f)*2.6f
+                val y=(j/15f-.5f)*1.7f
                 var zr=if(julia)x else 0f
                 var zi=if(julia)y else 0f
                 val cr=if(julia)-.72f else x
@@ -248,8 +248,8 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
                 }
                 if(n>=11 || (n+moment.seed).mod(4)==0)
                     drawCircle(AX_WHITE.copy(alpha=a*(.09f+n*.018f)),
-                        .7.dp.toPx(),Offset(px+i/43f*scale*2f,
-                            py+j/22f*scale))
+                        .7.dp.toPx(),Offset(px+i/27f*scale*2f,
+                            py+j/15f*scale))
             }
         }
         15 -> { // L-system: slowly growing, asymmetric recursive branching

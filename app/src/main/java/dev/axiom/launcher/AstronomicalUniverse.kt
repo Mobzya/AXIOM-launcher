@@ -406,21 +406,67 @@ internal class AstronomicalUniverse {
             event.kind == CosmicEventKind.METEORS) return
         val repeat = event.kind == CosmicEventKind.PULSAR ||
             event.kind == CosmicEventKind.QUASAR_JET ||
-            event.kind == CosmicEventKind.MAGNETAR_FLARE
+            event.kind == CosmicEventKind.MAGNETAR_FLARE ||
+            event.kind == CosmicEventKind.SOLAR_WIND
         val k = event.serial * 128 +
             if (repeat) (event.age / .7f).toInt() else 0
         if (pulseKey == k) return
         pulseKey = k
         val radius2 = event.intensity.radius * event.intensity.radius
-        if (event.kind == CosmicEventKind.CRYO_TIDE) {
-            // Radiative cooling into the external environment: no fictitious
-            // new ice or matter, and escaped heat is tracked explicitly.
-            val fraction = (.035 * event.intensity.heatFactor)
-                .coerceIn(.01, .34)
+        if (event.kind == CosmicEventKind.IONIZATION_FRONT) {
+            // Reallocate real gas heat before phase changes; each
+            // ionization spends its chemical potential. No new mass.
+            var donorHeat = 0.0
+            var donorCount = 0
             for (p in grains) {
                 val dx = p.x - event.x; val dy = p.y - event.y
                 if (dx*dx + dy*dy > radius2) continue
-                val emitted = p.heat * fraction
+                if (p.material != MatterMaterial.PLASMA ||
+                    donorCount >= 120) continue
+                val released = p.heat *
+                    (.012*event.intensity.heatFactor).coerceIn(.01,.09)
+                p.heat -= released
+                donorHeat += released
+                donorCount++
+            }
+            val targets = grains.asSequence()
+                .filter { p ->
+                    val dx=p.x-event.x; val dy=p.y-event.y
+                    dx*dx+dy*dy <= radius2 &&
+                        p.material == MatterMaterial.HYDROGEN
+                }.take(150).toList()
+            if (targets.isNotEmpty()) {
+                val per = donorHeat/targets.size
+                targets.forEach { p ->
+                    p.heat += per
+                    phaseChange(p)
+                }
+            } else {
+                // Return untransferred heat locally; the event cannot
+                // conjure a sink if no physical hydrogen is present.
+                if (donorCount>0) {
+                    val donors=grains.filter { p ->
+                        val dx=p.x-event.x; val dy=p.y-event.y
+                        dx*dx+dy*dy <= radius2 &&
+                            p.material==MatterMaterial.PLASMA
+                    }.take(donorCount)
+                    donors.forEach { it.heat += donorHeat/donorCount }
+                }
+            }
+            return
+        }
+        if (event.kind == CosmicEventKind.CRYO_TIDE ||
+            event.kind == CosmicEventKind.CRYSTALLIZATION ||
+            event.kind == CosmicEventKind.STELLAR_NURSERY) {
+            // Radiative cooling into the external environment: no fictitious
+            // new ice or matter, and escaped heat is tracked explicitly.
+            val fraction = (if (event.kind == CosmicEventKind.CRYO_TIDE)
+                .07 else .024) * event.intensity.heatFactor
+            val cooling = fraction.coerceIn(.015, .50)
+            for (p in grains) {
+                val dx = p.x - event.x; val dy = p.y - event.y
+                if (dx*dx + dy*dy > radius2) continue
+                val emitted = p.heat * cooling
                 p.heat -= emitted
                 radiatedHeat += emitted
                 phaseChange(p)
@@ -466,7 +512,7 @@ internal class AstronomicalUniverse {
             CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.REACTION, CosmicEventKind.NEBULA,
             CosmicEventKind.SINGULARITY, CosmicEventKind.COSMIC_SHOCK,
-            CosmicEventKind.MAGNETAR_FLARE
+            CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.SOLAR_WIND
         )) return
         var previous = -1
         var activated = 0
@@ -513,7 +559,8 @@ internal class AstronomicalUniverse {
         java.util.Arrays.fill(fy, 0, grains.size, 0.0)
         gravityVisits = 0
         val g = gConstant * gravity
-        val compactEvent = activeEpisode.kind == CosmicEventKind.SINGULARITY
+        val compactEvent = activeEpisode.kind == CosmicEventKind.SINGULARITY ||
+            activeEpisode.kind == CosmicEventKind.TIDAL_PULSE
         val beginning = System.nanoTime()
         // Every source is one MONOPOLE representing the mass of a genuine
         // connected particle cloud, never a second copy of that matter.
@@ -556,7 +603,10 @@ internal class AstronomicalUniverse {
                 val linkedCore = compactEvent &&
                     hypot(c.x-activeEpisode.x, c.y-activeEpisode.y) < .055
                 val fieldBoost = if (linkedCore)
-                    1.0 + .35*activeEpisode.intensity.heatFactor else 1.0
+                    1.0 + (if (activeEpisode.kind ==
+                        CosmicEventKind.TIDAL_PULSE) .21 else .42) *
+                        activeEpisode.intensity.heatFactor
+                    else 1.0
                 fx[i] += g * fieldBoost * c.mass * dx * inv
                 fy[i] += g * fieldBoost * c.mass * dy * inv
                 gravityVisits++
@@ -614,7 +664,12 @@ internal class AstronomicalUniverse {
                             val invA = 1.0/p.mass
                             val invB = 1.0/q.mass
                             val mu = 1.0/(invA+invB)
-                            val dp = .035 * mu * h * (1.0-r/.006)
+                            val accretionBoost = if (activeEpisode.kind ==
+                                CosmicEventKind.ACCRETION_BURST)
+                                1.0 + activeEpisode.intensity.heatFactor
+                                else 1.0
+                            val dp = .035 * accretionBoost *
+                                mu * h * (1.0-r/.006)
                             p.vx = (p.vx+dp*invA*nx).toFloat()
                             p.vy = (p.vy+dp*invA*ny).toFloat()
                             q.vx = (q.vx-dp*invB*nx).toFloat()

@@ -251,17 +251,18 @@ internal class CosmicWorld(
         if (bodies.size >= maxBodies || bodies.any { it.kind in 97..104 }) return
         val chosen=kind.coerceIn(97,104)
         val giantBody = CelestialBody(
-            idSequence++,chosen,3.5f+random.nextFloat()*2f,
+            idSequence++,chosen,14f+random.nextFloat()*18f,
             1.6f,.2f+random.nextFloat()*.6f,
             .22f+random.nextFloat()*.56f,
             (random.nextFloat()-.5f)*.015f,
             (random.nextFloat()-.5f)*.015f,
-            lifetime=3600f,sizeFactor=1.1f,
-            material=MatterMaterial.PLASMA,temperature=5200f,
+            lifetime=3600f,sizeFactor=1.7f,
+            material=MatterMaterial.PLASMA,temperature=6800f,
             stellarClass=StellarClass.QUASAR)
-        if (sand.grains.size + 50 <= matterMode.maxParticles) {
+        val particles = if (matterMode == MatterMode.DETAILED) 220 else 80
+        if (sand.grains.size + particles <= matterMode.maxParticles) {
             bodies += giantBody
-            sand.seed(giantBody, 50)
+            sand.seed(giantBody, particles)
             publishGrains()
         }
     }
@@ -333,17 +334,31 @@ internal class CosmicWorld(
             else 1 + random.nextInt(96)
         val chosenClass = if (physicalCluster) StellarClass.PLANET
             else stellarClassFromKind(chosenKind)
+        // Distinct physical scales: tiny moonlets, rocky planets, giants
+        // and extremely rare titans. No display-only huge sprites.
+        val scaleRoll = random.nextInt(100)
+        val mass = when {
+            giant -> 14f + random.nextFloat()*18f
+            physicalCluster && scaleRoll < 16 ->
+                .08f + random.nextFloat()*.17f
+            physicalCluster && scaleRoll < 88 ->
+                .65f + random.nextFloat()*1.45f
+            physicalCluster -> 3f + random.nextFloat()*5f
+            scaleRoll < 19 -> .025f + random.nextFloat()*.13f
+            scaleRoll < 73 -> .25f + random.nextFloat()*1.6f
+            scaleRoll < 96 -> 2f + random.nextFloat()*4f
+            else -> 8f + random.nextFloat()*12f
+        }
         val body = CelestialBody(
             id = idSequence++,
             kind = chosenKind,
-            mass = if (giant) 3.8f + random.nextFloat()*1.5f
-                else if (physicalCluster) .85f + random.nextFloat() * 1.0f
-                else .30f + random.nextFloat() * 1.35f,
+            mass = mass,
             depth = depth,
             x = x, y = y, vx = dx / length * speed,
             vy = dy / length * speed, rotation = random.nextFloat() * 6.28f,
             lifetime = 3600f,
-            sizeFactor = if(giant) 1.2f else .7f + random.nextFloat()*.7f,
+            sizeFactor = if (giant) 1.7f else
+                (.55f + .20f*sqrt(mass.coerceAtLeast(.02f))).coerceIn(.5f,2.0f),
             material = when (chosenClass) {
                 StellarClass.QUASAR -> MatterMaterial.PLASMA
                 StellarClass.STAR -> MatterMaterial.HYDROGEN
@@ -365,8 +380,15 @@ internal class CosmicWorld(
         bodies = bodies + body
         // Retain capacity for the full body limit instead of exhausting
         // the free-grain budget after only a handful of arrivals.
-        sand.seed(body, minOf(if (physicalCluster)
-            72 + random.nextInt(34) else 18,
+        val requested = when {
+            physicalCluster -> 72 + random.nextInt(34)
+            giant -> if (matterMode == MatterMode.DETAILED) 190 else 48
+            mass < .16f -> 10
+            mass > 7f -> if (matterMode == MatterMode.DETAILED) 145 else 30
+            mass > 3f -> if (matterMode == MatterMode.DETAILED) 90 else 25
+            else -> 18
+        }
+        sand.seed(body, minOf(requested,
             matterMode.maxParticles - sand.grains.size))
         publishGrains()
     }

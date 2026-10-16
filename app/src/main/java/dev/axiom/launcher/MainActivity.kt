@@ -43,31 +43,32 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * A 120Hz-capable display may otherwise select 60Hz for the launcher.
-     * Request (do not force) its fastest mode at the current resolution.
-     * Android retains authority over frame pacing, battery and thermals.
+     * Pixel / Samsung / OnePlus / Xiaomi use different refresh policies.
+     * Never force an unsupported mode or overrule the user's 60 Hz / battery
+     * preference. Observe the currently active mode; the animation
+     * interpolator follows Choreographer's real display callbacks.
      */
-    private fun requestFastDisplayMode() {
-        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (power.isPowerSaveMode) return
-        @Suppress("DEPRECATION")
-        val display = windowManager.defaultDisplay
-        val active = display.mode
-        val fast = display.supportedModes
-            .filter { it.physicalWidth == active.physicalWidth &&
-                it.physicalHeight == active.physicalHeight &&
-                it.refreshRate >= 90f }
-            .maxByOrNull { it.refreshRate } ?: return
-        val attributes = window.attributes
-        if (attributes.preferredDisplayModeId != fast.modeId) {
-            attributes.preferredDisplayModeId = fast.modeId
-            window.attributes = attributes
+    private fun configureDisplaySafely() {
+        runCatching {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (power.isPowerSaveMode) return
+            @Suppress("DEPRECATION")
+            val display = windowManager.defaultDisplay ?: return
+            val attributes = window.attributes
+            // Clear earlier vendor-preferred overrides (if any). Android
+            // chooses 60/90/120 Hz using system settings and thermal state.
+            if (attributes.preferredDisplayModeId != 0) {
+                attributes.preferredDisplayModeId = 0
+                window.attributes = attributes
+            }
+            @Suppress("UNUSED_VARIABLE")
+            val currentRefreshRate = display.refreshRate
         }
     }
 
     override fun onResume() {
         super.onResume()
-        requestFastDisplayMode()
+        configureDisplaySafely()
         resumeVersion++
     }
 }

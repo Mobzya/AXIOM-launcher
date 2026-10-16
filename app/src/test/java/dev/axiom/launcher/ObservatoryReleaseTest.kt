@@ -24,7 +24,7 @@ class ObservatoryReleaseTest {
 
     @Test fun observatoryDeclinesBodyWhenBudgetExhaustedWithoutCreatingMass() {
         val world=CosmicWorld(13,MatterMode.BALANCED,CosmicPreset.DEEP_SPACE)
-        world.populateStressScene(4600)
+        world.populateStressScene(4800)
         val before=world.sand.totals()
         assertTrue(!world.createObject(MatterMaterial.ROCK,7f))
         assertEquals(before.mass,world.sand.totals().mass,1e-7)

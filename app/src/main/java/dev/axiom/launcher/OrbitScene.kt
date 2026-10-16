@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -160,6 +161,26 @@ internal fun CosmicEnvironment(
     }
 
     Canvas(modifier) {
+        // A low-cost, soft volumetric light falloff derived from the position
+        // of a PHYSICAL star. This is illumination, never fake particle mass.
+        if (!interacting && !AxiomColors.palette.light) {
+            val luminous = world.bodies.firstOrNull {
+                it.stellarClass == StellarClass.STAR ||
+                    it.stellarClass == StellarClass.QUASAR
+            }
+            if (luminous != null) {
+                val glow = if (luminous.stellarClass == StellarClass.QUASAR)
+                    Color(0xff776db5) else Color(0xff4d7294)
+                drawRect(brush = Brush.radialGradient(
+                    colors = listOf(
+                        glow.copy(alpha=.21f*dim),
+                        glow.copy(alpha=.085f*dim),
+                        Color.Transparent),
+                    center = Offset(luminous.x*size.width,
+                        luminous.y*size.height),
+                    radius = min(size.width,size.height)*.53f))
+            }
+        }
         // Educational math remains available; only cosmic silhouettes are removed.
         if (!interacting && world.episode.kind == CosmicEventKind.QUIET) {
             formulaPaint.color = if (AxiomColors.palette.light)
@@ -204,6 +225,9 @@ internal fun CosmicEnvironment(
                 ep.kind == CosmicEventKind.CRYO_TIDE ||
                 ep.kind == CosmicEventKind.THERMAL_SPIKE ||
                 ep.kind == CosmicEventKind.MAGNETAR_FLARE ||
+                ep.kind == CosmicEventKind.SOLAR_WIND ||
+                ep.kind == CosmicEventKind.IONIZATION_FRONT ||
+                ep.kind == CosmicEventKind.TIDAL_PULSE ||
                 ep.kind == CosmicEventKind.NOVA ||
                 ep.kind == CosmicEventKind.SINGULARITY) {
                 val color = when (ep.kind) {

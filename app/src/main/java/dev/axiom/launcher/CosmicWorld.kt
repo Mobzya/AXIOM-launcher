@@ -21,15 +21,16 @@ internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, S
     DUAL_RING, PARTICLE_CASCADE,
     MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC,
     COMET_SWARM, ACCRETION_BURST, CRYSTALLIZATION, PLASMA_STORM, QUASAR_JET,
-    COSMIC_SHOCK, THERMAL_SPIKE, CRYO_TIDE, MAGNETAR_FLARE }
+    COSMIC_SHOCK, THERMAL_SPIKE, CRYO_TIDE, MAGNETAR_FLARE,
+    SOLAR_WIND, TIDAL_PULSE, IONIZATION_FRONT }
 
 internal enum class CosmicEventIntensity(
     val label: String, val heatFactor: Double, val radius: Float
 ) {
-    FLICKER("Слабое", .28, .14f),
-    NORMAL("Обычное", 1.0, .25f),
-    MAJOR("Сильное", 2.0, .36f),
-    CATASTROPHIC("Катастрофическое", 4.8, .49f)
+    FLICKER("Слабое", .82, .21f),
+    NORMAL("Обычное", 1.55, .31f),
+    MAJOR("Сильное", 3.15, .44f),
+    CATASTROPHIC("Катастрофическое", 6.8, .60f)
 }
 
 internal data class CosmicEpisode(
@@ -143,7 +144,7 @@ internal class CosmicWorld(
     private var eventSerial = 0
     // Rare external arrivals: a fresh spherical GROUP of grains, not sprites.
     private var spawnAt = 46f
-    private var eventAt = 55f
+    private var eventAt = 28f
     private var lastBurstAt = -100f
     private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
@@ -482,7 +483,20 @@ internal class CosmicWorld(
         }
         eventSerial++
         tunneled.clear()
-        eventHistory = (eventHistory + kind.name).takeLast(10)
+        eventHistory = (eventHistory +
+            (kind.name + " / " + intensity.label)).takeLast(10)
+        // Anchor active physics to REAL matter rather than an empty corner.
+        // Solar phenomena prefer hot gas, tides prefer a compact massive core.
+        val selectedSource = when (kind) {
+            CosmicEventKind.SOLAR_WIND, CosmicEventKind.IONIZATION_FRONT,
+            CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.PULSAR,
+            CosmicEventKind.QUASAR_JET, CosmicEventKind.SOLAR_FLARE ->
+                bodies.filter { it.stellarClass == StellarClass.STAR ||
+                    it.stellarClass == StellarClass.QUASAR }
+                    .maxByOrNull { it.mass }
+                    ?: bodies.maxByOrNull { it.mass }
+            else -> bodies.maxByOrNull { it.mass }
+        }
         episode = CosmicEpisode(
             kind = kind, age = 0f,
             duration = when (kind) {
@@ -526,32 +540,21 @@ internal class CosmicWorld(
                 CosmicEventKind.THERMAL_SPIKE -> 12f
                 CosmicEventKind.CRYO_TIDE -> 15f
                 CosmicEventKind.MAGNETAR_FLARE -> 16f
+                CosmicEventKind.SOLAR_WIND -> 14f
+                CosmicEventKind.TIDAL_PULSE -> 13f
+                CosmicEventKind.IONIZATION_FRONT -> 12f
                 else -> 1f
             },
             // Pulsars and quasars act on actual existing hot bodies, not
             // hidden attractors. All ejection impulses consume particle heat.
-            x = if (kind == CosmicEventKind.SINGULARITY ||
-                kind == CosmicEventKind.PULSAR ||
-                kind == CosmicEventKind.QUASAR_JET)
-                bodies.filter { it.stellarClass == StellarClass.STAR ||
-                    it.stellarClass == StellarClass.QUASAR }
-                    .maxByOrNull { it.mass }?.x
-                    ?: bodies.maxByOrNull { it.mass }?.x ?: .5f
-                else .25f + random.nextFloat() * .5f,
-            y = if (kind == CosmicEventKind.SINGULARITY ||
-                kind == CosmicEventKind.PULSAR ||
-                kind == CosmicEventKind.QUASAR_JET)
-                bodies.filter { it.stellarClass == StellarClass.STAR ||
-                    it.stellarClass == StellarClass.QUASAR }
-                    .maxByOrNull { it.mass }?.y
-                    ?: bodies.maxByOrNull { it.mass }?.y ?: .4f
-                else .20f + random.nextFloat() * .50f,
+            x = selectedSource?.x ?: .5f,
+            y = selectedSource?.y ?: .5f,
             serial = eventSerial,
             intensity = intensity
         )
         // The next event starts roughly one minute after this one begins,
         // not one minute *after* its end. Event durations stay much shorter.
-        eventAt = elapsed + 52f + random.nextFloat() * 16f
+        eventAt = elapsed + 32f + random.nextFloat() * 16f
         if (kind == CosmicEventKind.METEORS &&
             (preset == CosmicPreset.DEEP_SPACE ||
                 preset == CosmicPreset.PROTOPLANETARY)) {
@@ -619,7 +622,7 @@ internal class CosmicWorld(
      * Historical names remain valid for terminal commands/old saves, but no
      * geometric-only anomalies compete with the physical simulation.
      */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(160)) {
+    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(184)) {
         in 0..19 -> CosmicEventKind.METEORS
         in 20..35 -> CosmicEventKind.PULSAR
         in 36..49 -> CosmicEventKind.QUASAR_JET
@@ -635,6 +638,9 @@ internal class CosmicWorld(
         in 133..140 -> CosmicEventKind.MAGNETAR_FLARE
         in 141..150 -> CosmicEventKind.THERMAL_SPIKE
         in 151..156 -> CosmicEventKind.COSMIC_SHOCK
+        in 157..165 -> CosmicEventKind.SOLAR_WIND
+        in 166..173 -> CosmicEventKind.TIDAL_PULSE
+        in 174..181 -> CosmicEventKind.IONIZATION_FRONT
         else -> CosmicEventKind.CRYSTALLIZATION
     }
 
@@ -832,7 +838,7 @@ internal class CosmicWorld(
         episode = CosmicEpisode()
         depthShift = 0f
         spawnAt = 46f
-        eventAt = 55f
+        eventAt = 28f
         lastBurstAt = -100f
         tunneled.clear()
         mathMoment = MathMoment()

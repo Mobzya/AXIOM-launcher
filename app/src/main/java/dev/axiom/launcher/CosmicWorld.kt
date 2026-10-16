@@ -246,6 +246,75 @@ internal class CosmicWorld(
         )
     }
 
+    /**
+     * Interactive observatory action: an EXTERNAL user creates a genuine
+     * collection of gravitational grains, no invisible centre or prefab.
+     * All normal physics, capture and destruction applies immediately.
+     */
+    @Synchronized
+    fun createObject(material: MatterMaterial, mass: Float,
+        px: Float = .68f, py: Float = .38f): Boolean {
+        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles)
+            return false
+        val m = mass.coerceIn(.04f,24f)
+        val classType = when (material) {
+            MatterMaterial.HYDROGEN -> StellarClass.STAR
+            MatterMaterial.PLASMA -> StellarClass.QUASAR
+            MatterMaterial.AMMONIA, MatterMaterial.METHANE -> StellarClass.CLOUD
+            else -> StellarClass.PLANET
+        }
+        val core = bodies.maxByOrNull { it.mass }
+        val x = px.coerceIn(.12f,.87f)
+        val y = py.coerceIn(.12f,.87f)
+        val dx = x - (core?.x ?: .5f)
+        val dy = y - (core?.y ?: .5f)
+        val r = max(hypot(dx,dy),.09f)
+        // Tangential orbit relative to the actual dominant body.
+        val speed = sqrt(.000052f * (core?.mass ?: 2f) / r)
+            .coerceAtMost(.085f)
+        val body = CelestialBody(
+            idSequence++, if (classType == StellarClass.STAR) 12 else 2,
+            m, 1f, x, y,
+            (core?.vx ?: 0f) -dy/r*speed,
+            (core?.vy ?: 0f) +dx/r*speed,
+            lifetime = 3600f,
+            sizeFactor = (.65f + .20f*sqrt(m)).coerceIn(.6f,1.7f),
+            material = material,
+            temperature = when (classType) {
+                StellarClass.STAR -> 5300f
+                StellarClass.QUASAR -> 6400f
+                StellarClass.CLOUD -> 175f
+                StellarClass.PLANET -> if (material == MatterMaterial.MAGMA)
+                    2100f else 290f
+            },
+            stellarClass = classType
+        )
+        val requested = when {
+            m < .20f -> 15
+            m < 1f -> 45
+            m < 4f -> 86
+            else -> 180
+        }
+        val n = min(requested, matterMode.maxParticles - sand.grains.size)
+        if (n <= 0) return false
+        sand.seed(body,n)
+        bodies = bodies + body
+        previousBodies = bodies
+        publishGrains()
+        return true
+    }
+
+    @Synchronized
+    fun applyObservatoryImpulse(x: Float, y: Float,
+        strength: Float): Boolean {
+        if (sand.grains.isEmpty()) return false
+        sand.perturb(x.coerceIn(0f,1f), y.coerceIn(0f,1f),
+            strength.coerceIn(.02f,.30f))
+        bodies = sand.summarizeBodies(bodies)
+        publishGrains()
+        return true
+    }
+
     @Synchronized
     fun spawnGiant(kind: Int = 97) {
         if (bodies.size >= maxBodies || bodies.any { it.kind in 97..104 }) return

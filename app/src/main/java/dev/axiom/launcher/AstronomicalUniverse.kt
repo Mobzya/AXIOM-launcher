@@ -55,6 +55,12 @@ internal class AstronomicalUniverse {
         private set
     var lastContactMs = .0
         private set
+    var reactions = 0
+        private set
+    var phaseTransitions = 0
+        private set
+    var radiatedHeat = 0.0
+        private set
     val counters: Pair<Long, Long> get() = contactVisits to gravityVisits
 
     private class Center(val id: Int) {
@@ -140,6 +146,9 @@ internal class AstronomicalUniverse {
         nextId = 1
         pulseKey = -1
         tick = 0
+        reactions = 0
+        phaseTransitions = 0
+        radiatedHeat = 0.0
     }
 
     /**
@@ -163,45 +172,71 @@ internal class AstronomicalUniverse {
             val x = (r * cos(angle)).toFloat()
             val y = (r * sin(angle)).toFloat()
             val portion = (i * 37 + body.id * 23).mod(100)
+            val radial = r / radius
+            // Differentiated interiors and atmospheres: metallic cores,
+            // rocky mantle, icy shell and a little volatile matter.
+            // These are MASS packets, not stoichiometrically pure molecules.
             val material = when (body.stellarClass) {
                 StellarClass.STAR -> when {
-                    portion < 68 -> MatterMaterial.HYDROGEN
-                    portion < 89 -> MatterMaterial.HELIUM
+                    radial < .25 && portion < 24 -> MatterMaterial.PLASMA
+                    portion < 70 -> MatterMaterial.HYDROGEN
+                    portion < 93 -> MatterMaterial.HELIUM
                     else -> MatterMaterial.PLASMA
                 }
                 StellarClass.QUASAR -> when {
                     portion < 48 -> MatterMaterial.PLASMA
-                    portion < 77 -> MatterMaterial.HYDROGEN
-                    else -> MatterMaterial.HELIUM
+                    portion < 79 -> MatterMaterial.HYDROGEN
+                    portion < 96 -> MatterMaterial.HELIUM
+                    else -> MatterMaterial.NICKEL
                 }
                 StellarClass.CLOUD -> when {
-                    portion < 50 -> MatterMaterial.HYDROGEN
-                    portion < 72 -> MatterMaterial.METHANE
-                    portion < 88 -> MatterMaterial.ICE
-                    else -> MatterMaterial.HELIUM
+                    portion < 36 -> MatterMaterial.HYDROGEN
+                    portion < 53 -> MatterMaterial.HELIUM
+                    portion < 68 -> MatterMaterial.METHANE
+                    portion < 80 -> MatterMaterial.AMMONIA
+                    portion < 92 -> MatterMaterial.ICE
+                    else -> MatterMaterial.ORGANICS
                 }
                 StellarClass.PLANET -> when (body.material) {
                     MatterMaterial.METHANE, MatterMaterial.HYDROGEN,
-                    MatterMaterial.HELIUM -> when {
-                        portion < 62 -> body.material
-                        portion < 87 -> MatterMaterial.HYDROGEN
-                        else -> MatterMaterial.HELIUM
+                    MatterMaterial.HELIUM, MatterMaterial.AMMONIA -> when {
+                        radial < .25 && portion < 75 -> MatterMaterial.ROCK
+                        portion < 42 -> MatterMaterial.HYDROGEN
+                        portion < 71 -> MatterMaterial.HELIUM
+                        portion < 85 -> MatterMaterial.METHANE
+                        else -> MatterMaterial.AMMONIA
                     }
                     MatterMaterial.ICE, MatterMaterial.WATER -> when {
-                        portion < 60 -> MatterMaterial.ICE
-                        portion < 76 -> MatterMaterial.WATER
-                        portion < 92 -> MatterMaterial.ROCK
-                        else -> MatterMaterial.IRON
+                        radial < .26 -> if (portion < 56)
+                            MatterMaterial.IRON else MatterMaterial.BASALT
+                        portion < 51 -> MatterMaterial.ICE
+                        portion < 69 -> MatterMaterial.WATER
+                        portion < 82 -> MatterMaterial.SILICATE
+                        portion < 91 -> MatterMaterial.AMMONIA
+                        else -> MatterMaterial.ORGANICS
                     }
-                    MatterMaterial.IRON -> if (portion < 65)
-                        MatterMaterial.IRON else MatterMaterial.SILICATE
-                    MatterMaterial.SULFUR -> if (portion < 35)
-                        MatterMaterial.PLASMA else MatterMaterial.SULFUR
-                    else -> when {
-                        portion < 60 -> body.material
-                        portion < 81 -> MatterMaterial.SILICATE
-                        portion < 94 -> MatterMaterial.IRON
+                    MatterMaterial.IRON, MatterMaterial.NICKEL -> when {
+                        radial < .42 -> if (portion < 64)
+                            MatterMaterial.IRON else MatterMaterial.NICKEL
+                        portion < 60 -> MatterMaterial.BASALT
+                        portion < 87 -> MatterMaterial.SILICATE
                         else -> MatterMaterial.CARBON
+                    }
+                    MatterMaterial.SULFUR, MatterMaterial.MAGMA -> when {
+                        portion < 23 -> MatterMaterial.MAGMA
+                        portion < 45 -> MatterMaterial.BASALT
+                        portion < 64 -> MatterMaterial.SULFUR
+                        portion < 78 -> MatterMaterial.ASH
+                        else -> MatterMaterial.SILICATE
+                    }
+                    else -> when {
+                        radial < .21 && portion < 78 -> MatterMaterial.IRON
+                        portion < 36 -> body.material
+                        portion < 64 -> MatterMaterial.BASALT
+                        portion < 80 -> MatterMaterial.SILICATE
+                        portion < 89 -> MatterMaterial.NICKEL
+                        portion < 95 -> MatterMaterial.CARBON
+                        else -> MatterMaterial.CRYSTAL
                     }
                 }
             }
@@ -286,6 +321,13 @@ internal class AstronomicalUniverse {
         MatterMaterial.PLASMA -> .000220
         MatterMaterial.OXIDE -> .000070
         MatterMaterial.GLASS -> .000090
+        MatterMaterial.NICKEL -> .000280
+        MatterMaterial.BASALT -> .000035
+        MatterMaterial.AMMONIA -> .000175
+        MatterMaterial.ORGANICS -> .000240
+        MatterMaterial.MAGMA -> .000240
+        MatterMaterial.ASH -> .000025
+        MatterMaterial.CRYSTAL -> .000005
         else -> 0.0
     }
 
@@ -303,6 +345,16 @@ internal class AstronomicalUniverse {
                 MatterMaterial.CARBON to MatterMaterial.STEAM
             pair(MatterMaterial.IRON, MatterMaterial.SILICATE) && t > 950 ->
                 MatterMaterial.IRON to MatterMaterial.MINERAL
+            pair(MatterMaterial.NICKEL, MatterMaterial.OXYGEN) && t > 650 ->
+                MatterMaterial.OXIDE to MatterMaterial.OXIDE
+            pair(MatterMaterial.CARBON, MatterMaterial.OXYGEN) && t > 1050 ->
+                MatterMaterial.ASH to MatterMaterial.ASH
+            pair(MatterMaterial.ORGANICS, MatterMaterial.OXYGEN) && t > 760 ->
+                MatterMaterial.CARBON to MatterMaterial.STEAM
+            pair(MatterMaterial.METHANE, MatterMaterial.PLASMA) && t > 1800 ->
+                MatterMaterial.CARBON to MatterMaterial.HYDROGEN
+            pair(MatterMaterial.AMMONIA, MatterMaterial.PLASMA) && t > 2000 ->
+                MatterMaterial.HYDROGEN to MatterMaterial.HELIUM
             else -> return false
         }
         val delta = a.mass * (thermalPotential(ma) -
@@ -315,6 +367,7 @@ internal class AstronomicalUniverse {
         a.heat = max(0.0, a.heat + delta * ratio)
         b.heat = max(0.0, b.heat + delta * (1.0 - ratio))
         a.material = product.first; b.material = product.second
+        reactions++
         return true
     }
 
@@ -332,6 +385,11 @@ internal class AstronomicalUniverse {
             MatterMaterial.PLASMA -> if (t < 2500) MatterMaterial.HYDROGEN else null
             MatterMaterial.SILICATE -> if (t > 1700) MatterMaterial.GLASS else null
             MatterMaterial.GLASS -> if (t < 1400) MatterMaterial.SILICATE else null
+            MatterMaterial.BASALT -> if (t > 1900) MatterMaterial.MAGMA else null
+            MatterMaterial.MAGMA -> if (t < 1100) MatterMaterial.BASALT else null
+            MatterMaterial.ORGANICS -> if (t > 1100) MatterMaterial.CARBON else null
+            MatterMaterial.MINERAL -> if (t < 240) MatterMaterial.CRYSTAL else null
+            MatterMaterial.CRYSTAL -> if (t > 550) MatterMaterial.MINERAL else null
             else -> null
         } ?: return
         val delta = (thermalPotential(new) -
@@ -339,6 +397,7 @@ internal class AstronomicalUniverse {
         if (delta > p.heat) return
         p.heat = max(0.0, p.heat - delta)
         p.material = new
+        phaseTransitions++
     }
 
     private fun releaseEventHeat(event: CosmicEpisode) {

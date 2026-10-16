@@ -578,8 +578,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     prefs.edit().putString("matter_mode",
                         MatterMode.DETAILED.name).apply()
                 },
-                reactionCount = world.matter.reactions,
-                planetCount = world.matter.newPlanets,
+                reactionCount = world.sand.reactions,
+                planetCount = world.bodies.count {
+                    it.stellarClass == StellarClass.PLANET
+                },
                 onMaximumBodies = {
                     world.updateMaximumBodies(it)
                     prefs.edit().putInt("max_bodies",world.maxBodies).apply()
@@ -621,7 +623,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 profilerEnabled = meter.enabled,
                 profilerSummary = meter.summary,
                 onSurprise = { world.triggerRandomEvent() },
-                currentEpisode = world.episode.kind.name,
+                currentEpisode = world.episode.kind.name +
+                    " / " + world.episode.intensity.label,
                 onTerminal = {
                     terminalInitial = ""
                     mode = AxiomMode.TERMINAL
@@ -643,7 +646,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 apps = apps,
                 gravity = world.gravity,
                 bodyCount = world.bodies.size,
-                currentEpisode = world.episode.kind.name,
+                currentEpisode = world.episode.kind.name +
+                    " / " + world.episode.intensity.label,
                 eventHistory = world.eventHistory,
                 onModel = { world.summonMath(it) },
                 onLab = { choice ->

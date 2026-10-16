@@ -259,6 +259,7 @@ internal fun AxiomSettings(
     profilerEnabled: Boolean,
     profilerSummary: String,
     onSurprise: () -> Unit,
+    onEventIntensity: (CosmicEventIntensity) -> Unit,
     currentEpisode: String,
     onTerminal: () -> Unit,
     onRefresh: () -> Unit,
@@ -543,6 +544,28 @@ internal fun AxiomSettings(
             color = AX_WHITE, fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onSurprise).padding(vertical = 15.dp))
+        Text("Вызвать событие определённой мощности:",
+            color = AX_GRAY, fontSize = 11.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            CosmicEventIntensity.entries.forEach { strength ->
+                Text(
+                    strength.label,
+                    modifier = Modifier.weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AX_TILE)
+                        .clickable { onEventIntensity(strength) }
+                        .padding(vertical = 11.dp, horizontal = 3.dp),
+                    color = AX_WHITE, fontSize = 10.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Слабые события происходят чаще. Катастрофические — очень редко; " +
+            "их эффект ограничен запасом энергии настоящих частиц.",
+            color = AX_GRAY, fontSize = 11.sp, lineHeight = 16.sp)
         Spacer(Modifier.height(12.dp))
         Text("Прикосновение создаёт волну, двойное нажатие — комету,\n" +
             "удерживание вызывает событие, горизонтальный жест меняет глубину.",

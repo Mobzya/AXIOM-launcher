@@ -183,8 +183,230 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
     val wave = moment.age * .6f
     val center = Offset(px + scale * .6f, py + scale * .4f)
 
-    // Each family uses a different piece of animated geometry.
-    when (moment.kind.ordinal % 12) {
+    // A dedicated visual signature for the less common mathematical
+    // families; do not recycle one of the twelve generic animations.
+    // All paths are deterministically keyed by the lesson and its seed.
+    val signature = when (moment.kind) {
+        MathKind.LORENZ -> 12
+        MathKind.PENDULUM -> 13
+        MathKind.MANDELBROT, MathKind.JULIA -> 14
+        MathKind.L_SYSTEM -> 15
+        MathKind.MARKOV, MathKind.KALMAN -> 16
+        MathKind.GAME_THEORY -> 17
+        MathKind.REACTION_DIFFUSION -> 18
+        MathKind.OPTICAL_FLOW -> 19
+        MathKind.VORONOI -> 20
+        MathKind.MANIFOLD, MathKind.PCA -> 21
+        MathKind.MONTE_CARLO -> 22
+        MathKind.FFT -> 23
+        MathKind.BEZIER -> 24
+        MathKind.KMEANS -> 25
+        else -> moment.kind.ordinal % 12
+    }
+    when (signature) {
+        12 -> { // Lorenz attractor: two lobes rather than another orbit
+            val path = Path()
+            for (i in 0..135) {
+                val v = i / 135f
+                val theta = v * 11.3f + wave*.15f
+                val lobe = if (sin(theta*.49f) >= 0) 1f else -1f
+                val radius = (.14f + .24f*(.5f+.5f*sin(theta*1.91f)))
+                val x = px+scale*(1f+lobe*.50f+cos(theta)*radius)
+                val y = py+scale*(.50f+sin(theta)*radius*1.15f)
+                if(i==0)path.moveTo(x,y) else path.lineTo(x,y)
+            }
+            drawPath(path,AX_WHITE.copy(alpha=.45f*a),style=Stroke(.8.dp.toPx()))
+        }
+        13 -> { // Pendulum: pivots, arc and swinging actual bob
+            val pivot = Offset(px+scale,py+scale*.12f)
+            val length=scale*.98f
+            val angle=sin(wave*1.5f)*.67f
+            for(i in 0..22){
+                val phi=-.85f+i*.077f
+                val p=pivot+Offset(sin(phi)*length,cos(phi)*length)
+                drawCircle(AX_WHITE.copy(alpha=.07f*a),.65.dp.toPx(),p)
+            }
+            val bob=pivot+Offset(sin(angle)*length,cos(angle)*length)
+            drawLine(AX_WHITE.copy(alpha=.57f*a),pivot,bob,1.05.dp.toPx())
+            drawCircle(AX_WHITE.copy(alpha=.90f*a),4.dp.toPx(),bob)
+            drawCircle(AX_WHITE.copy(alpha=.55f*a),1.5.dp.toPx(),pivot)
+        }
+        14 -> { // Mandelbrot / Julia escape contours with actual iteration
+            val julia=moment.kind==MathKind.JULIA
+            for(i in 0..43)for(j in 0..22){
+                val x=(i/43f-.5f)*2.6f
+                val y=(j/22f-.5f)*1.7f
+                var zr=if(julia)x else 0f
+                var zi=if(julia)y else 0f
+                val cr=if(julia)-.72f else x
+                val ci=if(julia).27f else y
+                var n=0
+                while(n<14&&zr*zr+zi*zi<5f){
+                    val nr=zr*zr-zi*zi+cr
+                    zi=2f*zr*zi+ci
+                    zr=nr;n++
+                }
+                if(n>=11 || (n+moment.seed).mod(4)==0)
+                    drawCircle(AX_WHITE.copy(alpha=a*(.09f+n*.018f)),
+                        .7.dp.toPx(),Offset(px+i/43f*scale*2f,
+                            py+j/22f*scale))
+            }
+        }
+        15 -> { // L-system: slowly growing, asymmetric recursive branching
+            fun branch(x:Float,y:Float,angle:Float,len:Float,depth:Int){
+                if(depth==0 || len<1.5f)return
+                val end=Offset(x+cos(angle)*len,y-sin(angle)*len)
+                drawLine(AX_WHITE.copy(alpha=a*(.13f+depth*.095f)),
+                    Offset(x,y),end,(.35f+depth*.1f).dp.toPx())
+                val tilt=.27f+moment.seed.mod(7)*.014f
+                branch(end.x,end.y,angle+tilt,len*.69f,depth-1)
+                branch(end.x,end.y,angle-.49f,len*.62f,depth-1)
+            }
+            branch(px+scale,py+scale*.99f,
+                PI.toFloat()*.5f+sin(wave*.3f)*.09f,
+                scale*.31f,5)
+        }
+        16 -> { // Markov / Kalman: changing probability-state graph
+            val pts=List(5){i->
+                val t=i*2f*PI.toFloat()/5f
+                center+Offset(cos(t)*scale*.83f,sin(t)*scale*.51f)
+            }
+            for(i in pts.indices) {
+                val j=(i+2)%pts.size
+                drawLine(AX_WHITE.copy(alpha=.25f*a),pts[i],pts[j],.8.dp.toPx())
+                val t=(moment.age*.21f+i*.17f)%1f
+                drawCircle(AX_WHITE.copy(alpha=.72f*a),2.dp.toPx(),
+                    pts[i]+(pts[j]-pts[i])*t)
+                drawCircle(AX_WHITE.copy(alpha=.5f*a),2.6.dp.toPx(),pts[i])
+            }
+        }
+        17 -> { // Game theory: payoff matrix and moving mixed-strategy point
+            for(i in 0..2){
+                drawLine(AX_WHITE.copy(alpha=.27f*a),
+                    Offset(px+i*scale*.65f,py),Offset(px+i*scale*.65f,py+scale),
+                    .7.dp.toPx())
+                drawLine(AX_WHITE.copy(alpha=.27f*a),
+                    Offset(px,py+i*scale*.5f),Offset(px+scale*1.3f,py+i*scale*.5f),
+                    .7.dp.toPx())
+            }
+            val u=(.5f+.44f*sin(wave))
+            val v=(.5f+.43f*cos(wave*.83f))
+            drawCircle(AX_WHITE.copy(alpha=.9f*a),3.4.dp.toPx(),
+                Offset(px+u*scale*1.3f,py+v*scale))
+        }
+        18 -> { // Turing pattern from interacting travelling modes
+            for(i in 0..31)for(j in 0..13){
+                val u=i*.34f;val v=j*.44f
+                val f=sin(u+sin(v*.7f+wave*.34f))+
+                    cos(v+cos(u*.61f-wave*.21f))
+                if(f>.47f)
+                    drawCircle(AX_WHITE.copy(alpha=a*(.16f+f*.12f)),
+                        1.3.dp.toPx(),Offset(px+i*scale/16f,py+j*scale/13f))
+            }
+        }
+        19 -> { // Optical flow: distinct vector field with moving heads
+            for(i in 0..10)for(j in 0..5){
+                val x=px+i*scale*.18f
+                val y=py+j*scale*.17f
+                val angle=sin(i*.6f+wave*.4f)-cos(j*.7f-wave*.3f)
+                val dx=cos(angle)*scale*.10f
+                val dy=sin(angle)*scale*.10f
+                drawLine(AX_WHITE.copy(alpha=.32f*a),Offset(x,y),
+                    Offset(x+dx,y+dy),.7.dp.toPx())
+                drawCircle(AX_WHITE.copy(alpha=.70f*a),1.dp.toPx(),
+                    Offset(x+dx,y+dy))
+            }
+        }
+        20 -> { // Voronoi: cells hinted with weighted nearest points
+            val pts=listOf(Offset(.15f,.22f),Offset(.83f,.15f),
+                Offset(.37f,.83f),Offset(1.42f,.63f))
+            for(i in 0..24)for(j in 0..12){
+                val x=i/24f*1.7f
+                val y=j/12f
+                val nearest=pts.indices.minByOrNull { k ->
+                    val d=pts[k]-Offset(x,y)
+                    d.x*d.x+d.y*d.y
+                } ?: 0
+                if((i+j+nearest)%3==0)
+                    drawCircle(AX_WHITE.copy(alpha=a*(.13f+nearest*.04f)),
+                        .65.dp.toPx(),Offset(px+x*scale,py+y*scale))
+            }
+            pts.forEach{p->drawCircle(AX_WHITE.copy(alpha=.83f*a),
+                2.3.dp.toPx(),Offset(px,py)+p*scale)}
+        }
+        21 -> { // Manifold embedding: warped lattice rather than rotating axes
+            for(j in 0..6){
+                val path=Path()
+                for(i in 0..42) {
+                    val u=i/42f
+                    val x=px+u*2f*scale
+                    val y=py+scale*(j/6f*.79f+
+                        .11f*sin(u*9f+j*.58f+wave*.27f))
+                    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+                }
+                drawPath(path,AX_WHITE.copy(alpha=(.14f+j*.025f)*a),
+                    style=Stroke(.65.dp.toPx()))
+            }
+        }
+        22 -> { // Monte Carlo: quasi random cloud and sample histogram
+            for(i in 0..96){
+                val v=((i*73+moment.seed).mod(97))/97f
+                val w=((i*37+moment.seed*3).mod(101))/101f
+                if(v*v+w*w <= 1f)
+                    drawCircle(AX_WHITE.copy(alpha=.19f*a),
+                        .9.dp.toPx(),Offset(px+v*scale*1.8f,py+w*scale))
+            }
+            drawCircle(AX_WHITE.copy(alpha=.24f*a),scale,
+                Offset(px,py),style=Stroke(.7.dp.toPx()))
+        }
+        23 -> { // FFT butterflies
+            for(stage in 0..3)for(i in 0..7){
+                val p=Offset(px+stage*scale*.48f,
+                    py+i*scale*.13f)
+                val other=i xor (1 shl stage.coerceAtMost(2))
+                val q=Offset(px+(stage+1)*scale*.48f,
+                    py+other*scale*.13f)
+                drawLine(AX_WHITE.copy(alpha=.25f*a),p,q,.7.dp.toPx())
+            }
+        }
+        24 -> { // Bezier: control points + animated De Casteljau
+            val p0=Offset(px,py+scale)
+            val p1=Offset(px+scale*.3f,py-scale*.26f)
+            val p2=Offset(px+scale*1.5f,py+scale*1.15f)
+            val p3=Offset(px+scale*2f,py+scale*.2f)
+            val pts=listOf(p0,p1,p2,p3)
+            for(i in 0..2)drawLine(AX_WHITE.copy(alpha=.18f*a),
+                pts[i],pts[i+1],.7.dp.toPx())
+            val path=Path()
+            for(i in 0..48){
+                val t=i/48f;val q=1f-t
+                val p=p0*(q*q*q)+p1*(3f*q*q*t)+
+                    p2*(3f*q*t*t)+p3*(t*t*t)
+                if(i==0)path.moveTo(p.x,p.y)else path.lineTo(p.x,p.y)
+            }
+            drawPath(path,AX_WHITE.copy(alpha=.52f*a),style=Stroke(1.dp.toPx()))
+            val t=(.5f+.48f*sin(wave*.46f))
+            val q=1f-t
+            val now=p0*(q*q*q)+p1*(3f*q*q*t)+
+                p2*(3f*q*t*t)+p3*(t*t*t)
+            drawCircle(AX_WHITE.copy(alpha=.9f*a),2.5.dp.toPx(),now)
+        }
+        25 -> { // KMeans: moving cluster centroids
+            val centroids=listOf(Offset(.2f,.19f),Offset(1.4f,.25f),
+                Offset(.86f,.83f))
+            for(i in 0..48) {
+                val c=i%3
+                val t=i*2.39996f
+                val spread=(.12f+(i%11)*.016f)*scale
+                val p=Offset(px,py)+centroids[c]*scale+
+                    Offset(cos(t+wave*.11f)*spread,
+                        sin(t+wave*.11f)*spread)
+                drawCircle(AX_WHITE.copy(alpha=.13f*a),1.25.dp.toPx(),p)
+            }
+            centroids.forEach{p->drawCircle(AX_WHITE.copy(alpha=.88f*a),
+                3.1.dp.toPx(),Offset(px,py)+p*scale)}
+        }
+        0 -> {
         0 -> { // descent over a parabola
             val path = Path()
             for (i in 0..30) {

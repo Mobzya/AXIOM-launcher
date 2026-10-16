@@ -551,7 +551,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 .background(AX_BLACK.copy(alpha=.45f))
                 .clickable { observatoryOpen=false })
             Box(Modifier.align(Alignment.BottomCenter)
-                .padding(horizontal=16.dp,bottom=32.dp)) {
+                .padding(horizontal=16.dp).padding(bottom=32.dp)) {
             UniverseControlPanel(
                 grainCount = world.sand.grains.size,
                 maxGrains = world.matterMode.maxParticles,

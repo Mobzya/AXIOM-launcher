@@ -555,12 +555,15 @@ internal class CosmicWorld(
         // The next event starts roughly one minute after this one begins,
         // not one minute *after* its end. Event durations stay much shorter.
         eventAt = elapsed + 32f + random.nextFloat() * 16f
-        if (kind == CosmicEventKind.METEORS &&
-            (preset == CosmicPreset.DEEP_SPACE ||
-                preset == CosmicPreset.PROTOPLANETARY)) {
-            // Stable orbital presets are closed scenes; meteor showers in
-            // open space inject new particles from outside, never from impacts.
-            spawnMeteorShower(intensity)
+        if (kind == CosmicEventKind.METEORS) {
+            // All six templates can witness incoming matter. In curated
+            // orbits keep the external impact small unless the user selects
+            // MAJOR/CATASTROPHIC intensity explicitly.
+            val practical = if (preset == CosmicPreset.DEEP_SPACE ||
+                preset == CosmicPreset.PROTOPLANETARY ||
+                intensity == CosmicEventIntensity.CATASTROPHIC)
+                intensity else CosmicEventIntensity.FLICKER
+            spawnMeteorShower(practical)
         }
     }
 

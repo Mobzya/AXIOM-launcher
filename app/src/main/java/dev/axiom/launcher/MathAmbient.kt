@@ -406,7 +406,6 @@ internal fun DrawScope.drawMathMoment(moment: MathMoment, dim: Float, paint: Pai
             centroids.forEach{p->drawCircle(AX_WHITE.copy(alpha=.88f*a),
                 3.1.dp.toPx(),Offset(px,py)+p*scale)}
         }
-        0 -> {
         0 -> { // descent over a parabola
             val path = Path()
             for (i in 0..30) {

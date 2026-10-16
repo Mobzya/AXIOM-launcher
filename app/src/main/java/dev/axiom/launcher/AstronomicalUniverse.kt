@@ -528,10 +528,23 @@ internal class AstronomicalUniverse {
                 // At the surface its strength diminishes rather than
                 // causing a singular kick.
                 val gas = p.material.gas
-                val k = if (gas) 1.25 else 4.50
+                val k = when (p.material) {
+                    MatterMaterial.IRON, MatterMaterial.NICKEL,
+                    MatterMaterial.CRYSTAL -> 5.60
+                    MatterMaterial.BASALT, MatterMaterial.ROCK,
+                    MatterMaterial.SILICATE -> 4.50
+                    MatterMaterial.ICE, MatterMaterial.MINERAL -> 3.35
+                    MatterMaterial.WATER, MatterMaterial.MAGMA -> 2.05
+                    else -> if (gas) 1.25 else 3.30
+                }
                 fx[i] -= k * dx
                 fy[i] -= k * dy
-                val damping = if (gas) .08 else .28
+                val damping = when (p.material) {
+                    MatterMaterial.MAGMA, MatterMaterial.WATER -> .53
+                    MatterMaterial.ICE -> .38
+                    MatterMaterial.IRON, MatterMaterial.NICKEL -> .22
+                    else -> if (gas) .08 else .28
+                }
                 fx[i] -= damping * (p.vx - own.vx)
                 fy[i] -= damping * (p.vy - own.vy)
             }
@@ -627,8 +640,22 @@ internal class AstronomicalUniverse {
                         val invA = 1.0/p.mass; val invB = 1.0/q.mass
                         val closing = (q.vx-p.vx)*nx+(q.vy-p.vy)*ny
                         if (closing < 0) {
-                            val e = if (p.material.gas && q.material.gas)
-                                .54 else .19
+                            val e = when {
+                                p.material == MatterMaterial.MAGMA ||
+                                    q.material == MatterMaterial.MAGMA ||
+                                    p.material == MatterMaterial.WATER ||
+                                    q.material == MatterMaterial.WATER -> .08
+                                p.material == MatterMaterial.ICE ||
+                                    q.material == MatterMaterial.ICE -> .12
+                                p.material == MatterMaterial.IRON ||
+                                    q.material == MatterMaterial.IRON ||
+                                    p.material == MatterMaterial.NICKEL ||
+                                    q.material == MatterMaterial.NICKEL -> .31
+                                p.material == MatterMaterial.PLASMA ||
+                                    q.material == MatterMaterial.PLASMA -> .64
+                                p.material.gas && q.material.gas -> .54
+                                else -> .19
+                            }
                             val impulse = -(1+e)*closing/(invA+invB)
                             p.vx = (p.vx-impulse*invA*nx).toFloat()
                             p.vy = (p.vy-impulse*invA*ny).toFloat()
@@ -647,11 +674,22 @@ internal class AstronomicalUniverse {
                         p.y = (p.y-shift*invA*ny).toFloat()
                         q.x = (q.x+shift*invB*nx).toFloat()
                         q.y = (q.y+shift*invB*ny).toFloat()
+                        val conduction = when {
+                            p.material == MatterMaterial.IRON ||
+                                p.material == MatterMaterial.NICKEL ||
+                                q.material == MatterMaterial.IRON ||
+                                q.material == MatterMaterial.NICKEL -> .075
+                            p.material.gas && q.material.gas -> .008
+                            else -> .024
+                        }
                         val heat = (p.heat/p.mass-q.heat/q.mass) *
-                            min(p.mass, q.mass)*.024
+                            min(p.mass, q.mass)*conduction
                         val moved = heat.coerceIn(-q.heat*.2, p.heat*.2)
                         p.heat -= moved; q.heat += moved
-                        if ((p.id*31+q.id*17+tick).and(255) == 0)
+                        val hot = p.heat/p.mass > .00065 ||
+                            q.heat/q.mass > .00065
+                        val chance = if (hot) 127 else 511
+                        if ((p.id*31+q.id*17+tick).and(chance) == 0)
                             reactPair(p,q)
                         if (++hits >= 12) break@collisionCells
                     }

@@ -31,7 +31,16 @@ internal enum class MatterMaterial(
     PLASMA(0xffff7895.toInt(), true, .004f),
     OXIDE(0xffb86c56.toInt()),
     MINERAL(0xff77ba9b.toInt()),
-    GLASS(0xffc6d9d6.toInt())
+    GLASS(0xffc6d9d6.toInt()),
+    // Extra rocky, volatile and high-temperature phases. Colour is a
+    // material marker, not a calibrated spectral emission curve.
+    NICKEL(0xffadb3bb.toInt()),
+    BASALT(0xff454b57.toInt()),
+    AMMONIA(0xffb5e5ea.toInt(), true, .013f),
+    ORGANICS(0xff966c7c.toInt()),
+    MAGMA(0xffff7844.toInt()),
+    ASH(0xff96928a.toInt()),
+    CRYSTAL(0xffa4f3dc.toInt())
 }
 
 internal enum class MatterMode(val maxParticles: Int, val burstPerBody: Int) {

@@ -411,7 +411,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             CosmicEnvironment(
                 world = world,
-                interacting = mode != AxiomMode.HOME,
+                interacting = mode != AxiomMode.HOME || observatoryOpen,
                 modifier = Modifier.fillMaxSize()
             )
         }

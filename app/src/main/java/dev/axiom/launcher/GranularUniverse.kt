@@ -376,6 +376,11 @@ internal class GranularUniverse {
         MatterMaterial.STEAM, MatterMaterial.OXYGEN,
         MatterMaterial.METHANE -> .045
         MatterMaterial.PLASMA -> .012
+        MatterMaterial.NICKEL, MatterMaterial.BASALT,
+        MatterMaterial.CRYSTAL -> 1.10
+        MatterMaterial.ORGANICS, MatterMaterial.ASH -> .64
+        MatterMaterial.MAGMA -> .16
+        MatterMaterial.AMMONIA -> .045
     }
 
     /** Toy reactions transform existing mass packets only.

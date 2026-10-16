@@ -15,7 +15,9 @@ internal enum class CosmicPreset(val title: String, val details: String) {
     SOLAR_SYSTEM("Солнечная система", "Центральная звезда и пять орбитальных планет"),
     SATURN_RINGS("Кольца Сатурна", "Газовый гигант, ледяные кольца и спутники"),
     BINARY_STARS("Двойная звезда", "Два светила на общей орбите и планеты"),
-    PROTOPLANETARY("Рождение планет", "Звезда и диск пыли, где формируются сгустки")
+    PROTOPLANETARY("Рождение планет", "Звезда и диск пыли, где формируются сгустки"),
+    TITAN_SYSTEM("Титаны и карлики",
+        "Гигантское светило, крошечные луны и тяжёлый газовый гигант")
 }
 
 internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
@@ -57,6 +59,17 @@ internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
     }
 
     return when (preset) {
+        CosmicPreset.TITAN_SYSTEM -> {
+            val titan = body(1, .50f, .49f, 32f,
+                MatterMaterial.HYDROGEN, StellarClass.STAR,
+                temperature = 7400f)
+            listOf(titan) + satellites(32f, .50f, .49f,
+                listOf(.105f, .160f, .225f, .31f, .405f),
+                listOf(.035f, .085f, .32f, .80f, 3.2f),
+                listOf(MatterMaterial.NICKEL, MatterMaterial.ICE,
+                    MatterMaterial.BASALT, MatterMaterial.CRYSTAL,
+                    MatterMaterial.AMMONIA), 2)
+        }
         CosmicPreset.SOLAR_SYSTEM -> {
             val star = body(1, .50f, .50f, 12f, MatterMaterial.HYDROGEN,
                 StellarClass.STAR, temperature = 5800f)
@@ -102,6 +115,15 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
     mode: MatterMode): Int {
     val detail = mode == MatterMode.DETAILED
     return when (preset) {
+        CosmicPreset.TITAN_SYSTEM ->
+            if (body.stellarClass == StellarClass.STAR)
+                if (detail) 850 else 270
+            else when {
+                body.mass < .10f -> if (detail) 38 else 18
+                body.mass < .35f -> if (detail) 96 else 40
+                body.mass < 1f -> if (detail) 160 else 76
+                else -> if (detail) 340 else 140
+            }
         CosmicPreset.DEEP_SPACE -> if (detail) 250 else 76
         CosmicPreset.SOLAR_SYSTEM ->
             if (body.stellarClass == StellarClass.STAR)

@@ -460,16 +460,22 @@ internal fun AxiomSettings(
         // ceilings, never an immediate allocation of a million objects.
         val sliderValue = ((log10(particleLimit.toDouble()) - 2.0)/4.0)
             .toFloat().coerceIn(0f,1f)
+        var previewLimit by remember(particleLimit) {
+            mutableStateOf(sliderValue)
+        }
         Slider(
-            value=sliderValue,
-            onValueChange={ v ->
-                val raw=10.0.pow(2.0+v.toDouble()*4.0)
+            value=previewLimit,
+            onValueChange={ previewLimit=it },
+            onValueChangeFinished={
+                val raw=10.0.pow(2.0+previewLimit.toDouble()*4.0)
                 val rounded=when {
                     raw < 1000.0 -> (raw/50.0).roundToInt()*50
                     raw < 10000.0 -> (raw/500.0).roundToInt()*500
                     raw < 100000.0 -> (raw/5000.0).roundToInt()*5000
                     else -> (raw/50000.0).roundToInt()*50000
                 }
+                // Reconfigure/reseed ONLY after release, not every drag
+                // pixel; otherwise a low cap would reset the universe.
                 onParticleLimit(rounded.coerceIn(100,1_000_000))
             }, valueRange=0f..1f
         )

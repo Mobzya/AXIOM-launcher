@@ -207,8 +207,16 @@ internal class CosmicWorld(
         sand.clear()
         sand.updateMode(matterMode)
         sand.updateParticleLimit(particleLimit)
-        bodies.forEach { body ->
-            sand.seed(body, presetGrainCount(preset, body, matterMode))
+        val desired = bodies.map { presetGrainCount(preset,it,matterMode) }
+        val needed = desired.sum()
+        bodies.forEachIndexed { index, body ->
+            // When a user selects an unusually small cap (e.g. 100),
+            // distribute the existing real matter fairly across bodies
+            // instead of leaving unseen zero-grain phantom planets.
+            val count = if (needed <= particleLimit) desired[index]
+                else max(1,(desired[index].toLong()*particleLimit/
+                    needed.coerceAtLeast(1)).toInt())
+            sand.seed(body,count)
         }
         when (preset) {
             CosmicPreset.SATURN_RINGS -> sand.seedOrbitalDisk(

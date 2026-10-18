@@ -79,8 +79,15 @@ internal class AstronomicalUniverse {
     private val centers = ArrayList<Center>()
     private val centersById = HashMap<Int, Center>()
 
-    fun updateMode(value: MatterMode) { mode = value }
+    private var explicitlyConfiguredLimit = false
+    fun updateMode(value: MatterMode) {
+        mode = value
+        // Direct physics tests and old integrations still inherit the mode
+        // default, unless the user explicitly set a separate capacity.
+        if (!explicitlyConfiguredLimit) maxParticles = value.maxParticles
+    }
     fun updateParticleLimit(value: Int) {
+        explicitlyConfiguredLimit = true
         maxParticles = value.coerceIn(100, 1_000_000)
     }
     /** Preserve unique grain IDs when freely seeded dust reaches 1M grains. */

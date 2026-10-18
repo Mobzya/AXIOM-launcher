@@ -12,8 +12,8 @@ android {
         applicationId = "dev.axiom.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.23.0-beta.1"
+        versionCode = 24
+        versionName = "0.24.0-beta.1"
     }
 
     compileOptions {

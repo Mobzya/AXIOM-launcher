@@ -29,6 +29,9 @@ import kotlin.math.sqrt
  */
 internal class AstronomicalUniverse {
     val grains: MutableList<SandGrain> = ArrayList()
+    /** A capacity limit, NOT a request to allocate this many particles. */
+    var maxParticles: Int = MatterMode.BALANCED.maxParticles
+        private set
     var mode: MatterMode = MatterMode.BALANCED
         private set
 
@@ -77,6 +80,11 @@ internal class AstronomicalUniverse {
     private val centersById = HashMap<Int, Center>()
 
     fun updateMode(value: MatterMode) { mode = value }
+    fun updateParticleLimit(value: Int) {
+        maxParticles = value.coerceIn(100, 1_000_000)
+    }
+    /** Preserve unique grain IDs when freely seeded dust reaches 1M grains. */
+    fun allocateGrainId(): Int = nextId++
 
     data class Snapshot(
         val values: FloatArray,
@@ -128,11 +136,22 @@ internal class AstronomicalUniverse {
         }
     }
 
-    fun renderFrame(): FloatArray {
-        val out = FloatArray(grains.size * 4)
-        for (i in grains.indices) {
-            val p = grains[i]; val k = i * 4
-            out[k] = p.x; out[k+1] = p.y
+    /**
+     * Screen pixels are finite: render a deterministic stratified sampling
+     * of AT MOST 24k grains. All others still exist and are integrated.
+     * Thus a 1,000,000 ceiling does not allocate 16MB each UI frame.
+     */
+    fun renderFrame(maxVisible: Int = 24_000): FloatArray {
+        val n = grains.size
+        val rendered = min(n, maxVisible.coerceAtLeast(1))
+        val out = FloatArray(rendered * 4)
+        for (i in 0 until rendered) {
+            val source = if (n <= rendered) i
+                else ((i.toLong() * n) / rendered).toInt()
+            val p = grains[source]
+            val k = i*4
+            out[k] = p.x
+            out[k+1] = p.y
             out[k+2] = p.visualRadius
             out[k+3] = p.material.ordinal.toFloat()
         }
@@ -158,7 +177,7 @@ internal class AstronomicalUniverse {
      */
     fun seed(body: CelestialBody, requested: Int =
         if (mode == MatterMode.DETAILED) 300 else 76) {
-        val n = min(requested, mode.maxParticles - grains.size)
+        val n = min(requested, maxParticles - grains.size)
         if (n <= 0) return
         val radiusPerGrain = (.00135 *
             sqrt((body.mass / n).coerceAtLeast(.00001f) / .01f))
@@ -271,8 +290,10 @@ internal class AstronomicalUniverse {
     private fun ensureCapacity() {
         val n = grains.size
         if (fx.size < n) {
-            fx = DoubleArray(n); fy = DoubleArray(n)
-            next = IntArray(n); cxCell = IntArray(n); cyCell = IntArray(n)
+            val capacity = max(n, fx.size + fx.size/2 + 128)
+            fx = DoubleArray(capacity); fy = DoubleArray(capacity)
+            next = IntArray(capacity)
+            cxCell = IntArray(capacity); cyCell = IntArray(capacity)
         }
     }
 
@@ -643,7 +664,7 @@ internal class AstronomicalUniverse {
                     while (j >= 0) {
                         val other = j; j = next[other]
                         if (++visits > maxVisits) break@collisionCells
-                        if (other <= i) break
+                        if (other <= i) continue
                         if (cxCell[other] != cx || cyCell[other] != cy) continue
                         val q = grains[other]
                         val dx = q.x-p.x; val dy = q.y-p.y

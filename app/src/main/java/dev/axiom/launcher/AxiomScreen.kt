@@ -153,7 +153,12 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             initialPreset = CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.SOLAR_SYSTEM.name)
-            } ?: CosmicPreset.SOLAR_SYSTEM
+            } ?: CosmicPreset.SOLAR_SYSTEM,
+            initialParticleLimit = prefs.getInt(
+                "particle_limit",
+                matterModeFromPreference(prefs.getString(
+                    "matter_mode",MatterMode.BALANCED.name)).maxParticles
+            )
         )
     }
     val lab = remember { ScienceLab() }
@@ -554,7 +559,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 .padding(horizontal=16.dp).padding(bottom=32.dp)) {
             UniverseControlPanel(
                 grainCount = world.sand.grains.size,
-                maxGrains = world.matterMode.maxParticles,
+                maxGrains = world.particleLimit,
                 onSpawn = { material,mass -> world.createObject(material,mass) },
                 onPerturb = { power ->
                     world.applyObservatoryImpulse(.5f,.5f,power)
@@ -601,6 +606,18 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 },
                 maximumBodies = world.maxBodies,
                 matterMode = world.matterMode,
+                particleLimit = world.particleLimit,
+                onParticleLimit = { next ->
+                    world.updateParticleLimit(next)
+                    prefs.edit().putInt("particle_limit",world.particleLimit).apply()
+                },
+                onAddParticleBatch = {
+                    val added = world.addOrbitalParticleBatch(2000)
+                    if (added == 0)
+                        android.widget.Toast.makeText(context,
+                            "Достигнут заданный лимит частиц",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                },
                 cosmicPreset = world.preset,
                 onCosmicPreset = { next ->
                     world.loadPreset(next)

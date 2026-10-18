@@ -104,7 +104,7 @@ internal fun CosmicEnvironment(
     val materials = MatterMaterial.entries
     // Enough for a 24k representative sample of a single material;
     // deliberately NOT 2 million float coordinates at 1M grains.
-    val buffers = remember { Array(materials.size) { FloatArray(48_000) } }
+    val buffers = remember { Array(materials.size) { FloatArray(2048) } }
     val counts = remember { IntArray(materials.size) }
     val lightPalette = AxiomColors.palette.light
     var interpolatedFrameFraction by remember { mutableFloatStateOf(1f) }
@@ -230,7 +230,14 @@ internal fun CosmicEnvironment(
                 y >= -.035f && y <= 1.035f &&
                 material in buffers.indices) {
                 val k = counts[material]
-                val buffer = buffers[material]
+                var buffer = buffers[material]
+                if (k + 1 >= buffer.size && buffer.size < 48_000) {
+                    // Double only the material bucket that actually fills.
+                    // Ordinary scenes allocate far less than 4.4MB of buffers.
+                    buffer = buffer.copyOf(
+                        min(48_000,max(k+2,buffer.size*2)))
+                    buffers[material] = buffer
+                }
                 if (k + 1 < buffer.size) {
                     buffer[k] = x * size.width
                     buffer[k+1] = y * size.height

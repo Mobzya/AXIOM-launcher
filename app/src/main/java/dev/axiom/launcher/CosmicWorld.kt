@@ -112,7 +112,7 @@ internal class CosmicWorld(
     }
     var matterMode by mutableStateOf(initialMatterMode)
         private set
-    var particleLimit by mutableIntStateOf(initialParticleLimit.coerceIn(100,1_000_000))
+    var particleLimit by mutableStateOf(initialParticleLimit.coerceIn(100,1_000_000))
         private set
     private var hasCustomParticleLimit = initialParticleLimit !=
         initialMatterMode.maxParticles

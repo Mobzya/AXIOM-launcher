@@ -782,6 +782,32 @@ internal class AstronomicalUniverse {
                                 (2*damping-damping*damping)
                             p.heat += lost*.5; q.heat += lost*.5
                         }
+                        // Distinct short-range EM / liquid interactions:
+                        // repulsive plasma pressure and cohesive liquid films.
+                        // Every impulse is strictly equal-and-opposite, so
+                        // they do not add net momentum or fictional matter.
+                        if (r > 1e-7 && r < .006) {
+                            val liquids = (p.material == MatterMaterial.WATER ||
+                                p.material == MatterMaterial.MAGMA) &&
+                                (q.material == MatterMaterial.WATER ||
+                                    q.material == MatterMaterial.MAGMA)
+                            val charged = p.material == MatterMaterial.PLASMA &&
+                                q.material == MatterMaterial.PLASMA
+                            if (liquids || charged) {
+                                val invA=1.0/p.mass
+                                val invB=1.0/q.mass
+                                val mu=1.0/(invA+invB)
+                                val sign=if (charged) -1.0 else 1.0
+                                val impulse=sign*(if(charged) .035 else .045) *
+                                    mu*h*(1-r/.006)
+                                val nx=dx/r
+                                val ny=dy/r
+                                p.vx=(p.vx+impulse*invA*nx).toFloat()
+                                p.vy=(p.vy+impulse*invA*ny).toFloat()
+                                q.vx=(q.vx-impulse*invB*nx).toFloat()
+                                q.vy=(q.vy-impulse*invB*ny).toFloat()
+                            }
+                        }
                         if (r2 >= radii*radii) continue
                         val nx = if (r > 1e-7) dx/r else 1.0
                         val ny = if (r > 1e-7) dy/r else .0

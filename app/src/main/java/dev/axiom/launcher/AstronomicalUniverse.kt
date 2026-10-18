@@ -652,8 +652,23 @@ internal class AstronomicalUniverse {
         val beginning = System.nanoTime()
         indexContacts()
         contactVisits = 0
-        val maxVisits = if (grains.size > 2000) 60 else 125
-        for (i in grains.indices) {
+        val maxVisits = when {
+            grains.size > 100_000 -> 20
+            grains.size > 10_000 -> 36
+            grains.size > 2000 -> 60
+            else -> 125
+        }
+        // Spatial cells still contain EVERY live particle. With large
+        // populations, resolve a rotating fraction of contact candidates
+        // per tick. Momentum and heat remain pairwise conserved.
+        val stride = when {
+            grains.size > 300_000 -> 16
+            grains.size > 100_000 -> 8
+            grains.size > 30_000 -> 4
+            grains.size > 10_000 -> 2
+            else -> 1
+        }
+        for (i in tick.mod(stride) until grains.size step stride) {
             val p = grains[i]
             val x = cxCell[i]; val y = cyCell[i]
             var visits = 0

@@ -422,6 +422,56 @@ internal class AstronomicalUniverse {
         phaseTransitions++
     }
 
+    /**
+     * Optically simple stellar radiation. Hot plasma/gas loses EXACTLY the
+     * energy gained by cooler material within one scene radius. The world
+     * doesn't create free heat, spawn fictional photons or change mass.
+     *
+     * O(N), executed only every 16 physics steps (not every display frame).
+     */
+    private fun exchangeStellarRadiation() {
+        val emitter = centers.maxByOrNull { it.mass } ?: return
+        var source = 0.0
+        var receiverWeight = 0.0
+        val radius2 = .45*.45
+        for (p in grains) {
+            val m = p.mass.toDouble()
+            val temperature = p.heat / (m * .000001)
+            if (p.owner == emitter.id && p.material.gas &&
+                temperature > 2800.0) {
+                source += p.heat * .003
+            } else if (p.owner != emitter.id && temperature < 2600.0) {
+                val dx = p.x - emitter.x
+                val dy = p.y - emitter.y
+                val r2 = dx*dx + dy*dy
+                if (r2 < radius2)
+                    receiverWeight += m / (.025 + r2)
+            }
+        }
+        if (source <= 0 || receiverWeight <= 0) return
+        var deposited = 0.0
+        for (p in grains) {
+            val m = p.mass.toDouble()
+            val temp = p.heat / (m * .000001)
+            if (p.owner == emitter.id && p.material.gas &&
+                temp > 2800.0) {
+                p.heat -= p.heat*.003
+            } else if (p.owner != emitter.id && temp < 2600.0) {
+                val dx = p.x - emitter.x
+                val dy = p.y - emitter.y
+                val r2 = dx*dx + dy*dy
+                if (r2 < radius2) {
+                    val absorbed = source *
+                        (m / (.025 + r2)) / receiverWeight
+                    p.heat += absorbed
+                    deposited += absorbed
+                }
+            }
+        }
+        // Floating-point residue is negligible (<1e-12 relative) and
+        // intentionally not injected into any random particle.
+    }
+
     private fun releaseEventHeat(event: CosmicEpisode) {
         if (event.kind == CosmicEventKind.QUIET ||
             event.kind == CosmicEventKind.METEORS) return
@@ -844,6 +894,10 @@ internal class AstronomicalUniverse {
         lastGravityMs = gm; lastContactMs = cm
         tick++
         if (tick % 8 == 0) for (p in grains) phaseChange(p)
+        if (tick % 16 == 0) {
+            buildCenters()
+            exchangeStellarRadiation()
+        }
         if (tick % 20 == 0) {
             buildCenters()
             // Real ejecta are allowed but quiet material stays in clouds.

@@ -360,13 +360,33 @@ internal class CosmicWorld(
     }
 
     /**
+     * Incremental, opt-in creation of free real orbital dust.
+     * It never attempts a million allocations on the main thread in one go.
+     */
+    @Synchronized
+    fun addOrbitalParticleBatch(requested: Int = 2000): Int {
+        val amount = minOf(requested.coerceIn(1,2000),
+            particleLimit - sand.grains.size)
+        if (amount <= 0) return 0
+        val primary = bodies.maxByOrNull { it.mass }
+        val before = sand.grains.size
+        sand.seedOrbitalDisk(
+            primary?.x ?: .5f,
+            primary?.y ?: .5f,
+            primary?.mass ?: 6f,
+            amount,.16f,.41f,rocky=true)
+        publishGrains()
+        return sand.grains.size - before
+    }
+
+    /**
      * Explicit reproducible device stress scene. Adds real grains from outside
      * only on deliberate user input, never from impact or scheduled events.
      */
     @Synchronized
     fun populateStressScene(target: Int = 4600) {
         updateMatterMode(MatterMode.DETAILED)
-        val goal = target.coerceIn(500, particleLimit)
+        val goal = target.coerceIn(100, particleLimit)
         if (sand.grains.size >= goal) return
         val slots = (maxBodies - bodies.size).coerceAtLeast(1)
         val per = kotlin.math.ceil((goal-sand.grains.size).toDouble()/slots)

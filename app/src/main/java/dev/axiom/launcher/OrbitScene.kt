@@ -102,7 +102,9 @@ internal fun CosmicEnvironment(
     // Reuse point buffers and Android's drawPoints() batching rather than
     // allocating / submitting 4,500 individual Compose drawCircle operations.
     val materials = MatterMaterial.entries
-    val buffers = remember { Array(materials.size) { FloatArray(9600) } }
+    // Enough for a 24k representative sample of a single material;
+    // deliberately NOT 2 million float coordinates at 1M grains.
+    val buffers = remember { Array(materials.size) { FloatArray(48_000) } }
     val counts = remember { IntArray(materials.size) }
     val lightPalette = AxiomColors.palette.light
     var interpolatedFrameFraction by remember { mutableFloatStateOf(1f) }
@@ -132,28 +134,49 @@ internal fun CosmicEnvironment(
         val worker = launch(Dispatchers.Default) {
             while (coroutineContext.isActive) {
                 val start = System.nanoTime()
+                val n = world.sand.grains.size
+                // Adaptive simulation LOD: every grain keeps real mass and
+                // momentum, but enormously dense worlds evaluate fewer
+                // global steps per second to avoid thermal runaway.
+                val period = when {
+                    n >= 300_000 -> 500_000_000L // 2 Hz
+                    n >= 100_000 -> 250_000_000L // 4 Hz
+                    n >= 30_000 -> 100_000_000L  // 10 Hz
+                    n >= 10_000 -> 50_000_000L   // 20 Hz
+                    else -> physicsPeriod
+                }
                 world.step(physicsDt)
                 val spent = System.nanoTime() - start
-                val remaining = physicsPeriod - spent
-                // Never spin or queue up overdue expensive physics steps.
-                // Slow devices run at lower *simulation* throughput, while
-                // the display/input thread can still render native 120Hz.
-                delay((remaining / 1_000_000L).coerceAtLeast(1L))
+                // Never queue up overdue physics work on a mobile CPU.
+                delay(((period - spent) / 1_000_000L).coerceAtLeast(1L))
             }
         }
         try {
             var lastDisplay = 0L
-            val renderPeriod = if (reducedPower || interacting)
-                16_666_667L else 8_333_333L
             while (coroutineContext.isActive) {
                 val now = withFrameNanos { it }
+                val n = world.sand.grains.size
+                val renderPeriod = when {
+                    n >= 100_000 -> 50_000_000L
+                    n >= 30_000 -> 33_333_333L
+                    n >= 10_000 || reducedPower || interacting ->
+                        16_666_667L
+                    else -> 8_333_333L
+                }
                 if (now - lastDisplay < renderPeriod) continue
                 lastDisplay = now
                 val frames = world.grainFrames
                 val diff = (now - frames.committedAtNanos)
                     .coerceAtLeast(0L)
+                val sourcePeriod = when {
+                    n >= 300_000 -> 500_000_000L
+                    n >= 100_000 -> 250_000_000L
+                    n >= 30_000 -> 100_000_000L
+                    n >= 10_000 -> 50_000_000L
+                    else -> physicsPeriod
+                }
                 interpolatedFrameFraction =
-                    (diff.toFloat() / physicsPeriod).coerceIn(0f, 1f)
+                    (diff.toFloat() / sourcePeriod).coerceIn(0f, 1f)
             }
         } finally {
             worker.cancel()

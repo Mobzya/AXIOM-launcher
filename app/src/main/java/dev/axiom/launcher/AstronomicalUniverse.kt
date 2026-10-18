@@ -39,8 +39,8 @@ internal class AstronomicalUniverse {
     private val orbitalSoft2 = .008 * .008
     private val contactSize = .0072
     private val maxContactRange = .0060
-    private val cellMask = 16383
-    private val cellHeads = IntArray(cellMask + 1)
+    private var cellMask = 16383
+    private var cellHeads = IntArray(cellMask + 1)
     private var next = IntArray(0)
     private var cxCell = IntArray(0)
     private var cyCell = IntArray(0)
@@ -296,6 +296,15 @@ internal class AstronomicalUniverse {
 
     private fun ensureCapacity() {
         val n = grains.size
+        // Minimize false hash-cell aliasing in dense 20k–1M worlds.
+        // Only grow on a larger population, never per physics frame.
+        var bucketCount = cellHeads.size
+        while (bucketCount < n/2 && bucketCount < 262_144)
+            bucketCount *= 2
+        if (bucketCount != cellHeads.size) {
+            cellHeads = IntArray(bucketCount)
+            cellMask = bucketCount - 1
+        }
         if (fx.size < n) {
             val capacity = max(n, fx.size + fx.size/2 + 128)
             fx = DoubleArray(capacity); fy = DoubleArray(capacity)

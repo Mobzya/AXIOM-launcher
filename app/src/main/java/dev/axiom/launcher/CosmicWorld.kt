@@ -83,7 +83,8 @@ internal data class CosmicRemnant(
 internal class CosmicWorld(
     seed: Int = 42,
     initialMatterMode: MatterMode = MatterMode.BALANCED,
-    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE
+    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE,
+    initialParticleLimit: Int = initialMatterMode.maxParticles
 ) {
     private val random = Random(seed)
     var preset by mutableStateOf(initialPreset)
@@ -111,13 +112,33 @@ internal class CosmicWorld(
     }
     var matterMode by mutableStateOf(initialMatterMode)
         private set
+    var particleLimit by mutableIntStateOf(initialParticleLimit.coerceIn(100,1_000_000))
+        private set
+    private var hasCustomParticleLimit = initialParticleLimit !=
+        initialMatterMode.maxParticles
+
+    @Synchronized
+    fun updateParticleLimit(value: Int) {
+        val proposed = value.coerceIn(100, 1_000_000)
+        hasCustomParticleLimit = true
+        if (particleLimit == proposed) return
+        particleLimit = proposed
+        sand.updateParticleLimit(proposed)
+        // A lowered hard cap also has to apply to matter already alive.
+        // Re-seeding the scene is safer than silently deleting its mass.
+        if (sand.grains.size > proposed) reset()
+    }
+
     @Synchronized
     fun updateMatterMode(value: MatterMode) {
         if (matterMode == value) return
         matterMode = value
         sand.updateMode(value)
-        // In the curated orbital scenes detail mode actually changes the
-        // number of physically independent grains, not just an upper bound.
+        if (!hasCustomParticleLimit) {
+            particleLimit = value.maxParticles
+            sand.updateParticleLimit(particleLimit)
+        }
+        // Detailed presets use more grains, up to the USER's own budget.
         if (preset != CosmicPreset.DEEP_SPACE) reset()
     }
     private val impactMoments = HashMap<Long, Float>()
@@ -185,6 +206,7 @@ internal class CosmicWorld(
     private fun seedStartingMatter() {
         sand.clear()
         sand.updateMode(matterMode)
+        sand.updateParticleLimit(particleLimit)
         bodies.forEach { body ->
             sand.seed(body, presetGrainCount(preset, body, matterMode))
         }
@@ -255,7 +277,7 @@ internal class CosmicWorld(
     @Synchronized
     fun createObject(material: MatterMaterial, mass: Float,
         px: Float = .68f, py: Float = .38f): Boolean {
-        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles)
+        if (bodies.size >= maxBodies || sand.grains.size >= particleLimit)
             return false
         val m = mass.coerceIn(.04f,24f)
         val classType = when (material) {
@@ -296,7 +318,7 @@ internal class CosmicWorld(
             m < 4f -> 86
             else -> 180
         }
-        val n = min(requested, matterMode.maxParticles - sand.grains.size)
+        val n = min(requested, particleLimit - sand.grains.size)
         if (n <= 0) return false
         sand.seed(body,n)
         bodies = bodies + body
@@ -330,7 +352,7 @@ internal class CosmicWorld(
             material=MatterMaterial.PLASMA,temperature=6800f,
             stellarClass=StellarClass.QUASAR)
         val particles = if (matterMode == MatterMode.DETAILED) 220 else 80
-        if (sand.grains.size + particles <= matterMode.maxParticles) {
+        if (sand.grains.size + particles <= particleLimit) {
             bodies += giantBody
             sand.seed(giantBody, particles)
             publishGrains()
@@ -344,7 +366,7 @@ internal class CosmicWorld(
     @Synchronized
     fun populateStressScene(target: Int = 4600) {
         updateMatterMode(MatterMode.DETAILED)
-        val goal = target.coerceIn(500, matterMode.maxParticles)
+        val goal = target.coerceIn(500, particleLimit)
         if (sand.grains.size >= goal) return
         val slots = (maxBodies - bodies.size).coerceAtLeast(1)
         val per = kotlin.math.ceil((goal-sand.grains.size).toDouble()/slots)
@@ -378,7 +400,7 @@ internal class CosmicWorld(
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     @Synchronized
     fun spawnFromCorner(burst: Boolean = false, physicalCluster: Boolean = false) {
-        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles) return
+        if (bodies.size >= maxBodies || sand.grains.size >= particleLimit) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -459,7 +481,7 @@ internal class CosmicWorld(
             else -> 18
         }
         sand.seed(body, minOf(requested,
-            matterMode.maxParticles - sand.grains.size))
+            particleLimit - sand.grains.size))
         publishGrains()
     }
 
@@ -587,7 +609,7 @@ internal class CosmicWorld(
         repeat(waves) { k ->
             if (bodies.size >= maxBodies ||
                 sand.grains.size + grainsPerMeteor >
-                    matterMode.maxParticles) return@repeat
+                    particleLimit) return@repeat
             val x = .10f + random.nextFloat() * .80f
             val y = -.055f - k * .042f
             val body = CelestialBody(
@@ -760,7 +782,7 @@ internal class CosmicWorld(
     fun endBrush() {
         val point = brushPoint ?: return
         if (brushGestureDistance > .065f && bodies.size < maxBodies &&
-            sand.grains.size + 18 <= matterMode.maxParticles) {
+            sand.grains.size + 18 <= particleLimit) {
             val dx = point.x - brushStartX
             val dy = point.y - brushStartY
             val norm = max(hypot(dx, dy), .005f)
@@ -793,7 +815,7 @@ internal class CosmicWorld(
             lifetime = 125f)
         val right = CelestialBody(idSequence++, 6, 1.4f, 1.1f,
             x+.048f, y, 0f, vx, lifetime = 125f)
-        if (sand.grains.size + 80 > matterMode.maxParticles) return
+        if (sand.grains.size + 80 > particleLimit) return
         bodies = bodies + left + right
         sand.seed(left, 40); sand.seed(right, 40)
         publishGrains()
@@ -922,7 +944,7 @@ internal class CosmicWorld(
             elapsed >= spawnAt) {
             spawnAt = elapsed + 92f + random.nextFloat() * 64f
             if (bodies.size < maxBodies &&
-                sand.grains.size + 105 <= matterMode.maxParticles) {
+                sand.grains.size + 105 <= particleLimit) {
                 spawnFromCorner(physicalCluster = true)
             }
         }
@@ -933,8 +955,12 @@ internal class CosmicWorld(
         // clouds do not need to rebuild the body's Compose State, object
         // ownership and hierarchy at 30Hz. This throttles expensive
         // recompositions without slowing down particle integration.
-        val updateSceneMetadata = sand.grains.size < 1600 ||
-            physicsFrameNumber % 4L == 0L
+        val updateSceneMetadata = when {
+            sand.grains.size < 1600 -> true
+            sand.grains.size < 10_000 -> physicsFrameNumber % 4L == 0L
+            sand.grains.size < 50_000 -> physicsFrameNumber % 12L == 0L
+            else -> physicsFrameNumber % 30L == 0L
+        }
         if (updateSceneMetadata) {
             previousBodies = prior
             var current = sand.summarizeBodies(prior)
@@ -943,18 +969,24 @@ internal class CosmicWorld(
             current = sand.mergeCaptureLabels(current + newborns)
             bodies = sand.summarizeBodies(current)
         }
-        publishGrains()
+        // Very large clouds are fully physical but the user-facing renderer
+        // is capped at 24k representative pixels per published frame.
+        if (sand.grains.size < 10_000 ||
+            physicsFrameNumber % (if (sand.grains.size >= 100_000) 6L
+                else 3L) == 0L) publishGrains()
         replayTimer += h
         val heavy = sand.grains.size >= 1800
         val snapshotInterval = if (heavy) 1f else .25f
         val historyCapacity = if (heavy) 12 else 32
-        if (replayTimer >= snapshotInterval) {
+        if (replayTimer >= snapshotInterval && sand.grains.size <= 10_000) {
             replayBuffer.addLast(prior)
             particleReplay.addLast(sand.snapshot())
             if (replayBuffer.size > historyCapacity) replayBuffer.removeFirst()
             if (particleReplay.size > historyCapacity) particleReplay.removeFirst()
             replayTimer = 0f
         }
+        if (sand.grains.size > 10_000 && replayTimer > 2f)
+            replayTimer = 0f
         physicsCostMs = ((System.nanoTime()-startedAt) / 1_000_000.0)
             .toFloat()
     }

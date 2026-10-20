@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -105,7 +106,11 @@ internal val AX_HINT get() = AxiomColors.palette.hint
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL, LAB }
 
 @Composable
-internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
+internal fun AxiomScreen(
+    resumeVersion: Int,
+    meter: FrameMeter,
+    honorTabletProfile: Boolean = false
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE) }
     var themeMode by remember {
@@ -417,6 +422,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             CosmicEnvironment(
                 world = world,
                 interacting = mode != AxiomMode.HOME || observatoryOpen,
+                tabletOptimized = honorTabletProfile,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -445,8 +451,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             Column(
-                modifier = Modifier.fillMaxWidth()
-                    // Defer the animated position to the layout phase, not composition.
+                modifier = Modifier.align(Alignment.TopCenter)
+                    // Keep the search dock compact on 11.5-inch landscape
+                    // screens; preserve normal full-width phone behavior.
+                    .widthIn(max = 660.dp)
+                    .fillMaxWidth()
                     .offset { IntOffset(0, dockTop.roundToPx()) }
                     .padding(horizontal = 24.dp)
             ) {
@@ -556,6 +565,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 .background(AX_BLACK.copy(alpha=.45f))
                 .clickable { observatoryOpen=false })
             Box(Modifier.align(Alignment.BottomCenter)
+                .widthIn(max = 710.dp)
                 .padding(horizontal=16.dp).padding(bottom=32.dp)) {
             UniverseControlPanel(
                 grainCount = world.sand.grains.size,

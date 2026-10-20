@@ -1,5 +1,7 @@
 package dev.axiom.launcher
 
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -83,7 +85,8 @@ internal data class CosmicRemnant(
 internal class CosmicWorld(
     seed: Int = 42,
     initialMatterMode: MatterMode = MatterMode.BALANCED,
-    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE
+    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE,
+    initialParticleLimit: Int = initialMatterMode.maxParticles
 ) {
     private val random = Random(seed)
     var preset by mutableStateOf(initialPreset)
@@ -111,14 +114,34 @@ internal class CosmicWorld(
     }
     var matterMode by mutableStateOf(initialMatterMode)
         private set
+    var particleLimit by mutableStateOf(initialParticleLimit.coerceIn(100,1_000_000))
+        private set
+    private var hasCustomParticleLimit = initialParticleLimit !=
+        initialMatterMode.maxParticles
+
+    @Synchronized
+    fun updateParticleLimit(value: Int) {
+        val proposed = value.coerceIn(100, 1_000_000)
+        hasCustomParticleLimit = true
+        if (particleLimit == proposed) return
+        particleLimit = proposed
+        sand.updateParticleLimit(proposed)
+        // Never discard existing material: a lower ceiling only prevents
+        // adding new grains until the population is below that ceiling.
+        // The user must explicitly tap RESET to recreate the universe.
+    }
+
     @Synchronized
     fun updateMatterMode(value: MatterMode) {
         if (matterMode == value) return
         matterMode = value
         sand.updateMode(value)
-        // In the curated orbital scenes detail mode actually changes the
-        // number of physically independent grains, not just an upper bound.
-        if (preset != CosmicPreset.DEEP_SPACE) reset()
+        if (!hasCustomParticleLimit) {
+            particleLimit = value.maxParticles
+            sand.updateParticleLimit(particleLimit)
+        }
+        // Quality changes only affect future emissions and integrator
+        // scheduling. Existing planets, chemistry and orbits must persist.
     }
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++
@@ -161,6 +184,11 @@ internal class CosmicWorld(
     var timeScale by mutableStateOf(
         if (initialPreset == CosmicPreset.DEEP_SPACE) 1f else .5f)
         private set
+    @Volatile private var suspendedBySystem = false
+    @Synchronized
+    fun suspendForBackground() { suspendedBySystem = true }
+    @Synchronized
+    fun resumeFromBackground() { suspendedBySystem = false }
     var brushPoint by mutableStateOf<SpaceRipple?>(null)
         private set
     var brushMass by mutableStateOf(0f)
@@ -185,8 +213,17 @@ internal class CosmicWorld(
     private fun seedStartingMatter() {
         sand.clear()
         sand.updateMode(matterMode)
-        bodies.forEach { body ->
-            sand.seed(body, presetGrainCount(preset, body, matterMode))
+        sand.updateParticleLimit(particleLimit)
+        val desired = bodies.map { presetGrainCount(preset,it,matterMode) }
+        val needed = desired.sum()
+        bodies.forEachIndexed { index, body ->
+            // When a user selects an unusually small cap (e.g. 100),
+            // distribute the existing real matter fairly across bodies
+            // instead of leaving unseen zero-grain phantom planets.
+            val count = if (needed <= particleLimit) desired[index]
+                else max(1,(desired[index].toLong()*particleLimit/
+                    needed.coerceAtLeast(1)).toInt())
+            sand.seed(body,count)
         }
         when (preset) {
             CosmicPreset.SATURN_RINGS -> sand.seedOrbitalDisk(
@@ -255,7 +292,7 @@ internal class CosmicWorld(
     @Synchronized
     fun createObject(material: MatterMaterial, mass: Float,
         px: Float = .68f, py: Float = .38f): Boolean {
-        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles)
+        if (bodies.size >= maxBodies || sand.grains.size >= particleLimit)
             return false
         val m = mass.coerceIn(.04f,24f)
         val classType = when (material) {
@@ -296,7 +333,7 @@ internal class CosmicWorld(
             m < 4f -> 86
             else -> 180
         }
-        val n = min(requested, matterMode.maxParticles - sand.grains.size)
+        val n = min(requested, particleLimit - sand.grains.size)
         if (n <= 0) return false
         sand.seed(body,n)
         bodies = bodies + body
@@ -330,11 +367,31 @@ internal class CosmicWorld(
             material=MatterMaterial.PLASMA,temperature=6800f,
             stellarClass=StellarClass.QUASAR)
         val particles = if (matterMode == MatterMode.DETAILED) 220 else 80
-        if (sand.grains.size + particles <= matterMode.maxParticles) {
+        if (sand.grains.size + particles <= particleLimit) {
             bodies += giantBody
             sand.seed(giantBody, particles)
             publishGrains()
         }
+    }
+
+    /**
+     * Incremental, opt-in creation of free real orbital dust.
+     * It never attempts a million allocations on the main thread in one go.
+     */
+    @Synchronized
+    fun addOrbitalParticleBatch(requested: Int = 2000): Int {
+        val amount = minOf(requested.coerceIn(1,2000),
+            particleLimit - sand.grains.size)
+        if (amount <= 0) return 0
+        val primary = bodies.maxByOrNull { it.mass }
+        val before = sand.grains.size
+        sand.seedOrbitalDisk(
+            primary?.x ?: .5f,
+            primary?.y ?: .5f,
+            primary?.mass ?: 6f,
+            amount,.16f,.41f,rocky=true)
+        publishGrains()
+        return sand.grains.size - before
     }
 
     /**
@@ -344,7 +401,7 @@ internal class CosmicWorld(
     @Synchronized
     fun populateStressScene(target: Int = 4600) {
         updateMatterMode(MatterMode.DETAILED)
-        val goal = target.coerceIn(500, matterMode.maxParticles)
+        val goal = target.coerceIn(100, particleLimit)
         if (sand.grains.size >= goal) return
         val slots = (maxBodies - bodies.size).coerceAtLeast(1)
         val per = kotlin.math.ceil((goal-sand.grains.size).toDouble()/slots)
@@ -378,7 +435,7 @@ internal class CosmicWorld(
     /** Spawns just outside one screen corner, with a velocity toward the scene. */
     @Synchronized
     fun spawnFromCorner(burst: Boolean = false, physicalCluster: Boolean = false) {
-        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles) return
+        if (bodies.size >= maxBodies || sand.grains.size >= particleLimit) return
         val corner = random.nextInt(4)
         val spread = random.nextFloat() * .17f - .085f
         val (x, y) = when (corner) {
@@ -459,7 +516,7 @@ internal class CosmicWorld(
             else -> 18
         }
         sand.seed(body, minOf(requested,
-            matterMode.maxParticles - sand.grains.size))
+            particleLimit - sand.grains.size))
         publishGrains()
     }
 
@@ -587,7 +644,7 @@ internal class CosmicWorld(
         repeat(waves) { k ->
             if (bodies.size >= maxBodies ||
                 sand.grains.size + grainsPerMeteor >
-                    matterMode.maxParticles) return@repeat
+                    particleLimit) return@repeat
             val x = .10f + random.nextFloat() * .80f
             val y = -.055f - k * .042f
             val body = CelestialBody(
@@ -760,7 +817,7 @@ internal class CosmicWorld(
     fun endBrush() {
         val point = brushPoint ?: return
         if (brushGestureDistance > .065f && bodies.size < maxBodies &&
-            sand.grains.size + 18 <= matterMode.maxParticles) {
+            sand.grains.size + 18 <= particleLimit) {
             val dx = point.x - brushStartX
             val dy = point.y - brushStartY
             val norm = max(hypot(dx, dy), .005f)
@@ -793,7 +850,7 @@ internal class CosmicWorld(
             lifetime = 125f)
         val right = CelestialBody(idSequence++, 6, 1.4f, 1.1f,
             x+.048f, y, 0f, vx, lifetime = 125f)
-        if (sand.grains.size + 80 > matterMode.maxParticles) return
+        if (sand.grains.size + 80 > particleLimit) return
         bodies = bodies + left + right
         sand.seed(left, 40); sand.seed(right, 40)
         publishGrains()
@@ -863,6 +920,223 @@ internal class CosmicWorld(
     }
 
     /**
+     * Durable format v1: ALL physical grains (not a 24k render sample),
+     * body identities, clocks, current events, and user physics settings.
+     * Save is synchronized against the physics worker and streamed to disk:
+     * one million grains do not require an extra million-object snapshot.
+     */
+    @Synchronized
+    fun writePersistentState(out: DataOutputStream) {
+        out.writeInt(0x4158494F) // AXIO
+        out.writeInt(1)
+        out.writeUTF(preset.name)
+        out.writeUTF(matterMode.name)
+        out.writeInt(particleLimit)
+        out.writeBoolean(hasCustomParticleLimit)
+        out.writeFloat(timeScale)
+        out.writeFloat(gravity)
+        out.writeBoolean(wallsEnabled)
+        out.writeInt(maxBodies)
+        out.writeFloat(elapsed)
+        out.writeLong(physicsFrameNumber)
+        out.writeInt(idSequence)
+        out.writeInt(eventSerial)
+        out.writeFloat(spawnAt)
+        out.writeFloat(eventAt)
+        out.writeFloat(lastBurstAt)
+        out.writeFloat(nextMathAt)
+
+        out.writeUTF(episode.kind.name)
+        out.writeFloat(episode.age)
+        out.writeFloat(episode.duration)
+        out.writeFloat(episode.x)
+        out.writeFloat(episode.y)
+        out.writeInt(episode.serial)
+        out.writeUTF(episode.intensity.name)
+
+        out.writeUTF(mathMoment.kind.name)
+        out.writeFloat(mathMoment.age)
+        out.writeFloat(mathMoment.duration)
+        out.writeFloat(mathMoment.x)
+        out.writeFloat(mathMoment.y)
+        out.writeInt(mathMoment.seed)
+
+        out.writeInt(bodies.size)
+        for (b in bodies) {
+            out.writeInt(b.id)
+            out.writeInt(b.kind)
+            out.writeFloat(b.mass)
+            out.writeFloat(b.depth)
+            out.writeFloat(b.x)
+            out.writeFloat(b.y)
+            out.writeFloat(b.vx)
+            out.writeFloat(b.vy)
+            out.writeFloat(b.rotation)
+            out.writeFloat(b.age)
+            out.writeFloat(b.lifetime)
+            out.writeFloat(b.sizeFactor)
+            out.writeUTF(b.material.name)
+            out.writeFloat(b.temperature)
+            out.writeUTF(b.stellarClass.name)
+        }
+
+        out.writeInt(sand.grains.size)
+        for (p in sand.grains) {
+            out.writeInt(p.id)
+            out.writeFloat(p.x)
+            out.writeFloat(p.y)
+            out.writeFloat(p.vx)
+            out.writeFloat(p.vy)
+            out.writeFloat(p.mass)
+            out.writeDouble(p.heat)
+            out.writeByte(p.material.ordinal)
+            out.writeInt(p.owner)
+        }
+        out.writeInt(sand.simulationTick)
+        out.writeInt(sand.nextParticleId)
+        out.writeInt(eventHistory.size)
+        for (e in eventHistory) out.writeUTF(e.take(180))
+    }
+
+    /**
+     * Decode and VALIDATE a full checkpoint before mutating the live world.
+     * A truncated/corrupt file must never partially replace healthy matter.
+     */
+    @Synchronized
+    fun readPersistentState(input: DataInputStream) {
+        require(input.readInt() == 0x4158494F) { "Not an AXIOM universe" }
+        require(input.readInt() == 1) { "Unsupported universe format" }
+        val savedPreset = CosmicPreset.valueOf(input.readUTF())
+        val savedMode = MatterMode.valueOf(input.readUTF())
+        val savedLimit = input.readInt()
+        require(savedLimit in 100..1_000_000)
+        val custom = input.readBoolean()
+        val savedScale = input.readFloat()
+        val savedGravity = input.readFloat()
+        val savedWalls = input.readBoolean()
+        val savedMaxBodies = input.readInt()
+        val savedElapsed = input.readFloat()
+        val savedFrames = input.readLong()
+        val savedBodyId = input.readInt()
+        val savedEventId = input.readInt()
+        val savedSpawnAt = input.readFloat()
+        val savedEventAt = input.readFloat()
+        val savedBurst = input.readFloat()
+        val savedMathAt = input.readFloat()
+        require(savedScale.isFinite() && savedScale in 0f..2f)
+        require(savedGravity.isFinite() && savedGravity in .25f..2.2f)
+        require(savedElapsed.isFinite() && savedElapsed >= 0f)
+        require(savedMaxBodies in 12..64)
+
+        val savedEpisode = CosmicEpisode(
+            CosmicEventKind.valueOf(input.readUTF()),
+            input.readFloat(), input.readFloat(),
+            input.readFloat(), input.readFloat(),
+            input.readInt(),
+            CosmicEventIntensity.valueOf(input.readUTF())
+        )
+        require(savedEpisode.age.isFinite() &&
+            savedEpisode.duration.isFinite() &&
+            savedEpisode.x.isFinite() && savedEpisode.y.isFinite())
+
+        val savedMath = MathMoment(
+            MathKind.valueOf(input.readUTF()),
+            input.readFloat(),input.readFloat(),
+            input.readFloat(),input.readFloat(),input.readInt()
+        )
+        require(savedMath.age.isFinite() && savedMath.duration.isFinite() &&
+            savedMath.x.isFinite() && savedMath.y.isFinite())
+
+        val bodyCount = input.readInt()
+        require(bodyCount in 0..100)
+        val restoredBodies = ArrayList<CelestialBody>(bodyCount)
+        repeat(bodyCount) {
+            val body = CelestialBody(
+                input.readInt(),input.readInt(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                MatterMaterial.valueOf(input.readUTF()),input.readFloat(),
+                StellarClass.valueOf(input.readUTF())
+            )
+            require(body.mass.isFinite() && body.mass > 0f &&
+                body.x.isFinite() && body.y.isFinite() &&
+                body.vx.isFinite() && body.vy.isFinite() &&
+                body.temperature.isFinite())
+            restoredBodies.add(body)
+        }
+
+        val grainCount = input.readInt()
+        require(grainCount in 0..1_000_000)
+        val restored = ArrayList<SandGrain>(grainCount)
+        val materials = MatterMaterial.entries
+        var highestParticleId = 0
+        repeat(grainCount) {
+            val id = input.readInt()
+            val x = input.readFloat()
+            val y = input.readFloat()
+            val vx = input.readFloat()
+            val vy = input.readFloat()
+            val mass = input.readFloat()
+            val heat = input.readDouble()
+            val materialIndex = input.readUnsignedByte()
+            val owner = input.readInt()
+            require(id > 0 && x.isFinite() && y.isFinite() &&
+                vx.isFinite() && vy.isFinite() && mass.isFinite() &&
+                mass > 0f && heat.isFinite() && heat >= 0.0 &&
+                materialIndex in materials.indices)
+            restored.add(SandGrain(id,x,y,vx,vy,mass,heat,
+                materials[materialIndex],owner))
+            if (id > highestParticleId) highestParticleId = id
+        }
+        val savedTick = input.readInt()
+        val savedNextParticleId = input.readInt()
+        require(savedTick >= 0 && savedNextParticleId > 0)
+        val historyCount = input.readInt()
+        require(historyCount in 0..10)
+        val savedHistory = List(historyCount) { input.readUTF() }
+        // Consuming the gzip trailer before applying the snapshot validates
+        // the checksum and protects against truncated storage files.
+        require(input.read() == -1) { "Trailing data in universe checkpoint" }
+
+        preset = savedPreset
+        matterMode = savedMode
+        hasCustomParticleLimit = custom
+        particleLimit = savedLimit
+        sand.updateMode(savedMode)
+        sand.updateParticleLimit(savedLimit)
+        sand.restorePersistentGrains(restored,savedTick,
+            max(savedNextParticleId,highestParticleId+1))
+        bodies = restoredBodies
+        previousBodies = restoredBodies
+        timeScale = savedScale
+        gravity = savedGravity
+        wallsEnabled = savedWalls
+        maxBodies = savedMaxBodies
+        elapsed = savedElapsed
+        physicsFrameNumber = savedFrames.coerceAtLeast(0L)
+        idSequence = max(savedBodyId,(restoredBodies.maxOfOrNull { it.id }
+            ?: 49)+1)
+        eventSerial = savedEventId
+        spawnAt = savedSpawnAt
+        eventAt = savedEventAt
+        lastBurstAt = savedBurst
+        nextMathAt = savedMathAt
+        episode = savedEpisode
+        mathMoment = savedMath
+        eventHistory = savedHistory
+        selectedBody = null
+        brushPoint = null
+        brushMass = 0f
+        ripples = emptyList()
+        remnants = emptyList()
+        clearReplay()
+        publishGrains()
+    }
+
+    /**
      * Single-authority particle simulation.
      *
      * CelestialBody values are derived centre-of-mass summaries, NOT forces.
@@ -871,7 +1145,7 @@ internal class CosmicWorld(
      */
     @Synchronized
     fun step(dt: Float) {
-        if (timeScale == 0f) return
+        if (suspendedBySystem || timeScale == 0f) return
         val startedAt = System.nanoTime()
         val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
         elapsed += h
@@ -922,7 +1196,7 @@ internal class CosmicWorld(
             elapsed >= spawnAt) {
             spawnAt = elapsed + 92f + random.nextFloat() * 64f
             if (bodies.size < maxBodies &&
-                sand.grains.size + 105 <= matterMode.maxParticles) {
+                sand.grains.size + 105 <= particleLimit) {
                 spawnFromCorner(physicalCluster = true)
             }
         }
@@ -933,8 +1207,12 @@ internal class CosmicWorld(
         // clouds do not need to rebuild the body's Compose State, object
         // ownership and hierarchy at 30Hz. This throttles expensive
         // recompositions without slowing down particle integration.
-        val updateSceneMetadata = sand.grains.size < 1600 ||
-            physicsFrameNumber % 4L == 0L
+        val updateSceneMetadata = when {
+            sand.grains.size < 1600 -> true
+            sand.grains.size < 10_000 -> physicsFrameNumber % 4L == 0L
+            sand.grains.size < 50_000 -> physicsFrameNumber % 12L == 0L
+            else -> physicsFrameNumber % 30L == 0L
+        }
         if (updateSceneMetadata) {
             previousBodies = prior
             var current = sand.summarizeBodies(prior)
@@ -943,18 +1221,24 @@ internal class CosmicWorld(
             current = sand.mergeCaptureLabels(current + newborns)
             bodies = sand.summarizeBodies(current)
         }
-        publishGrains()
+        // Very large clouds are fully physical but the user-facing renderer
+        // is capped at 24k representative pixels per published frame.
+        if (sand.grains.size < 10_000 ||
+            physicsFrameNumber % (if (sand.grains.size >= 100_000) 6L
+                else 3L) == 0L) publishGrains()
         replayTimer += h
         val heavy = sand.grains.size >= 1800
         val snapshotInterval = if (heavy) 1f else .25f
         val historyCapacity = if (heavy) 12 else 32
-        if (replayTimer >= snapshotInterval) {
+        if (replayTimer >= snapshotInterval && sand.grains.size <= 10_000) {
             replayBuffer.addLast(prior)
             particleReplay.addLast(sand.snapshot())
             if (replayBuffer.size > historyCapacity) replayBuffer.removeFirst()
             if (particleReplay.size > historyCapacity) particleReplay.removeFirst()
             replayTimer = 0f
         }
+        if (sand.grains.size > 10_000 && replayTimer > 2f)
+            replayTimer = 0f
         physicsCostMs = ((System.nanoTime()-startedAt) / 1_000_000.0)
             .toFloat()
     }

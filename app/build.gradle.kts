@@ -12,8 +12,8 @@ android {
         applicationId = "dev.axiom.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.23.0-beta.1"
+        versionCode = 24
+        versionName = "0.24.0-beta.1"
     }
 
     compileOptions {
@@ -23,8 +23,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     buildTypes {
+        getByName("debug") {
+            resValue("bool", "honor_tablet_tuned", "false")
+        }
         // Signed with the test/debug key for installability only. NOT a production release.
         getByName("release") {
+            resValue("bool", "honor_tablet_tuned", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             signingConfig = signingConfigs.getByName("debug")
@@ -32,6 +36,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        // Same package name and test signature as the standard APK:
+        // can replace the generic build without losing launcher settings.
+        // The resource is a build-time switch; no runtime device spoofing.
+        create("honorPadX9a") {
+            initWith(getByName("release"))
+            resValue("bool", "honor_tablet_tuned", "true")
+            versionNameSuffix = "-honor-x9a"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
 }

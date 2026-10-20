@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -105,7 +110,11 @@ internal val AX_HINT get() = AxiomColors.palette.hint
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL, LAB }
 
 @Composable
-internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
+internal fun AxiomScreen(
+    resumeVersion: Int,
+    meter: FrameMeter,
+    honorTabletProfile: Boolean = false
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE) }
     var themeMode by remember {
@@ -146,24 +155,83 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
-    val world = remember {
-        CosmicWorld(
+    val stateStore = remember(context.applicationContext) {
+        UniverseStateStore(context.applicationContext)
+    }
+    val loadedWorld = remember {
+        val initialWorld = CosmicWorld(
             initialMatterMode = matterModeFromPreference(
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)),
             initialPreset = CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.SOLAR_SYSTEM.name)
-            } ?: CosmicPreset.SOLAR_SYSTEM
+            } ?: CosmicPreset.SOLAR_SYSTEM,
+            initialParticleLimit = prefs.getInt(
+                "particle_limit",
+                matterModeFromPreference(prefs.getString(
+                    "matter_mode",MatterMode.BALANCED.name)).maxParticles
+            )
         )
+        initialWorld to stateStore.restoreInto(initialWorld)
+    }
+    val world = loadedWorld.first
+    val restoreStatus = loadedWorld.second
+    // Manual reset is the only operation allowed to discard a saved universe.
+    fun manualReset() {
+        stateStore.allowManualReplacement()
+        world.reset()
+        stateStore.scheduleSave(world)
+    }
+    DisposableEffect(world) {
+        val owner = context as? LifecycleOwner
+        val listener = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> world.resumeFromBackground()
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    world.suspendForBackground()
+                    stateStore.scheduleSave(world)
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    world.suspendForBackground()
+                    stateStore.scheduleSave(world)
+                }
+                else -> Unit
+            }
+        }
+        owner?.lifecycle?.addObserver(listener)
+        onDispose {
+            world.suspendForBackground()
+            stateStore.scheduleSave(world)
+            owner?.lifecycle?.removeObserver(listener)
+        }
+    }
+    LaunchedEffect(world) {
+        // Periodic checkpoint protects against process death without
+        // a lifecycle callback. Large compressed saves run on Dispatchers.IO.
+        while (true) {
+            delay(25_000)
+            stateStore.scheduleSave(world)
+        }
+    }
+    LaunchedEffect(restoreStatus) {
+        if (restoreStatus == UniverseStateStore.LoadResult.CORRUPTED) {
+            Toast.makeText(context,
+                "Сохранение космоса повреждено. Копия защищена; " +
+                    "новая запись только после ручного сброса.",
+                Toast.LENGTH_LONG).show()
+        }
     }
     val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
-        world.updateGravity(prefs.getFloat("gravity", 1f))
-        world.updateMaximumBodies(prefs.getInt("max_bodies",23))
-        world.updateWalls(prefs.getBoolean("wall_mode",false))
-        world.updateMatterMode(matterModeFromPreference(
-            prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+        // Do NOT overwrite a restored physical world with old preferences.
+        if (restoreStatus != UniverseStateStore.LoadResult.RESTORED) {
+            world.updateGravity(prefs.getFloat("gravity", 1f))
+            world.updateMaximumBodies(prefs.getInt("max_bodies",23))
+            world.updateWalls(prefs.getBoolean("wall_mode",false))
+            world.updateMatterMode(matterModeFromPreference(
+                prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+        }
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -232,6 +300,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             world.updateWalls(prefs.getBoolean("wall_mode",false))
             world.updateMatterMode(matterModeFromPreference(
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+            stateStore.allowManualReplacement()
             world.loadPreset(CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.DEEP_SPACE.name)
@@ -412,6 +481,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             CosmicEnvironment(
                 world = world,
                 interacting = mode != AxiomMode.HOME || observatoryOpen,
+                tabletOptimized = honorTabletProfile,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -440,8 +510,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             Column(
-                modifier = Modifier.fillMaxWidth()
-                    // Defer the animated position to the layout phase, not composition.
+                modifier = Modifier.align(Alignment.TopCenter)
+                    // Keep the search dock compact on 11.5-inch landscape
+                    // screens; preserve normal full-width phone behavior.
+                    .widthIn(max = 660.dp)
+                    .fillMaxWidth()
                     .offset { IntOffset(0, dockTop.roundToPx()) }
                     .padding(horizontal = 24.dp)
             ) {
@@ -551,10 +624,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 .background(AX_BLACK.copy(alpha=.45f))
                 .clickable { observatoryOpen=false })
             Box(Modifier.align(Alignment.BottomCenter)
+                .widthIn(max = 710.dp)
                 .padding(horizontal=16.dp).padding(bottom=32.dp)) {
             UniverseControlPanel(
                 grainCount = world.sand.grains.size,
-                maxGrains = world.matterMode.maxParticles,
+                maxGrains = world.particleLimit,
                 onSpawn = { material,mass -> world.createObject(material,mass) },
                 onPerturb = { power ->
                     world.applyObservatoryImpulse(.5f,.5f,power)
@@ -582,7 +656,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             )
         }
         if (mode == AxiomMode.SETTINGS) {
-            AxiomSettings(
+            Box(Modifier.fillMaxSize().background(AX_PANEL),
+                contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {
+                    AxiomSettings(
                 themeMode = themeMode,
                 onThemeMode = { next ->
                     themeMode = next
@@ -601,9 +678,23 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 },
                 maximumBodies = world.maxBodies,
                 matterMode = world.matterMode,
+                particleLimit = world.particleLimit,
+                onParticleLimit = { next ->
+                    world.updateParticleLimit(next)
+                    prefs.edit().putInt("particle_limit",world.particleLimit).apply()
+                },
+                onAddParticleBatch = {
+                    val added = world.addOrbitalParticleBatch(2000)
+                    if (added == 0)
+                        android.widget.Toast.makeText(context,
+                            "Достигнут заданный лимит частиц",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                },
                 cosmicPreset = world.preset,
                 onCosmicPreset = { next ->
+                    stateStore.allowManualReplacement()
                     world.loadPreset(next)
+                    stateStore.scheduleSave(world)
                     prefs.edit().putString("cosmic_preset", next.name).apply()
                     mode = AxiomMode.HOME
                 },
@@ -638,7 +729,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
-                onResetUniverse = { world.reset() },
+                onResetUniverse = { manualReset() },
                 onSelectHome = {
                     runCatching {
                         context.startActivity(android.content.Intent(
@@ -678,7 +769,9 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     close()
                 },
                 onBack = ::close
-            )
+                    )
+                }
+            }
         }
         if (mode == AxiomMode.LAB) {
             ScienceLabScreen(lab = lab, onBack = ::close)
@@ -715,7 +808,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
-                onReset = { world.reset() },
+                onReset = { manualReset() },
                 onSpawn = { world.spawnFromCorner() },
                 onLaunch = ::openApp,
                 onOpenAtlas = ::atlas,

@@ -150,9 +150,8 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
     rocky: Boolean = false
 ) {
     if (count <= 0 || outerRadius <= innerRadius) return
-    val n = minOf(count, mode.maxParticles - grains.size)
+    val n = minOf(count, maxParticles - grains.size)
     val golden = PI * (3.0 - sqrt(5.0))
-    val nBefore = grains.size
     for (i in 0 until n) {
         val f = (i + .5) / n.toDouble()
         // Uniform surface density across an annulus, with discrete gaps.
@@ -172,8 +171,8 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
             else -> MatterMaterial.ICE
         }
         grains.add(SandGrain(
-            // Assigned unique IDs after any previously seeded planets.
-            1000000 + nBefore + i,
+            // One ID allocator for planets and dust, even at a million.
+            allocateGrainId(),
             cx + (r * cos(a)).toFloat(),
             cy + (r * sin(a)).toFloat(),
             (-speed * sin(a)).toFloat(),

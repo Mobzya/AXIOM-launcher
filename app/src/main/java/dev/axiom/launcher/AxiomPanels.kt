@@ -64,6 +64,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.min
+import kotlin.math.log10
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 @Composable
 internal fun SearchSuggestions(
@@ -233,6 +236,9 @@ internal fun AxiomSettings(
     onMaximumBodies: (Int) -> Unit,
     matterMode: MatterMode,
     onMatterMode: (MatterMode) -> Unit,
+    particleLimit: Int,
+    onParticleLimit: (Int) -> Unit,
+    onAddParticleBatch: () -> Unit,
     cosmicPreset: CosmicPreset,
     onCosmicPreset: (CosmicPreset) -> Unit,
     particleCount: Int,
@@ -300,8 +306,9 @@ internal fun AxiomSettings(
         Text("⌂  Выбрать домашний экран", color = AX_WHITE, fontSize = 16.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onSelectHome).padding(vertical = 18.dp))
-        Text("Откроются системные настройки. На некоторых версиях HyperOS " +
-            "выбор стороннего лаунчера ограничен производителем.",
+        Text("Откроются системные настройки. В некоторых прошивках " +
+            "MagicOS и HyperOS нельзя назначить сторонний лаунчер " +
+            "домашним экраном. AXIOM можно открыть и как обычное приложение.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(24.dp))
         Text("ОФОРМЛЕНИЕ", color = AX_DARK, fontSize = 10.sp,
@@ -443,6 +450,70 @@ internal fun AxiomSettings(
                 Text(if (selected) "◉" else "○", color = AX_WHITE, fontSize = 22.sp)
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Text("ЛИМИТ ЧАСТИЦ",
+            color=AX_DARK,fontFamily=FontFamily.Monospace,
+            fontSize=10.sp,letterSpacing=2.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("%,d".format(java.util.Locale.US,particleLimit) +
+            " · установленный максимум", color=AX_WHITE,fontSize=19.sp)
+        // Logarithmic mapping: 100 -> 1,000,000. Higher limits are
+        // ceilings, never an immediate allocation of a million objects.
+        val sliderValue = ((log10(particleLimit.toDouble()) - 2.0)/4.0)
+            .toFloat().coerceIn(0f,1f)
+        var previewLimit by remember(particleLimit) {
+            mutableStateOf(sliderValue)
+        }
+        Slider(
+            value=previewLimit,
+            onValueChange={ previewLimit=it },
+            onValueChangeFinished={
+                val raw=10.0.pow(2.0+previewLimit.toDouble()*4.0)
+                val rounded=when {
+                    raw < 1000.0 -> (raw/50.0).roundToInt()*50
+                    raw < 10000.0 -> (raw/500.0).roundToInt()*500
+                    raw < 100000.0 -> (raw/5000.0).roundToInt()*5000
+                    else -> (raw/50000.0).roundToInt()*50000
+                }
+                // Reconfigure/reseed ONLY after release, not every drag
+                // pixel; otherwise a low cap would reset the universe.
+                onParticleLimit(rounded.coerceIn(100,1_000_000))
+            }, valueRange=0f..1f
+        )
+        Row(Modifier.fillMaxWidth(),
+            horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+            listOf(850,4800,20_000,100_000,1_000_000)
+                .forEach { value ->
+                    Box(Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (particleLimit==value)
+                            AX_TILE else AX_SURFACE)
+                        .border(1.dp,AX_BORDER,RoundedCornerShape(8.dp))
+                        .clickable { onParticleLimit(value) }
+                        .padding(vertical=9.dp),
+                        contentAlignment=Alignment.Center) {
+                        Text(when(value) {
+                            850 -> "850"
+                            4800 -> "4,8K"
+                            20000 -> "20K"
+                            100000 -> "100K"
+                            else -> "1M"
+                        },fontSize=10.sp,color=AX_WHITE)
+                    }
+                }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text("Это предел, а не число частиц, которые появляются сразу. " +
+            "После 10 000 физика может сильно замедляться: миллион " +
+            "независимых частиц не гарантирует плавную работу на Android. " +
+            "Для экономии памяти выводится не более 24 000 точек, " +
+            "а дорогая перемотка отключается в крупных сценах.",
+            color=AX_GRAY,fontSize=11.sp,lineHeight=16.sp)
+        Text("＋  Добавить 2000 орбитальных частиц",
+            color=AX_WHITE,fontSize=14.sp,
+            modifier=Modifier.fillMaxWidth().clickable(onClick=onAddParticleBatch)
+                .padding(vertical=12.dp))
+        Spacer(Modifier.height(6.dp))
         Text("Частицы в скоплениях: $boundParticleCount · вне скоплений: $particleCount. " +
             "Все частицы имеют собственные скорость и гравитацию.", color = AX_GRAY,
             fontSize = 11.sp, fontFamily = FontFamily.Monospace)

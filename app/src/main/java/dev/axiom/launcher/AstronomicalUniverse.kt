@@ -29,6 +29,9 @@ import kotlin.math.sqrt
  */
 internal class AstronomicalUniverse {
     val grains: MutableList<SandGrain> = ArrayList()
+    /** A capacity limit, NOT a request to allocate this many particles. */
+    var maxParticles: Int = MatterMode.BALANCED.maxParticles
+        private set
     var mode: MatterMode = MatterMode.BALANCED
         private set
 
@@ -36,8 +39,8 @@ internal class AstronomicalUniverse {
     private val orbitalSoft2 = .008 * .008
     private val contactSize = .0072
     private val maxContactRange = .0060
-    private val cellMask = 16383
-    private val cellHeads = IntArray(cellMask + 1)
+    private var cellMask = 16383
+    private var cellHeads = IntArray(cellMask + 1)
     private var next = IntArray(0)
     private var cxCell = IntArray(0)
     private var cyCell = IntArray(0)
@@ -76,7 +79,50 @@ internal class AstronomicalUniverse {
     private val centers = ArrayList<Center>()
     private val centersById = HashMap<Int, Center>()
 
-    fun updateMode(value: MatterMode) { mode = value }
+    private var explicitlyConfiguredLimit = false
+    fun updateMode(value: MatterMode) {
+        mode = value
+        // Direct physics tests and old integrations still inherit the mode
+        // default, unless the user explicitly set a separate capacity.
+        if (!explicitlyConfiguredLimit) maxParticles = value.maxParticles
+    }
+    fun updateParticleLimit(value: Int) {
+        explicitlyConfiguredLimit = true
+        maxParticles = value.coerceIn(100, 1_000_000)
+    }
+    /** Preserve unique grain IDs when freely seeded dust reaches 1M grains. */
+    fun allocateGrainId(): Int = nextId++
+    /** Physics clock and allocation sequence are part of the saved world. */
+    val simulationTick: Int get() = tick
+    val nextParticleId: Int get() = nextId
+
+    fun restorePersistentGrains(
+        restored: List<SandGrain>, savedTick: Int, savedNextId: Int
+    ) {
+        require(restored.size <= 1_000_000)
+        grains.clear()
+        grains.addAll(restored)
+        tick = savedTick.coerceAtLeast(0)
+        nextId = max(savedNextId, (restored.maxOfOrNull { it.id } ?: 0) + 1)
+        centralRadius.clear()
+        buildCenters()
+        // Compute restored core extent in one O(N) pass, not O(N * bodies).
+        val spread = HashMap<Int,Double>()
+        for (p in grains) {
+            val c = centersById[p.owner] ?: continue
+            val dx = p.x-c.x
+            val dy = p.y-c.y
+            spread[p.owner] = (spread[p.owner] ?: 0.0) +
+                p.mass*(dx*dx+dy*dy)
+        }
+        for (c in centers) {
+            val rms = sqrt((spread[c.id] ?: 0.0) /
+                c.mass.coerceAtLeast(.000001))
+            centralRadius[c.id] = (rms*1.55).coerceIn(.003,.065)
+        }
+        pulseKey = -1
+    }
+
 
     data class Snapshot(
         val values: FloatArray,
@@ -128,11 +174,22 @@ internal class AstronomicalUniverse {
         }
     }
 
-    fun renderFrame(): FloatArray {
-        val out = FloatArray(grains.size * 4)
-        for (i in grains.indices) {
-            val p = grains[i]; val k = i * 4
-            out[k] = p.x; out[k+1] = p.y
+    /**
+     * Screen pixels are finite: render a deterministic stratified sampling
+     * of AT MOST 24k grains. All others still exist and are integrated.
+     * Thus a 1,000,000 ceiling does not allocate 16MB each UI frame.
+     */
+    fun renderFrame(maxVisible: Int = 24_000): FloatArray {
+        val n = grains.size
+        val rendered = min(n, maxVisible.coerceAtLeast(1))
+        val out = FloatArray(rendered * 4)
+        for (i in 0 until rendered) {
+            val source = if (n <= rendered) i
+                else ((i.toLong() * n) / rendered).toInt()
+            val p = grains[source]
+            val k = i*4
+            out[k] = p.x
+            out[k+1] = p.y
             out[k+2] = p.visualRadius
             out[k+3] = p.material.ordinal.toFloat()
         }
@@ -158,7 +215,7 @@ internal class AstronomicalUniverse {
      */
     fun seed(body: CelestialBody, requested: Int =
         if (mode == MatterMode.DETAILED) 300 else 76) {
-        val n = min(requested, mode.maxParticles - grains.size)
+        val n = min(requested, maxParticles - grains.size)
         if (n <= 0) return
         val radiusPerGrain = (.00135 *
             sqrt((body.mass / n).coerceAtLeast(.00001f) / .01f))
@@ -270,9 +327,20 @@ internal class AstronomicalUniverse {
 
     private fun ensureCapacity() {
         val n = grains.size
+        // Minimize false hash-cell aliasing in dense 20k–1M worlds.
+        // Only grow on a larger population, never per physics frame.
+        var bucketCount = cellHeads.size
+        while (bucketCount < n/2 && bucketCount < 262_144)
+            bucketCount *= 2
+        if (bucketCount != cellHeads.size) {
+            cellHeads = IntArray(bucketCount)
+            cellMask = bucketCount - 1
+        }
         if (fx.size < n) {
-            fx = DoubleArray(n); fy = DoubleArray(n)
-            next = IntArray(n); cxCell = IntArray(n); cyCell = IntArray(n)
+            val capacity = max(n, fx.size + fx.size/2 + 128)
+            fx = DoubleArray(capacity); fy = DoubleArray(capacity)
+            next = IntArray(capacity)
+            cxCell = IntArray(capacity); cyCell = IntArray(capacity)
         }
     }
 
@@ -399,6 +467,56 @@ internal class AstronomicalUniverse {
         p.heat = max(0.0, p.heat - delta)
         p.material = new
         phaseTransitions++
+    }
+
+    /**
+     * Optically simple stellar radiation. Hot plasma/gas loses EXACTLY the
+     * energy gained by cooler material within one scene radius. The world
+     * doesn't create free heat, spawn fictional photons or change mass.
+     *
+     * O(N), executed only every 16 physics steps (not every display frame).
+     */
+    private fun exchangeStellarRadiation() {
+        val emitter = centers.maxByOrNull { it.mass } ?: return
+        var source = 0.0
+        var receiverWeight = 0.0
+        val radius2 = .45*.45
+        for (p in grains) {
+            val m = p.mass.toDouble()
+            val temperature = p.heat / (m * .000001)
+            if (p.owner == emitter.id && p.material.gas &&
+                temperature > 2800.0) {
+                source += p.heat * .003
+            } else if (p.owner != emitter.id && temperature < 2600.0) {
+                val dx = p.x - emitter.x
+                val dy = p.y - emitter.y
+                val r2 = dx*dx + dy*dy
+                if (r2 < radius2)
+                    receiverWeight += m / (.025 + r2)
+            }
+        }
+        if (source <= 0 || receiverWeight <= 0) return
+        var deposited = 0.0
+        for (p in grains) {
+            val m = p.mass.toDouble()
+            val temp = p.heat / (m * .000001)
+            if (p.owner == emitter.id && p.material.gas &&
+                temp > 2800.0) {
+                p.heat -= p.heat*.003
+            } else if (p.owner != emitter.id && temp < 2600.0) {
+                val dx = p.x - emitter.x
+                val dy = p.y - emitter.y
+                val r2 = dx*dx + dy*dy
+                if (r2 < radius2) {
+                    val absorbed = source *
+                        (m / (.025 + r2)) / receiverWeight
+                    p.heat += absorbed
+                    deposited += absorbed
+                }
+            }
+        }
+        // Floating-point residue is negligible (<1e-12 relative) and
+        // intentionally not injected into any random particle.
     }
 
     private fun releaseEventHeat(event: CosmicEpisode) {
@@ -631,8 +749,23 @@ internal class AstronomicalUniverse {
         val beginning = System.nanoTime()
         indexContacts()
         contactVisits = 0
-        val maxVisits = if (grains.size > 2000) 60 else 125
-        for (i in grains.indices) {
+        val maxVisits = when {
+            grains.size > 100_000 -> 20
+            grains.size > 10_000 -> 36
+            grains.size > 2000 -> 60
+            else -> 125
+        }
+        // Spatial cells still contain EVERY live particle. With large
+        // populations, resolve a rotating fraction of contact candidates
+        // per tick. Momentum and heat remain pairwise conserved.
+        val stride = when {
+            grains.size > 300_000 -> 16
+            grains.size > 100_000 -> 8
+            grains.size > 30_000 -> 4
+            grains.size > 10_000 -> 2
+            else -> 1
+        }
+        for (i in tick.mod(stride) until grains.size step stride) {
             val p = grains[i]
             val x = cxCell[i]; val y = cyCell[i]
             var visits = 0
@@ -643,7 +776,7 @@ internal class AstronomicalUniverse {
                     while (j >= 0) {
                         val other = j; j = next[other]
                         if (++visits > maxVisits) break@collisionCells
-                        if (other <= i) break
+                        if (other <= i) continue
                         if (cxCell[other] != cx || cyCell[other] != cy) continue
                         val q = grains[other]
                         val dx = q.x-p.x; val dy = q.y-p.y
@@ -688,6 +821,32 @@ internal class AstronomicalUniverse {
                             val lost = .5*mu*(rvx*rvx+rvy*rvy) *
                                 (2*damping-damping*damping)
                             p.heat += lost*.5; q.heat += lost*.5
+                        }
+                        // Distinct short-range EM / liquid interactions:
+                        // repulsive plasma pressure and cohesive liquid films.
+                        // Every impulse is strictly equal-and-opposite, so
+                        // they do not add net momentum or fictional matter.
+                        if (r > 1e-7 && r < .006) {
+                            val liquids = (p.material == MatterMaterial.WATER ||
+                                p.material == MatterMaterial.MAGMA) &&
+                                (q.material == MatterMaterial.WATER ||
+                                    q.material == MatterMaterial.MAGMA)
+                            val charged = p.material == MatterMaterial.PLASMA &&
+                                q.material == MatterMaterial.PLASMA
+                            if (liquids || charged) {
+                                val invA=1.0/p.mass
+                                val invB=1.0/q.mass
+                                val mu=1.0/(invA+invB)
+                                val sign=if (charged) -1.0 else 1.0
+                                val impulse=sign*(if(charged) .035 else .045) *
+                                    mu*h*(1-r/.006)
+                                val nx=dx/r
+                                val ny=dy/r
+                                p.vx=(p.vx+impulse*invA*nx).toFloat()
+                                p.vy=(p.vy+impulse*invA*ny).toFloat()
+                                q.vx=(q.vx-impulse*invB*nx).toFloat()
+                                q.vy=(q.vy-impulse*invB*ny).toFloat()
+                            }
                         }
                         if (r2 >= radii*radii) continue
                         val nx = if (r > 1e-7) dx/r else 1.0
@@ -808,6 +967,10 @@ internal class AstronomicalUniverse {
         lastGravityMs = gm; lastContactMs = cm
         tick++
         if (tick % 8 == 0) for (p in grains) phaseChange(p)
+        if (tick % 16 == 0) {
+            buildCenters()
+            exchangeStellarRadiation()
+        }
         if (tick % 20 == 0) {
             buildCenters()
             // Real ejecta are allowed but quiet material stays in clouds.

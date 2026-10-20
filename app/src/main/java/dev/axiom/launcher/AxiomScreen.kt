@@ -597,7 +597,10 @@ internal fun AxiomScreen(
             )
         }
         if (mode == AxiomMode.SETTINGS) {
-            AxiomSettings(
+            Box(Modifier.fillMaxSize().background(AX_PANEL),
+                contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {
+                    AxiomSettings(
                 themeMode = themeMode,
                 onThemeMode = { next ->
                     themeMode = next
@@ -705,7 +708,9 @@ internal fun AxiomScreen(
                     close()
                 },
                 onBack = ::close
-            )
+                    )
+                }
+            }
         }
         if (mode == AxiomMode.LAB) {
             ScienceLabScreen(lab = lab, onBack = ::close)

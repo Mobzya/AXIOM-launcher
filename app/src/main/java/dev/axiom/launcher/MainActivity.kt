@@ -16,6 +16,12 @@ import androidx.compose.ui.graphics.Color
 class MainActivity : ComponentActivity() {
     private var resumeVersion by mutableIntStateOf(0)
     private val frameMeter by lazy { FrameMeter(window) }
+    // Build-type specific tuning; only the separate Honor APK enables it.
+    // It is safe to install on another Android device but is optimized
+    // for an 11.5-inch 2508x1504 Snapdragon 685 tablet.
+    private val honorTabletProfile by lazy {
+        resources.getBoolean(R.bool.honor_tablet_tuned)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,7 +39,7 @@ class MainActivity : ComponentActivity() {
                     onBackground = colors.ink, onSurface = colors.ink,
                     primary = colors.ink, onPrimary = colors.background
                 )
-            ) { AxiomScreen(resumeVersion, frameMeter) }
+            ) { AxiomScreen(resumeVersion, frameMeter, honorTabletProfile) }
         }
     }
 

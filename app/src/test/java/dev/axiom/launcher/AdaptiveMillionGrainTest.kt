@@ -32,15 +32,19 @@ class AdaptiveMillionGrainTest {
         assertTrue(world.sand.grains.all { it.x.isFinite() && it.y.isFinite() })
     }
 
-    @Test fun loweringLimitRebuildsButDoesNotLeavePhantomPlanets() {
+    @Test fun loweringLimitPreservesEveryGrainAndExistingPlanet() {
         val world=CosmicWorld(10,MatterMode.DETAILED,
             CosmicPreset.SOLAR_SYSTEM,20_000)
         world.addOrbitalParticleBatch(2000)
+        val before=world.sand.grains.map { it.copy() }
+        val planetIds=world.bodies.map { it.id }
+        val total=world.sand.totals().mass
         world.updateParticleLimit(100)
         assertEquals(100,world.particleLimit)
-        assertTrue(world.sand.grains.size<=100)
-        val owners=world.sand.grains.map { it.owner }.toSet()
-        assertTrue(world.bodies.all { it.id in owners })
+        assertEquals(before,world.sand.grains)
+        assertEquals(planetIds,world.bodies.map { it.id })
+        assertEquals(total,world.sand.totals().mass,1e-8)
+        assertEquals(0,world.addOrbitalParticleBatch(2000))
     }
 
     @Test fun massiveFrameIsStrictlySampledWithDeterministicMaterials() {

@@ -92,6 +92,37 @@ internal class AstronomicalUniverse {
     }
     /** Preserve unique grain IDs when freely seeded dust reaches 1M grains. */
     fun allocateGrainId(): Int = nextId++
+    /** Physics clock and allocation sequence are part of the saved world. */
+    val simulationTick: Int get() = tick
+    val nextParticleId: Int get() = nextId
+
+    fun restorePersistentGrains(
+        restored: List<SandGrain>, savedTick: Int, savedNextId: Int
+    ) {
+        require(restored.size <= 1_000_000)
+        grains.clear()
+        grains.addAll(restored)
+        tick = savedTick.coerceAtLeast(0)
+        nextId = max(savedNextId, (restored.maxOfOrNull { it.id } ?: 0) + 1)
+        centralRadius.clear()
+        buildCenters()
+        // Compute restored core extent in one O(N) pass, not O(N * bodies).
+        val spread = HashMap<Int,Double>()
+        for (p in grains) {
+            val c = centersById[p.owner] ?: continue
+            val dx = p.x-c.x
+            val dy = p.y-c.y
+            spread[p.owner] = (spread[p.owner] ?: 0.0) +
+                p.mass*(dx*dx+dy*dy)
+        }
+        for (c in centers) {
+            val rms = sqrt((spread[c.id] ?: 0.0) /
+                c.mass.coerceAtLeast(.000001))
+            centralRadius[c.id] = (rms*1.55).coerceIn(.003,.065)
+        }
+        pulseKey = -1
+    }
+
 
     data class Snapshot(
         val values: FloatArray,

@@ -124,9 +124,9 @@ internal class CosmicWorld(
         if (particleLimit == proposed) return
         particleLimit = proposed
         sand.updateParticleLimit(proposed)
-        // A lowered hard cap also has to apply to matter already alive.
-        // Re-seeding the scene is safer than silently deleting its mass.
-        if (sand.grains.size > proposed) reset()
+        // Never discard existing material: a lower ceiling only prevents
+        // adding new grains until the population is below that ceiling.
+        // The user must explicitly tap RESET to recreate the universe.
     }
 
     @Synchronized
@@ -138,8 +138,8 @@ internal class CosmicWorld(
             particleLimit = value.maxParticles
             sand.updateParticleLimit(particleLimit)
         }
-        // Detailed presets use more grains, up to the USER's own budget.
-        if (preset != CosmicPreset.DEEP_SPACE) reset()
+        // Quality changes only affect future emissions and integrator
+        // scheduling. Existing planets, chemistry and orbits must persist.
     }
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++

@@ -7,6 +7,7 @@ import java.io.BufferedOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ internal class UniverseStateStore(context: Context) {
     private val file = AtomicFile(File(context.filesDir, "axiom-universe-v1.gz"))
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val diskLock = Any()
+    private val pendingSave = AtomicBoolean(false)
     @Volatile private var protectCorruptData = false
 
     fun restoreInto(world: CosmicWorld): LoadResult {
@@ -47,8 +49,10 @@ internal class UniverseStateStore(context: Context) {
     }
 
     fun scheduleSave(world: CosmicWorld) {
-        if (!protectCorruptData) {
-            io.launch { save(world) }
+        if (protectCorruptData || !pendingSave.compareAndSet(false,true)) return
+        io.launch {
+            try { save(world) }
+            finally { pendingSave.set(false) }
         }
     }
 

@@ -306,8 +306,9 @@ internal fun AxiomSettings(
         Text("⌂  Выбрать домашний экран", color = AX_WHITE, fontSize = 16.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onSelectHome).padding(vertical = 18.dp))
-        Text("Откроются системные настройки. На некоторых версиях HyperOS " +
-            "выбор стороннего лаунчера ограничен производителем.",
+        Text("Откроются системные настройки. В некоторых прошивках " +
+            "MagicOS и HyperOS нельзя назначить сторонний лаунчер " +
+            "домашним экраном. AXIOM можно открыть и как обычное приложение.",
             color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(24.dp))
         Text("ОФОРМЛЕНИЕ", color = AX_DARK, fontSize = 10.sp,

@@ -184,6 +184,11 @@ internal class CosmicWorld(
     var timeScale by mutableStateOf(
         if (initialPreset == CosmicPreset.DEEP_SPACE) 1f else .5f)
         private set
+    @Volatile private var suspendedBySystem = false
+    @Synchronized
+    fun suspendForBackground() { suspendedBySystem = true }
+    @Synchronized
+    fun resumeFromBackground() { suspendedBySystem = false }
     var brushPoint by mutableStateOf<SpaceRipple?>(null)
         private set
     var brushMass by mutableStateOf(0f)
@@ -1140,7 +1145,7 @@ internal class CosmicWorld(
      */
     @Synchronized
     fun step(dt: Float) {
-        if (timeScale == 0f) return
+        if (suspendedBySystem || timeScale == 0f) return
         val startedAt = System.nanoTime()
         val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
         elapsed += h

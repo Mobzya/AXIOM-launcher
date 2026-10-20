@@ -1,5 +1,7 @@
 package dev.axiom.launcher
 
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -910,6 +912,223 @@ internal class CosmicWorld(
         physicsFrameNumber = 0L
         impactMoments.clear()
         clearReplay()
+    }
+
+    /**
+     * Durable format v1: ALL physical grains (not a 24k render sample),
+     * body identities, clocks, current events, and user physics settings.
+     * Save is synchronized against the physics worker and streamed to disk:
+     * one million grains do not require an extra million-object snapshot.
+     */
+    @Synchronized
+    fun writePersistentState(out: DataOutputStream) {
+        out.writeInt(0x4158494F) // AXIO
+        out.writeInt(1)
+        out.writeUTF(preset.name)
+        out.writeUTF(matterMode.name)
+        out.writeInt(particleLimit)
+        out.writeBoolean(hasCustomParticleLimit)
+        out.writeFloat(timeScale)
+        out.writeFloat(gravity)
+        out.writeBoolean(wallsEnabled)
+        out.writeInt(maxBodies)
+        out.writeFloat(elapsed)
+        out.writeLong(physicsFrameNumber)
+        out.writeInt(idSequence)
+        out.writeInt(eventSerial)
+        out.writeFloat(spawnAt)
+        out.writeFloat(eventAt)
+        out.writeFloat(lastBurstAt)
+        out.writeFloat(nextMathAt)
+
+        out.writeUTF(episode.kind.name)
+        out.writeFloat(episode.age)
+        out.writeFloat(episode.duration)
+        out.writeFloat(episode.x)
+        out.writeFloat(episode.y)
+        out.writeInt(episode.serial)
+        out.writeUTF(episode.intensity.name)
+
+        out.writeUTF(mathMoment.kind.name)
+        out.writeFloat(mathMoment.age)
+        out.writeFloat(mathMoment.duration)
+        out.writeFloat(mathMoment.x)
+        out.writeFloat(mathMoment.y)
+        out.writeInt(mathMoment.seed)
+
+        out.writeInt(bodies.size)
+        for (b in bodies) {
+            out.writeInt(b.id)
+            out.writeInt(b.kind)
+            out.writeFloat(b.mass)
+            out.writeFloat(b.depth)
+            out.writeFloat(b.x)
+            out.writeFloat(b.y)
+            out.writeFloat(b.vx)
+            out.writeFloat(b.vy)
+            out.writeFloat(b.rotation)
+            out.writeFloat(b.age)
+            out.writeFloat(b.lifetime)
+            out.writeFloat(b.sizeFactor)
+            out.writeUTF(b.material.name)
+            out.writeFloat(b.temperature)
+            out.writeUTF(b.stellarClass.name)
+        }
+
+        out.writeInt(sand.grains.size)
+        for (p in sand.grains) {
+            out.writeInt(p.id)
+            out.writeFloat(p.x)
+            out.writeFloat(p.y)
+            out.writeFloat(p.vx)
+            out.writeFloat(p.vy)
+            out.writeFloat(p.mass)
+            out.writeDouble(p.heat)
+            out.writeByte(p.material.ordinal)
+            out.writeInt(p.owner)
+        }
+        out.writeInt(sand.simulationTick)
+        out.writeInt(sand.nextParticleId)
+        out.writeInt(eventHistory.size)
+        for (e in eventHistory) out.writeUTF(e.take(180))
+    }
+
+    /**
+     * Decode and VALIDATE a full checkpoint before mutating the live world.
+     * A truncated/corrupt file must never partially replace healthy matter.
+     */
+    @Synchronized
+    fun readPersistentState(input: DataInputStream) {
+        require(input.readInt() == 0x4158494F) { "Not an AXIOM universe" }
+        require(input.readInt() == 1) { "Unsupported universe format" }
+        val savedPreset = CosmicPreset.valueOf(input.readUTF())
+        val savedMode = MatterMode.valueOf(input.readUTF())
+        val savedLimit = input.readInt()
+        require(savedLimit in 100..1_000_000)
+        val custom = input.readBoolean()
+        val savedScale = input.readFloat()
+        val savedGravity = input.readFloat()
+        val savedWalls = input.readBoolean()
+        val savedMaxBodies = input.readInt()
+        val savedElapsed = input.readFloat()
+        val savedFrames = input.readLong()
+        val savedBodyId = input.readInt()
+        val savedEventId = input.readInt()
+        val savedSpawnAt = input.readFloat()
+        val savedEventAt = input.readFloat()
+        val savedBurst = input.readFloat()
+        val savedMathAt = input.readFloat()
+        require(savedScale.isFinite() && savedScale in 0f..2f)
+        require(savedGravity.isFinite() && savedGravity in .25f..2.2f)
+        require(savedElapsed.isFinite() && savedElapsed >= 0f)
+        require(savedMaxBodies in 12..64)
+
+        val savedEpisode = CosmicEpisode(
+            CosmicEventKind.valueOf(input.readUTF()),
+            input.readFloat(), input.readFloat(),
+            input.readFloat(), input.readFloat(),
+            input.readInt(),
+            CosmicEventIntensity.valueOf(input.readUTF())
+        )
+        require(savedEpisode.age.isFinite() &&
+            savedEpisode.duration.isFinite() &&
+            savedEpisode.x.isFinite() && savedEpisode.y.isFinite())
+
+        val savedMath = MathMoment(
+            MathKind.valueOf(input.readUTF()),
+            input.readFloat(),input.readFloat(),
+            input.readFloat(),input.readFloat(),input.readInt()
+        )
+        require(savedMath.age.isFinite() && savedMath.duration.isFinite() &&
+            savedMath.x.isFinite() && savedMath.y.isFinite())
+
+        val bodyCount = input.readInt()
+        require(bodyCount in 0..100)
+        val restoredBodies = ArrayList<CelestialBody>(bodyCount)
+        repeat(bodyCount) {
+            val body = CelestialBody(
+                input.readInt(),input.readInt(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                input.readFloat(),input.readFloat(),
+                MatterMaterial.valueOf(input.readUTF()),input.readFloat(),
+                StellarClass.valueOf(input.readUTF())
+            )
+            require(body.mass.isFinite() && body.mass > 0f &&
+                body.x.isFinite() && body.y.isFinite() &&
+                body.vx.isFinite() && body.vy.isFinite() &&
+                body.temperature.isFinite())
+            restoredBodies.add(body)
+        }
+
+        val grainCount = input.readInt()
+        require(grainCount in 0..1_000_000)
+        val restored = ArrayList<SandGrain>(grainCount)
+        val materials = MatterMaterial.entries
+        var highestParticleId = 0
+        repeat(grainCount) {
+            val id = input.readInt()
+            val x = input.readFloat()
+            val y = input.readFloat()
+            val vx = input.readFloat()
+            val vy = input.readFloat()
+            val mass = input.readFloat()
+            val heat = input.readDouble()
+            val materialIndex = input.readUnsignedByte()
+            val owner = input.readInt()
+            require(id > 0 && x.isFinite() && y.isFinite() &&
+                vx.isFinite() && vy.isFinite() && mass.isFinite() &&
+                mass > 0f && heat.isFinite() && heat >= 0.0 &&
+                materialIndex in materials.indices)
+            restored.add(SandGrain(id,x,y,vx,vy,mass,heat,
+                materials[materialIndex],owner))
+            if (id > highestParticleId) highestParticleId = id
+        }
+        val savedTick = input.readInt()
+        val savedNextParticleId = input.readInt()
+        require(savedTick >= 0 && savedNextParticleId > 0)
+        val historyCount = input.readInt()
+        require(historyCount in 0..10)
+        val savedHistory = List(historyCount) { input.readUTF() }
+        // Consuming the gzip trailer before applying the snapshot validates
+        // the checksum and protects against truncated storage files.
+        require(input.read() == -1) { "Trailing data in universe checkpoint" }
+
+        preset = savedPreset
+        matterMode = savedMode
+        hasCustomParticleLimit = custom
+        particleLimit = savedLimit
+        sand.updateMode(savedMode)
+        sand.updateParticleLimit(savedLimit)
+        sand.restorePersistentGrains(restored,savedTick,
+            max(savedNextParticleId,highestParticleId+1))
+        bodies = restoredBodies
+        previousBodies = restoredBodies
+        timeScale = savedScale
+        gravity = savedGravity
+        wallsEnabled = savedWalls
+        maxBodies = savedMaxBodies
+        elapsed = savedElapsed
+        physicsFrameNumber = savedFrames.coerceAtLeast(0L)
+        idSequence = max(savedBodyId,(restoredBodies.maxOfOrNull { it.id }
+            ?: 49)+1)
+        eventSerial = savedEventId
+        spawnAt = savedSpawnAt
+        eventAt = savedEventAt
+        lastBurstAt = savedBurst
+        nextMathAt = savedMathAt
+        episode = savedEpisode
+        mathMoment = savedMath
+        eventHistory = savedHistory
+        selectedBody = null
+        brushPoint = null
+        brushMass = 0f
+        ripples = emptyList()
+        remnants = emptyList()
+        clearReplay()
+        publishGrains()
     }
 
     /**

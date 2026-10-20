@@ -59,6 +59,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -151,8 +155,11 @@ internal fun AxiomScreen(
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
-    val world = remember {
-        CosmicWorld(
+    val stateStore = remember(context.applicationContext) {
+        UniverseStateStore(context.applicationContext)
+    }
+    val loadedWorld = remember {
+        val initialWorld = CosmicWorld(
             initialMatterMode = matterModeFromPreference(
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)),
             initialPreset = CosmicPreset.entries.firstOrNull {
@@ -165,15 +172,66 @@ internal fun AxiomScreen(
                     "matter_mode",MatterMode.BALANCED.name)).maxParticles
             )
         )
+        initialWorld to stateStore.restoreInto(initialWorld)
+    }
+    val world = loadedWorld.first
+    val restoreStatus = loadedWorld.second
+    // Manual reset is the only operation allowed to discard a saved universe.
+    fun manualReset() {
+        stateStore.allowManualReplacement()
+        world.reset()
+        stateStore.scheduleSave(world)
+    }
+    DisposableEffect(world) {
+        val owner = context as? LifecycleOwner
+        val listener = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> world.resumeFromBackground()
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    world.suspendForBackground()
+                    stateStore.scheduleSave(world)
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    world.suspendForBackground()
+                    stateStore.scheduleSave(world)
+                }
+                else -> Unit
+            }
+        }
+        owner?.lifecycle?.addObserver(listener)
+        onDispose {
+            world.suspendForBackground()
+            stateStore.scheduleSave(world)
+            owner?.lifecycle?.removeObserver(listener)
+        }
+    }
+    LaunchedEffect(world) {
+        // Periodic checkpoint protects against process death without
+        // a lifecycle callback. Large compressed saves run on Dispatchers.IO.
+        while (true) {
+            delay(25_000)
+            stateStore.scheduleSave(world)
+        }
+    }
+    LaunchedEffect(restoreStatus) {
+        if (restoreStatus == UniverseStateStore.LoadResult.CORRUPTED) {
+            Toast.makeText(context,
+                "Сохранение космоса повреждено. Копия защищена; " +
+                    "новая запись только после ручного сброса.",
+                Toast.LENGTH_LONG).show()
+        }
     }
     val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
-        world.updateGravity(prefs.getFloat("gravity", 1f))
-        world.updateMaximumBodies(prefs.getInt("max_bodies",23))
-        world.updateWalls(prefs.getBoolean("wall_mode",false))
-        world.updateMatterMode(matterModeFromPreference(
-            prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+        // Do NOT overwrite a restored physical world with old preferences.
+        if (restoreStatus != UniverseStateStore.LoadResult.RESTORED) {
+            world.updateGravity(prefs.getFloat("gravity", 1f))
+            world.updateMaximumBodies(prefs.getInt("max_bodies",23))
+            world.updateWalls(prefs.getBoolean("wall_mode",false))
+            world.updateMatterMode(matterModeFromPreference(
+                prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+        }
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -242,6 +300,7 @@ internal fun AxiomScreen(
             world.updateWalls(prefs.getBoolean("wall_mode",false))
             world.updateMatterMode(matterModeFromPreference(
                 prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+            stateStore.allowManualReplacement()
             world.loadPreset(CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.DEEP_SPACE.name)
@@ -633,7 +692,9 @@ internal fun AxiomScreen(
                 },
                 cosmicPreset = world.preset,
                 onCosmicPreset = { next ->
+                    stateStore.allowManualReplacement()
                     world.loadPreset(next)
+                    stateStore.scheduleSave(world)
                     prefs.edit().putString("cosmic_preset", next.name).apply()
                     mode = AxiomMode.HOME
                 },
@@ -668,7 +729,7 @@ internal fun AxiomScreen(
                     world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
-                onResetUniverse = { world.reset() },
+                onResetUniverse = { manualReset() },
                 onSelectHome = {
                     runCatching {
                         context.startActivity(android.content.Intent(
@@ -747,7 +808,7 @@ internal fun AxiomScreen(
                     world.updateGravity(it)
                     prefs.edit().putFloat("gravity", world.gravity).apply()
                 },
-                onReset = { world.reset() },
+                onReset = { manualReset() },
                 onSpawn = { world.spawnFromCorner() },
                 onLaunch = ::openApp,
                 onOpenAtlas = ::atlas,

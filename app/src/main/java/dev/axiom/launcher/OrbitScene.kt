@@ -74,6 +74,7 @@ private val neuralEdges = listOf(
 internal fun CosmicEnvironment(
     world: CosmicWorld,
     interacting: Boolean,
+    tabletOptimized: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val dim by animateFloatAsState(
@@ -123,8 +124,10 @@ internal fun CosmicEnvironment(
             }
         }
     }
-    LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode) {
-        val heavy = interacting || reducedPower || world.maxBodies >= 40 ||
+    LaunchedEffect(world, interacting, reducedPower, world.maxBodies,
+        world.matterMode, tabletOptimized) {
+        val heavy = tabletOptimized || interacting || reducedPower ||
+            world.maxBodies >= 40 ||
             world.matterMode == MatterMode.DETAILED
         // Heavy physics is 30Hz, regular physics is 60Hz. Screen refresh is
         // independent: phones may redraw interpolated particles at 120Hz
@@ -159,8 +162,8 @@ internal fun CosmicEnvironment(
                 val renderPeriod = when {
                     n >= 100_000 -> 50_000_000L
                     n >= 30_000 -> 33_333_333L
-                    n >= 10_000 || reducedPower || interacting ->
-                        16_666_667L
+                    n >= 10_000 || reducedPower || interacting ||
+                        tabletOptimized -> 16_666_667L
                     else -> 8_333_333L
                 }
                 if (now - lastDisplay < renderPeriod) continue

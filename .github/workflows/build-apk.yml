@@ -34,7 +34,7 @@ jobs:
         with:
           gradle-version: '8.13'
       - name: Unit tests and both APK builds
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+        run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
       - name: Verify optimized APK and record source
         run: |
           mkdir -p dist
@@ -53,6 +53,7 @@ jobs:
           path: |
             app/build/reports/tests/testDebugUnitTest
             app/build/test-results/testDebugUnitTest
+            app/build/reports/lint-results-debug.*
           retention-days: 14
       - name: Upload installable APK
         uses: actions/upload-artifact@v4

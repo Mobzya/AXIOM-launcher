@@ -26,7 +26,7 @@ internal enum class CosmicPreset(val title: String, val details: String) {
     COLD_NURSERY("Холодная колыбель", "Малое светило, холодные планеты и диск ледяной пыли")
 }
 
-internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
+internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<CelestialBody> {
     fun body(
         id: Int, x: Float, y: Float, mass: Float,
         material: MatterMaterial, classification: StellarClass =
@@ -162,6 +162,9 @@ internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
                 satellites(5f,.5f,.5f,listOf(.14f,.25f),listOf(.08f,.13f),
                     listOf(MatterMaterial.ICE,MatterMaterial.AMMONIA),2)
         CosmicPreset.DEEP_SPACE -> emptyList()
+    }.map { body ->
+        val factor = if (preset == CosmicPreset.COLLISION_LAB) 1f else sqrt(gravity.coerceAtLeast(0f))
+        body.copy(vx=body.vx*factor,vy=body.vy*factor)
     }
 }
 
@@ -210,7 +213,7 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
 internal fun AstronomicalUniverse.seedOrbitalDisk(
     cx: Float, cy: Float, centralMass: Float, count: Int,
     innerRadius: Float, outerRadius: Float, owner: Int = -1,
-    rocky: Boolean = false
+    rocky: Boolean = false, gravity: Float = 1f
 ) {
     if (count <= 0 || outerRadius <= innerRadius) return
     val n = minOf(count, mode.maxParticles - grains.size)
@@ -223,7 +226,7 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
             outerRadius * outerRadius * f)
         val a = golden * i
         val mass = if (rocky) .0018f else .0009f
-        val speed = OrbitMechanics.circularSpeed(centralMass, r.toFloat()).toDouble()
+        val speed = OrbitMechanics.circularSpeed(centralMass,r.toFloat(),gravity).toDouble()
         val material = if (rocky) when (i % 7) {
             0 -> MatterMaterial.IRON
             1, 2 -> MatterMaterial.ROCK

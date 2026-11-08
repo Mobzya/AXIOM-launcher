@@ -2,6 +2,7 @@ package dev.axiom.launcher
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.PI
@@ -84,7 +85,8 @@ internal data class CosmicRemnant(
 internal class CosmicWorld(
     seed: Int = 42,
     initialMatterMode: MatterMode = MatterMode.BALANCED,
-    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE
+    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE,
+    initialGravity: Float = 1f
 ) {
     private val random = Random(seed)
     var preset by mutableStateOf(initialPreset)
@@ -127,6 +129,8 @@ internal class CosmicWorld(
         // number of physically independent grains, not just an upper bound.
         reset()
     }
+    var gravity by mutableFloatStateOf(if(initialGravity.isFinite()) initialGravity.coerceIn(.25f,2.2f) else 1f)
+        private set
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++
     var bodies by mutableStateOf<List<CelestialBody>>(initialBodies())
@@ -139,13 +143,11 @@ internal class CosmicWorld(
         private set
     var mathPinned by mutableStateOf(false)
         private set
-    var elapsed by mutableStateOf(0f)
-        private set
-    var gravity by mutableStateOf(1f)
+    var elapsed by mutableFloatStateOf(0f)
         private set
     var episode by mutableStateOf(CosmicEpisode())
         private set
-    var depthShift by mutableStateOf(0f)
+    var depthShift by mutableFloatStateOf(0f)
         private set
     private var idSequence = 50
     private var eventSerial = 0
@@ -165,12 +167,12 @@ internal class CosmicWorld(
     private var pinnedFor = 0f
 
     // Only world simulation time changes. The app picker/keyboard remain at full speed.
-    var timeScale by mutableStateOf(
+    var timeScale by mutableFloatStateOf(
         if (initialPreset == CosmicPreset.DEEP_SPACE) 1f else .5f)
         private set
     var brushPoint by mutableStateOf<SpaceRipple?>(null)
         private set
-    var brushMass by mutableStateOf(0f)
+    var brushMass by mutableFloatStateOf(0f)
         private set
     private var brushStartX = 0f
     private var brushStartY = 0f
@@ -242,7 +244,7 @@ internal class CosmicWorld(
     }
     private var physicsFrameNumber = 0L
     private var cascadeBudget = 0
-    var maxBodies by mutableStateOf(23)
+    var maxBodies by mutableIntStateOf(23)
         private set
     var wallsEnabled by mutableStateOf(false)
         private set
@@ -258,14 +260,14 @@ internal class CosmicWorld(
             CosmicPreset.SATURN_RINGS -> sand.seedOrbitalDisk(
                 .50f, .49f, 8f,
                 if (matterMode == MatterMode.DETAILED) 1050 else 355,
-                .063f, .165f)
+                .063f, .165f,gravity=gravity)
             CosmicPreset.PROTOPLANETARY -> sand.seedOrbitalDisk(
                 .50f, .50f, 10f,
                 if (matterMode == MatterMode.DETAILED) 1800 else 475,
-                .085f, .38f, rocky = true)
+                .085f, .38f,rocky=true,gravity=gravity)
             CosmicPreset.COLD_NURSERY -> sand.seedOrbitalDisk(
                 .5f,.5f,5f,if (matterMode == MatterMode.DETAILED) 1100 else 360,
-                .29f,.40f)
+                .29f,.40f,gravity=gravity)
             else -> Unit
         }
         previousBodies = bodies
@@ -293,7 +295,7 @@ internal class CosmicWorld(
         private set
 
     private fun initialBodies(): List<CelestialBody> {
-        if (preset != CosmicPreset.DEEP_SPACE) return presetBodies(preset)
+        if (preset != CosmicPreset.DEEP_SPACE) return presetBodies(preset,gravity)
         // Deliberately no permanent massive object in the center.
         return listOf(
             CelestialBody(1, 2, 1.0f, 1.35f, .18f, .19f, .006f, .012f, .1f,

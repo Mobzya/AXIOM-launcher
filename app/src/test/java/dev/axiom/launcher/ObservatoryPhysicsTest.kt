@@ -70,6 +70,17 @@ class ObservatoryPhysicsTest {
         assertArrayEquals(a.sand.snapshot().values,b.sand.snapshot().values,0f)
     }
 
+    @Test fun persistedGravityAlsoScalesInitialOrbitalVelocities() {
+        val a=CosmicWorld(42,initialPreset=CosmicPreset.SOLAR_SYSTEM)
+        val b=CosmicWorld(42,initialPreset=CosmicPreset.SOLAR_SYSTEM,initialGravity=2f)
+        for(i in 1 until a.bodies.size) {
+            assertEquals(a.bodies[i].vx*sqrt(2f),b.bodies[i].vx,1e-7f)
+            assertEquals(a.bodies[i].vy*sqrt(2f),b.bodies[i].vy,1e-7f)
+        }
+        a.updateGravity(2f);a.loadPreset(CosmicPreset.SOLAR_SYSTEM)
+        assertEquals(a.bodies,b.bodies)
+    }
+
     @Test fun learnerRecoversGravityFromUnseenAccelerationMeasurements() {
         val learner=GravityLearner()
         val primary=CelestialBody(1,12,12f,1f,.5f,.5f,0f,0f)

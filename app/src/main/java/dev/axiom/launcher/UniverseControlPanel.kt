@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -352,13 +353,13 @@ private fun NoteCard(title:String,content:@Composable ColumnScope.()->Unit) {
 @Composable
 private fun Toggle(title:String,description:String,value:Boolean,onChange:(Boolean)->Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-        .clickable(role=Role.Switch) {onChange(!value)}.padding(vertical=7.dp),
+        .toggleable(value=value,role=Role.Switch,onValueChange=onChange).padding(vertical=7.dp),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title,color=AX_WHITE,fontSize=14.sp)
             Text(description,color=AX_GRAY,fontSize=11.sp,lineHeight=16.sp)
         }
-        Switch(checked=value,onCheckedChange=onChange,
+        Switch(checked=value,onCheckedChange=null,
             colors=SwitchDefaults.colors(checkedThumbColor=AX_SURFACE,checkedTrackColor=AX_ACCENT))
     }
 }

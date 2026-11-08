@@ -152,7 +152,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             initialPreset = CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.SOLAR_SYSTEM.name)
-            } ?: CosmicPreset.SOLAR_SYSTEM
+            } ?: CosmicPreset.SOLAR_SYSTEM,
+            initialGravity = prefs.getFloat("gravity",1f)
         )
     }
     val lab = remember { ScienceLab() }

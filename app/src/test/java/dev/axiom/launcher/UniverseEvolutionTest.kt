@@ -64,8 +64,13 @@ class UniverseEvolutionTest {
         assertTrue(world.bodies.size >= 12)
         assertTrue(world.sand.grains.size <= MatterMode.BALANCED.maxParticles)
         assertTrue(world.bodies.all{it.kind in 1..104})
+        val ids = world.bodies.map { it.id }
+        val mass = world.sand.totals().mass
         world.updateMaximumBodies(12)
-        assertEquals(12,world.bodies.size)
+        assertEquals(ids,world.bodies.map { it.id })
+        assertEquals(mass,world.sand.totals().mass,0.0)
+        world.spawnFromCorner()
+        assertEquals(ids,world.bodies.map { it.id })
         world.updateMaximumBodies(100)
         assertEquals(64,world.maxBodies)
     }

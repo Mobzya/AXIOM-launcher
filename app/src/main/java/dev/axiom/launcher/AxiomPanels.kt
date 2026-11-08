@@ -229,59 +229,18 @@ internal fun AxiomSettings(
     sunsetMinutes: Int,
     onSunriseMinutes: (Int) -> Unit,
     onSunsetMinutes: (Int) -> Unit,
-    maximumBodies: Int,
-    onMaximumBodies: (Int) -> Unit,
-    matterMode: MatterMode,
-    onMatterMode: (MatterMode) -> Unit,
-    cosmicPreset: CosmicPreset,
-    onCosmicPreset: (CosmicPreset) -> Unit,
-    particleCount: Int,
-    boundParticleCount: Int,
-    totalMatterMass: Double,
-    physicsCostMs: Float,
-    onStressTest: () -> Unit,
-    reactionCount: Int,
-    planetCount: Int,
-    wallsEnabled: Boolean,
-    onWallsEnabled: (Boolean) -> Unit,
-    gravity: Float,
-    onGravity: (Float) -> Unit,
-    onResetUniverse: () -> Unit,
     onSelectHome: () -> Unit,
+    onObservatory: () -> Unit,
     onMath: () -> Unit,
-    timeScale: Float,
-    onTimeScale: (Float) -> Unit,
-    onBinary: () -> Unit,
-    onRewind: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
     onProfiler: () -> Unit,
     profilerEnabled: Boolean,
     profilerSummary: String,
-    onSurprise: () -> Unit,
-    onEventIntensity: (CosmicEventIntensity) -> Unit,
-    currentEpisode: String,
     onTerminal: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit
 ) {
-    var expandedPhysics by remember { mutableStateOf(false) }
-    var confirmReset by remember { mutableStateOf(false) }
-    if (confirmReset) {
-        AlertDialog(
-            onDismissRequest = { confirmReset = false },
-            title = { Text("Перезапустить вселенную?") },
-            text = { Text("Тела, частицы и текущие события будут сброшены. Настройки сохранятся.") },
-            confirmButton = {
-                TextButton(onClick = { confirmReset = false; onResetUniverse() }) {
-                    Text("Перезапустить")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmReset = false }) { Text("Отмена") }
-            }
-        )
-    }
     Column(
         Modifier.fillMaxSize().background(AX_PANEL)
             .verticalScroll(rememberScrollState())
@@ -289,7 +248,7 @@ internal fun AxiomSettings(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            Text("AXIOM / CONTROL", color = AX_WHITE, fontSize = 13.sp,
+            Text("AXIOM / НАСТРОЙКИ", color = AX_WHITE, fontSize = 13.sp,
                 letterSpacing = 2.sp, fontFamily = FontFamily.Monospace)
             Text("×", color = AX_WHITE, fontSize = 28.sp,
                 modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp))
@@ -312,8 +271,8 @@ internal fun AxiomSettings(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf(
-                AxiomThemeMode.DARK to "Чёрная",
-                AxiomThemeMode.LIGHT to "Белая",
+                AxiomThemeMode.DARK to "Ночная",
+                AxiomThemeMode.LIGHT to "Дневная",
                 AxiomThemeMode.AUTO to "Авто"
             ).forEach { (choice, label) ->
                 val selected = themeMode == choice
@@ -369,236 +328,18 @@ internal fun AxiomSettings(
             color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
         }
         Spacer(Modifier.height(27.dp))
-        Text("СЦЕНЫ ВСЕЛЕННОЙ", color = AX_DARK, fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
-        Spacer(Modifier.height(10.dp))
-        Text("Пять физических стартовых систем. Каждая планета и кольцо состоят " +
-            "из свободных песчинок; орбиты задаются лишь начальными " +
-            "скоростями. Выбор перезапускает космос, не затрагивая приложения.",
-            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
-        Spacer(Modifier.height(9.dp))
-        CosmicPreset.entries.forEach { choice ->
-            val selected = cosmicPreset == choice
-            val shape = RoundedCornerShape(14.dp)
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 7.dp)
-                    .clip(shape)
-                    .background(if (selected) AX_TILE else AX_SURFACE)
-                    .border(if (selected) 1.5.dp else 1.dp,
-                        if (selected) AX_WHITE else AX_BORDER, shape)
-                    .clickable { onCosmicPreset(choice) }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(choice.title, color = AX_WHITE, fontSize = 14.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold
-                            else FontWeight.Normal)
-                    Text(choice.details, color = AX_GRAY, fontSize = 11.sp,
-                        lineHeight = 16.sp)
-                }
-                Text(if (selected) "◉" else "○",
-                    color = AX_WHITE, fontSize = 20.sp)
-            }
-        }
-        Text("В системах с орбитами время по умолчанию замедлено до 0,5×. " +
-            "Кольца видны сверху — это настоящая 2D-симуляция, " +
-            "а не трёхмерная модель.",
-            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
-        Spacer(Modifier.height(25.dp))
-        Text("ФИЗИКА ВЕЩЕСТВА", color = AX_DARK, fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace, letterSpacing = 2.sp)
-        Spacer(Modifier.height(9.dp))
-        Text("Каждая песчинка движется независимо: гравитация притягивает её " +
-            "к остальным, а контактное давление и удары не дают " +
-            "скоплению схлопнуться в точку. Масса и число песчинок " +
-            "не изменяются при столкновении. Плавление, испарение и " +
-            "ионизация расходуют тепло на фазовые переходы.",
-            color = AX_GRAY, fontSize = 12.sp, lineHeight = 18.sp)
-        Spacer(Modifier.height(14.dp))
-        listOf(
-            Triple(MatterMode.BALANCED, "Умеренный",
-                "До 850 самостоятельных частиц · меньше физических подшагов"),
-            Triple(MatterMode.DETAILED, "Проработанный",
-                "До 4800 самостоятельных частиц · адаптивная гравитация и потоки")
-        ).forEach { (choice, title, description) ->
-            val selected = matterMode == choice
-            val shape = RoundedCornerShape(17.dp)
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 9.dp).clip(shape)
-                    .background(if (selected) AX_TILE else AX_SURFACE)
-                    .border(if (selected) 1.5.dp else 1.dp,
-                        if (selected) AX_WHITE else AX_BORDER, shape)
-                    .clickable { onMatterMode(choice) }
-                    .padding(15.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = AX_WHITE, fontSize = 16.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                    Spacer(Modifier.height(3.dp))
-                    Text(description, color = AX_GRAY, fontSize = 12.sp,
-                        lineHeight = 18.sp)
-                }
-                Text(if (selected) "◉" else "○", color = AX_WHITE, fontSize = 22.sp)
-            }
-        }
-        Text("Частицы в скоплениях: $boundParticleCount · вне скоплений: $particleCount. " +
-            "Все частицы имеют собственные скорость и гравитацию.", color = AX_GRAY,
-            fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-        Text("Общая масса: ${"%.4f".format(java.util.Locale.US, totalMatterMass)} " +
-            "· количество частиц неизменно при столкновениях",
-            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
-        Text("Последний расчёт физики: " +
-            "${"%.1f".format(java.util.Locale.US, physicsCostMs)} мс. " +
-            "Цель 30 FPS: до 33 мс без гарантии для любого устройства.",
-            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
-        Spacer(Modifier.height(13.dp))
-        Text("▸  Нагрузочный тест: 4600 песчинок",
-            color = AX_WHITE, fontSize = 15.sp,
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onStressTest)
-                .padding(vertical = 14.dp))
-        Text("Явно добавляет вещество в сцену и включает подробный режим. " +
-            "События и столкновения новых песчинок не создают.",
-            color = AX_GRAY, fontSize = 11.sp, lineHeight = 17.sp)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-            listOf(MatterMaterial.ROCK to "Камни",
-                MatterMaterial.HYDROGEN to "Газы",
-                MatterMaterial.WATER to "Вода",
-                MatterMaterial.PLASMA to "Плазма").forEach { (material, label) ->
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.size(7.dp).background(Color(material.argb),
-                        RoundedCornerShape(8.dp)))
-                    Text(label, color = AX_GRAY, fontSize = 10.sp)
-                }
-            }
-        }
-        Spacer(Modifier.height(25.dp))
-        Text("▸  Тонкая настройка физики", color = AX_WHITE, fontSize = 15.sp,
-            modifier = Modifier.fillMaxWidth().clickable {
-                expandedPhysics = !expandedPhysics
-            }.padding(vertical = 12.dp))
-        Text(if (expandedPhysics) "Настройка гравитации, числа небесных тел и стен" else
-            "Нажми, чтобы раскрыть гравитацию, тела и границы",
-            color = AX_GRAY, fontSize = 11.sp)
-        if (expandedPhysics) {
-        Spacer(Modifier.height(18.dp))
-        Text("Гравитация", color = AX_WHITE, fontSize = 23.sp,
-            fontWeight = FontWeight.Light)
-        Spacer(Modifier.height(8.dp))
-        Text("Глубокое пространство со случайными событиями:\n" +
-            "кометы, математические волны, ML-структуры и редкие аномалии.",
-            fontSize = 13.sp, color = AX_GRAY, lineHeight = 20.sp)
-        Spacer(Modifier.height(18.dp))
-        Slider(
-            value = gravity, onValueChange = onGravity,
-            valueRange = .25f..2.2f,
-            colors = SliderDefaults.colors(
-                thumbColor = AX_WHITE,
-                activeTrackColor = AX_WHITE,
-                inactiveTrackColor = AX_BORDER
-            )
-        )
-        Text("G = ${"%.2f".format(java.util.Locale.US, gravity)}",
-            fontFamily = FontFamily.Monospace, color = AX_GRAY, fontSize = 12.sp)
-        Spacer(Modifier.height(20.dp))
-        Text("ПЛОТНОСТЬ И ГРАНИЦЫ", color=AX_DARK,fontSize=10.sp,
+        Text("ВСЕЛЕННАЯ",color=AX_GRAY,fontSize=10.sp,
             fontFamily=FontFamily.Monospace,letterSpacing=2.sp)
         Spacer(Modifier.height(12.dp))
-        Text("Максимум физических тел: $maximumBodies",
-            color=AX_WHITE,fontSize=15.sp)
-        Slider(
-            value=maximumBodies.toFloat(),
-            onValueChange={onMaximumBodies(kotlin.math.round(it).toInt())},
-            valueRange=12f..64f,steps=51,
-            colors=SliderDefaults.colors(
-                thumbColor=AX_WHITE,activeTrackColor=AX_WHITE,
-                inactiveTrackColor=AX_BORDER)
-        )
-        Text("Крупные тела и физические частицы рассчитываются отдельно. " +
-            "Число частиц определяется выбранным режимом.",
-            color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
-        Spacer(Modifier.height(13.dp))
-        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
-            horizontalArrangement=Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) {
-                Text("Режим отражающих стен",color=AX_WHITE,fontSize=14.sp)
-                Text("Тела влетают из-за экрана, а затем отскакивают " +
-                    "от его границ с потерей энергии.",
-                    color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
-            }
-            Switch(checked=wallsEnabled,onCheckedChange=onWallsEnabled,
-                colors=SwitchDefaults.colors(
-                    checkedThumbColor=AX_BLACK,checkedTrackColor=AX_WHITE,
-                    uncheckedThumbColor=AX_GRAY,uncheckedTrackColor=AX_TILE))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(AX_SURFACE).border(1.dp,AX_BORDER,RoundedCornerShape(18.dp))
+            .clickable(onClick=onObservatory).padding(18.dp)) {
+            Text("✧  Открыть обсерваторию",color=AX_ACCENT,fontSize=17.sp)
+            Spacer(Modifier.height(7.dp))
+            Text("Сценарии, создание миров, время, физика и обучение на орбитах — в одном месте.",
+                color=AX_GRAY,fontSize=12.sp,lineHeight=19.sp)
         }
-        }
-        Spacer(Modifier.height(22.dp))
-        Text("Событие: ${currentEpisode.lowercase().replace('_', ' ')}",
-            color = AX_GRAY, fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace)
-        Spacer(Modifier.height(13.dp))
-        Text("✧  Случайное космическое событие",
-            color = AX_WHITE, fontSize = 15.sp,
-            modifier = Modifier.fillMaxWidth()
-                .clickable(onClick = onSurprise).padding(vertical = 15.dp))
-        Text("Вызвать событие определённой мощности:",
-            color = AX_GRAY, fontSize = 11.sp)
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            CosmicEventIntensity.entries.forEach { strength ->
-                Text(
-                    strength.label,
-                    modifier = Modifier.weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(AX_TILE)
-                        .clickable { onEventIntensity(strength) }
-                        .padding(vertical = 11.dp, horizontal = 3.dp),
-                    color = AX_WHITE, fontSize = 10.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("Слабые события происходят чаще. Катастрофические — очень редко; " +
-            "их эффект ограничен запасом энергии настоящих частиц.",
-            color = AX_GRAY, fontSize = 11.sp, lineHeight = 16.sp)
-        Spacer(Modifier.height(12.dp))
-        Text("Прикосновение создаёт волну, двойное нажатие — комету,\n" +
-            "удерживание вызывает событие, горизонтальный жест меняет глубину.",
-            color = AX_GRAY, fontSize = 12.sp, lineHeight = 19.sp)
-        Spacer(Modifier.height(19.dp))
-        Text("ВРЕМЯ МИРА", color = AX_DARK, fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,letterSpacing = 2.sp)
-        Spacer(Modifier.height(11.dp))
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){
-            listOf(0f to "Ⅱ", .25f to "¼", .5f to "½",
-                1f to "1×", 2f to "2×").forEach { (speed,label) ->
-                val shape = RoundedCornerShape(9.dp)
-                Text(label,color=if(speed==timeScale) AX_BLACK else AX_WHITE,
-                    fontSize=13.sp,
-                    textAlign=androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier=Modifier.weight(1f)
-                        .background(if(speed==timeScale) AX_WHITE else AX_SURFACE,shape)
-                        .clickable { onTimeScale(speed) }
-                        .padding(vertical=12.dp))
-            }
-        }
-        Text("⟲  Повторить предыдущие 3 секунды",
-            color=AX_WHITE,fontSize=14.sp,
-            modifier=Modifier.fillMaxWidth().clickable(onClick=onRewind)
-                .padding(vertical=15.dp))
-        Text("⊙  Создать двойную систему",
-            color=AX_WHITE,fontSize=14.sp,
-            modifier=Modifier.fillMaxWidth().clickable(onClick=onBinary)
-                .padding(vertical=15.dp))
-        Text("Долгое удерживание + перетаскивание: поле притяжения; " +
-            "отпусти после движения — запуск нового тела.",
-            color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(25.dp))
         Text("ИНСТРУМЕНТЫ", color = AX_DARK, fontSize = 10.sp,
             letterSpacing = 3.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(17.dp))
@@ -609,16 +350,12 @@ internal fun AxiomSettings(
             Text("↗", color = AX_GRAY, fontSize = 18.sp)
         }
         HorizontalDivider(color = AX_DIVIDER)
-        Text("↺  Перезапустить вселенную", color = AX_WHITE, fontSize = 15.sp,
-            modifier = Modifier.fillMaxWidth()
-                .clickable { confirmReset = true }.padding(vertical = 19.dp))
-        HorizontalDivider(color = AX_DIVIDER)
         Text("⟳  Обновить список приложений", color = AX_WHITE,
             fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onRefresh).padding(vertical = 19.dp))
         HorizontalDivider(color = AX_DIVIDER)
-        Text("∑  Математические порталы", color = AX_WHITE,
+        Text("∑  Численные лаборатории", color = AX_WHITE,
             fontSize = 15.sp, modifier = Modifier.fillMaxWidth()
                 .clickable(onClick = onMath).padding(vertical = 17.dp))
         HorizontalDivider(color = AX_DIVIDER)
@@ -642,7 +379,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM  /  LIVING MATTER · PARTICLE UNIVERSE", color = AX_DARK,
+        Text("AXIOM 0.24  /  OBSERVATORY", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

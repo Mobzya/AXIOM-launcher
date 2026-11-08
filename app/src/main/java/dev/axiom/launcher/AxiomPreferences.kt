@@ -37,6 +37,8 @@ internal object AxiomBackup {
             put("maxBodies", prefs.getInt("max_bodies",23))
             put("walls", prefs.getBoolean("wall_mode",false))
             put("matterMode", prefs.getString("matter_mode", MatterMode.BALANCED.name))
+            put("cosmicPreset",prefs.getString("cosmic_preset",CosmicPreset.SOLAR_SYSTEM.name))
+            for ((key,default) in observationDefaults) put(key,prefs.getBoolean(key,default))
             put("favorites", JSONArray(
                 prefs.getStringSet("favorites", emptySet())?.sorted() ?: emptyList<String>()
             ))
@@ -81,6 +83,11 @@ internal object AxiomBackup {
             .putBoolean("wall_mode",json.optBoolean("walls",false))
             .putString("matter_mode",matterModeFromPreference(
                 json.optString("matterMode",MatterMode.BALANCED.name)).name)
+            .putString("cosmic_preset",CosmicPreset.entries.firstOrNull {
+                it.name==json.optString("cosmicPreset")
+            }?.name ?: CosmicPreset.SOLAR_SYSTEM.name)
+            .also { editor -> for((key,default) in observationDefaults)
+                editor.putBoolean(key,json.optBoolean(key,default)) }
             .putStringSet("favorites", favorites)
             .putStringSet("space_work", work)
             .putStringSet("space_tools", tools)
@@ -88,3 +95,31 @@ internal object AxiomBackup {
         return favorites.size + work.size + tools.size
     }
 }
+
+internal fun loadObservation(prefs: android.content.SharedPreferences, world: CosmicWorld) {
+    world.configureObservation(
+        events=prefs.getBoolean("auto_events",true),
+        trails=prefs.getBoolean("orbit_trails",true),
+        vectors=prefs.getBoolean("velocity_vectors",false),
+        motion=prefs.getBoolean("reduced_motion",false),
+        maths=prefs.getBoolean("ambient_math",false),
+        ml=prefs.getBoolean("orbit_learning",true))
+}
+
+internal fun saveObservation(prefs: android.content.SharedPreferences, world: CosmicWorld) {
+    prefs.edit().putBoolean("auto_events",world.automaticEvents)
+        .putBoolean("orbit_trails",world.showTrails)
+        .putBoolean("velocity_vectors",world.showVectors)
+        .putBoolean("reduced_motion",world.reducedMotion)
+        .putBoolean("ambient_math",world.ambientMath)
+        .putBoolean("orbit_learning",world.learningEnabled)
+        .putBoolean("wall_mode",world.wallsEnabled)
+        .putString("cosmic_preset",world.preset.name)
+        .putString("matter_mode",world.matterMode.name)
+        .putInt("max_bodies",world.maxBodies)
+        .putFloat("gravity",world.gravity).apply()
+}
+
+private val observationDefaults = mapOf("auto_events" to true,"orbit_trails" to true,
+    "velocity_vectors" to false,"reduced_motion" to false,
+    "ambient_math" to false,"orbit_learning" to true)

@@ -10,7 +10,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * AXIOM 0.21: a fresh, two-scale astrophysical solver.
+ * AXIOM 0.24: reciprocal, two-scale astrophysical solver.
  *
  * Old all-grains Barnes-Hut dynamics made little clouds gravitationally
  * explosive while 4500 independently moving grains produced noisy orbits.
@@ -32,8 +32,8 @@ internal class AstronomicalUniverse {
     var mode: MatterMode = MatterMode.BALANCED
         private set
 
-    private val gConstant = .000052
-    private val orbitalSoft2 = .008 * .008
+    private val gConstant = OrbitMechanics.G
+    private val orbitalSoft2 = OrbitMechanics.SOFTENING * OrbitMechanics.SOFTENING
     private val contactSize = .0072
     private val maxContactRange = .0060
     private val cellMask = 16383
@@ -71,6 +71,12 @@ internal class AstronomicalUniverse {
         var vx = 0.0
         var vy = 0.0
         var r = .012
+        var stiffness = 0.0
+        var damping = 0.0
+        var recoilX = 0.0
+        var recoilY = 0.0
+        var angular = 0.0
+        var inertia = 0.0
     }
 
     private val centers = ArrayList<Center>()
@@ -81,7 +87,13 @@ internal class AstronomicalUniverse {
     data class Snapshot(
         val values: FloatArray,
         val heat: DoubleArray,
-        val metadata: IntArray
+        val metadata: IntArray,
+        val tick: Int = 0,
+        val pulseKey: Int = -1,
+        val radii: Map<Int, Double> = emptyMap(),
+        val reactions: Int = 0,
+        val phaseTransitions: Int = 0,
+        val radiatedHeat: Double = 0.0
     )
 
     fun snapshot(): Snapshot {
@@ -98,7 +110,8 @@ internal class AstronomicalUniverse {
             m[b] = p.id; m[b + 1] = p.owner
             m[b + 2] = p.material.ordinal
         }
-        return Snapshot(v, h, m)
+        return Snapshot(v, h, m, tick, pulseKey, centralRadius.toMap(),
+            reactions, phaseTransitions, radiatedHeat)
     }
 
     fun restore(frame: Snapshot) {
@@ -116,6 +129,10 @@ internal class AstronomicalUniverse {
             grains.add(p)
         }
         nextId = (grains.maxOfOrNull { it.id } ?: 0) + 1
+        tick = frame.tick; pulseKey = frame.pulseKey
+        reactions = frame.reactions; phaseTransitions = frame.phaseTransitions
+        radiatedHeat = frame.radiatedHeat
+        centralRadius.putAll(frame.radii)
         buildCenters()
         for (c in centers) {
             var spread = 0.0
@@ -124,7 +141,7 @@ internal class AstronomicalUniverse {
                 spread += p.mass * (dx * dx + dy * dy)
             }
             val radius = sqrt(spread / c.mass) * 1.55
-            centralRadius[c.id] = radius.coerceIn(.003, .065)
+            if (c.id !in centralRadius) centralRadius[c.id] = radius.coerceIn(.003, .065)
         }
     }
 
@@ -279,12 +296,18 @@ internal class AstronomicalUniverse {
     /** Recalculate each gravitational source from REAL particle masses. */
     private fun buildCenters() {
         centers.clear()
-        centersById.clear()
+        for (c in centersById.values) {
+            c.mass = 0.0; c.x = 0.0; c.y = 0.0; c.vx = 0.0; c.vy = 0.0
+            c.stiffness = 0.0; c.damping = 0.0; c.recoilX = 0.0; c.recoilY = 0.0
+        }
         for (p in grains) if (p.owner >= 0) {
             val c = centersById.getOrPut(p.owner) {
-                Center(p.owner).also { centers.add(it) }
+                Center(p.owner)
             }
             val m = p.mass.toDouble()
+            if (c.mass == 0.0) centers.add(c)
+            c.stiffness += m * stiffness(p.material)
+            c.damping += m * damping(p.material)
             c.mass += m
             c.x += p.x*m; c.y += p.y*m
             c.vx += p.vx*m; c.vy += p.vy*m
@@ -294,6 +317,8 @@ internal class AstronomicalUniverse {
             c.x /= c.mass; c.y /= c.mass
             c.vx /= c.mass; c.vy /= c.mass
             c.r = centralRadius[c.id] ?: .014
+            c.stiffness /= c.mass
+            c.damping /= c.mass
         }
     }
 
@@ -512,17 +537,11 @@ internal class AstronomicalUniverse {
             CosmicEventKind.PARTICLE_CASCADE,
             CosmicEventKind.REACTION, CosmicEventKind.NEBULA,
             CosmicEventKind.SINGULARITY, CosmicEventKind.COSMIC_SHOCK,
-            CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.SOLAR_WIND
+            CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.SOLAR_WIND,
+            CosmicEventKind.TIDAL_PULSE
         )) return
         var previous = -1
         var activated = 0
-        val ang = event.age * 3.6
-        val nx = if (event.kind == CosmicEventKind.QUASAR_JET ||
-            event.kind == CosmicEventKind.MAGNETAR_FLARE)
-            .18 else cos(ang.toDouble())
-        val ny = if (event.kind == CosmicEventKind.QUASAR_JET ||
-            event.kind == CosmicEventKind.MAGNETAR_FLARE)
-            .9836666102 else sin(ang.toDouble())
         for (i in grains.indices) {
             val p = grains[i]
             val dx = p.x - event.x; val dy = p.y - event.y
@@ -537,7 +556,10 @@ internal class AstronomicalUniverse {
                     event.intensity.heatFactor).coerceAtMost(.23)
             if (energy <= 0) continue
             val inv = 1.0/a.mass + 1.0/b.mass
-            val rv = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny
+            val separation = hypot(b.x-a.x, b.y-a.y).coerceAtLeast(1e-7f)
+            val pairNx = (b.x-a.x)/separation
+            val pairNy = (b.y-a.y)/separation
+            val rv = (b.vx-a.vx)*pairNx + (b.vy-a.vy)*pairNy
             val dir = if (rv < 0) -1 else 1
             val speed = abs(rv)
             val impulse = (sqrt(speed*speed+2*inv*energy) - speed) / inv
@@ -546,85 +568,89 @@ internal class AstronomicalUniverse {
             val fraction = a.heat / (a.heat + b.heat)
             a.heat = max(0.0, a.heat - lost*fraction)
             b.heat = max(0.0, b.heat - lost*(1-fraction))
-            a.vx = (a.vx - impulse/a.mass*nx*dir).toFloat()
-            a.vy = (a.vy - impulse/a.mass*ny*dir).toFloat()
-            b.vx = (b.vx + impulse/b.mass*nx*dir).toFloat()
-            b.vy = (b.vy + impulse/b.mass*ny*dir).toFloat()
+            a.vx = (a.vx - impulse/a.mass*pairNx*dir).toFloat()
+            a.vy = (a.vy - impulse/a.mass*pairNy*dir).toFloat()
+            b.vx = (b.vx + impulse/b.mass*pairNx*dir).toFloat()
+            b.vy = (b.vy + impulse/b.mass*pairNy*dir).toFloat()
             if (++activated >= if (repeat) 48 else 128) break
         }
     }
 
+    private fun stiffness(material: MatterMaterial): Double = when (material) {
+        MatterMaterial.IRON, MatterMaterial.NICKEL, MatterMaterial.CRYSTAL -> 5.6
+        MatterMaterial.ROCK, MatterMaterial.BASALT, MatterMaterial.SILICATE -> 4.5
+        MatterMaterial.ICE, MatterMaterial.MINERAL -> 3.35
+        MatterMaterial.WATER, MatterMaterial.MAGMA -> 2.05
+        else -> if (material.gas) 1.25 else 3.3
+    }
+
+    private fun damping(material: MatterMaterial): Double = when (material) {
+        MatterMaterial.WATER, MatterMaterial.MAGMA -> .53
+        MatterMaterial.ICE -> .38
+        MatterMaterial.IRON, MatterMaterial.NICKEL -> .22
+        else -> if (material.gas) .08 else .28
+    }
+
+    /** Gradient of the SAME softened, symmetrized cloud potential as totalEnergy.
+     * Each particle/source interaction applies its reaction to the source's
+     * real mass. This retains tidal gradients, linear AND angular momentum;
+     * no global drift correction or invisible mass is necessary. */
     private fun accelerations(gravity: Float) {
         java.util.Arrays.fill(fx, 0, grains.size, 0.0)
         java.util.Arrays.fill(fy, 0, grains.size, 0.0)
         gravityVisits = 0
         val g = gConstant * gravity
-        val compactEvent = activeEpisode.kind == CosmicEventKind.SINGULARITY ||
-            activeEpisode.kind == CosmicEventKind.TIDAL_PULSE
         val beginning = System.nanoTime()
-        // Every source is one MONOPOLE representing the mass of a genuine
-        // connected particle cloud, never a second copy of that matter.
+        for (c in centers) { c.recoilX = 0.0; c.recoilY = 0.0 }
         for (i in grains.indices) {
             val p = grains[i]
-            val own = centersById[p.owner]
-            val m = p.mass.toDouble()
+            val own = centersById[p.owner]?.takeIf { it.mass > 0.0 }
             if (own != null) {
-                val dx = p.x - own.x; val dy = p.y - own.y
-                // Self-gravity + pressure potential in a uniform-density
-                // sphere. The restoring field is linear near the center.
-                // At the surface its strength diminishes rather than
-                // causing a singular kick.
-                val gas = p.material.gas
-                val k = when (p.material) {
-                    MatterMaterial.IRON, MatterMaterial.NICKEL,
-                    MatterMaterial.CRYSTAL -> 5.60
-                    MatterMaterial.BASALT, MatterMaterial.ROCK,
-                    MatterMaterial.SILICATE -> 4.50
-                    MatterMaterial.ICE, MatterMaterial.MINERAL -> 3.35
-                    MatterMaterial.WATER, MatterMaterial.MAGMA -> 2.05
-                    else -> if (gas) 1.25 else 3.30
-                }
-                fx[i] -= k * dx
-                fy[i] -= k * dy
-                val damping = when (p.material) {
-                    MatterMaterial.MAGMA, MatterMaterial.WATER -> .53
-                    MatterMaterial.ICE -> .38
-                    MatterMaterial.IRON, MatterMaterial.NICKEL -> .22
-                    else -> if (gas) .08 else .28
-                }
-                fx[i] -= damping * (p.vx - own.vx)
-                fy[i] -= damping * (p.vy - own.vy)
+                fx[i] -= own.stiffness * (p.x - own.x)
+                fy[i] -= own.stiffness * (p.y - own.y)
             }
+            val weight = if (own == null) 1.0 else .5
             for (c in centers) {
                 if (c.id == p.owner) continue
                 val dx = c.x - p.x; val dy = c.y - p.y
-                val r2 = dx*dx+dy*dy+orbitalSoft2
-                val inv = 1.0 / (r2 * sqrt(r2))
-                val linkedCore = compactEvent &&
-                    hypot(c.x-activeEpisode.x, c.y-activeEpisode.y) < .055
-                val fieldBoost = if (linkedCore)
-                    1.0 + (if (activeEpisode.kind ==
-                        CosmicEventKind.TIDAL_PULSE) .21 else .42) *
-                        activeEpisode.intensity.heatFactor
-                    else 1.0
-                fx[i] += g * fieldBoost * c.mass * dx * inv
-                fy[i] += g * fieldBoost * c.mass * dy * inv
+                val r2 = dx*dx + dy*dy + orbitalSoft2
+                val field = g * weight / (r2 * sqrt(r2))
+                fx[i] += field * c.mass * dx
+                fy[i] += field * c.mass * dy
+                c.recoilX -= field * p.mass * dx
+                c.recoilY -= field * p.mass * dy
                 gravityVisits++
             }
         }
-        // Correct the global numerical COM drift from the monopole
-        // approximation. It does not change any relative acceleration.
-        var mass = 0.0; var px = 0.0; var py = 0.0
         for (i in grains.indices) {
-            val m = grains[i].mass.toDouble()
-            mass += m
-            px += m*fx[i]; py += m*fy[i]
-        }
-        if (mass > 0) {
-            val ax = px / mass; val ay = py / mass
-            for (i in grains.indices) { fx[i] -= ax; fy[i] -= ay }
+            val c = centersById[grains[i].owner] ?: continue
+            fx[i] += c.recoilX; fy[i] += c.recoilY
         }
         lastGravityMs = (System.nanoTime() - beginning) / 1e6
+    }
+
+    /** Exact viscous substep in each cloud's COM frame. Mechanical energy
+     * dissipated by internal motion becomes heat; orbital motion is untouched. */
+    private fun dissipate(h: Double) {
+        buildCenters()
+        for (c in centers) { c.angular = 0.0; c.inertia = 0.0 }
+        for (p in grains) {
+            val c = centersById[p.owner] ?: continue
+            val dx = p.x-c.x; val dy = p.y-c.y
+            c.angular += p.mass*(dx*(p.vy-c.vy)-dy*(p.vx-c.vx))
+            c.inertia += p.mass*(dx*dx+dy*dy)
+        }
+        for (p in grains) {
+            val c = centersById[p.owner] ?: continue
+            val spin = if (c.inertia > 1e-15) c.angular/c.inertia else 0.0
+            val rigidX = c.vx-spin*(p.y-c.y)
+            val rigidY = c.vy+spin*(p.x-c.x)
+            val vx = p.vx-rigidX; val vy = p.vy-rigidY
+            val decay = kotlin.math.exp(-c.damping * h)
+            p.vx = (rigidX + vx * decay).toFloat()
+            p.vy = (rigidY + vy * decay).toFloat()
+            p.heat += .5 * p.mass * (vx*vx + vy*vy) * (1.0 - decay*decay)
+        }
     }
 
     private fun collisions(h: Double) {
@@ -678,7 +704,7 @@ internal class AstronomicalUniverse {
                             // velocity relaxation with lost energy as heat.
                             val rvx = (q.vx-p.vx).toDouble()
                             val rvy = (q.vy-p.vy).toDouble()
-                            val damping = .006
+                            val damping = 1.0-kotlin.math.exp(-.72*h)
                             val jx = mu*damping*rvx
                             val jy = mu*damping*rvy
                             p.vx = (p.vx+jx*invA).toFloat()
@@ -724,7 +750,7 @@ internal class AstronomicalUniverse {
                         // Positional overlap correction follows inverse
                         // masses and does not teleport the center of mass.
                         val overlap = radii-r
-                        val shift = overlap*.18/(invA+invB)
+                        val shift = overlap*(1.0-kotlin.math.exp(-24.0*h))/(invA+invB)
                         p.x = (p.x-shift*invA*nx).toFloat()
                         p.y = (p.y-shift*invA*ny).toFloat()
                         q.x = (q.x+shift*invB*nx).toFloat()
@@ -738,7 +764,7 @@ internal class AstronomicalUniverse {
                             else -> .024
                         }
                         val heat = (p.heat/p.mass-q.heat/q.mass) *
-                            min(p.mass, q.mass)*conduction
+                            min(p.mass, q.mass)*(1.0-kotlin.math.exp(-conduction*h*120.0))
                         val moved = heat.coerceIn(-q.heat*.2, p.heat*.2)
                         p.heat -= moved; q.heat += moved
                         val hot = p.heat/p.mass > .00065 ||
@@ -757,7 +783,7 @@ internal class AstronomicalUniverse {
     fun step(dt: Float, gravity: Float,
         episode: CosmicEpisode = CosmicEpisode(),
         walls: Boolean = false) {
-        if (grains.isEmpty() || dt <= 0f) return
+        if (grains.isEmpty() || !dt.isFinite() || dt <= 0f || !gravity.isFinite()) return
         ensureCapacity()
         activeEpisode = episode
         releaseEventHeat(episode)
@@ -766,24 +792,16 @@ internal class AstronomicalUniverse {
         val substeps = if (grains.size < 1000) 2 else 1
         var gm = .0; var cm = .0
         for (part in 0 until substeps) {
+            dissipate(h * .5)
             buildCenters()
             accelerations(gravity)
             gm += lastGravityMs
-            gravityRebuilds += if (tick % 2 == 0) 1 else 0
+            gravityRebuilds++
             for (i in grains.indices) {
                 val p = grains[i]
-                val ax = fx[i].coerceIn(-.75, .75)
-                val ay = fy[i].coerceIn(-.75, .75)
-                p.vx = (p.vx+ax*h).toFloat()
-                p.vy = (p.vy+ay*h).toFloat()
-                // Velocity cap is a numerical guardrail, not a hidden
-                // nonconservative damping force. Normal bound orbits are
-                // far below this scale.
-                val speed2 = p.vx*p.vx+p.vy*p.vy
-                if (speed2 > .8f*.8f) {
-                    val s = .8f/sqrt(speed2)
-                    p.vx *= s; p.vy *= s
-                }
+                // Kick-drift-kick (velocity Verlet), no hidden velocity clipping.
+                p.vx = (p.vx+fx[i]*h*.5).toFloat()
+                p.vy = (p.vy+fy[i]*h*.5).toFloat()
                 p.x = (p.x+p.vx*h).toFloat()
                 p.y = (p.y+p.vy*h).toFloat()
                 if (walls) {
@@ -804,6 +822,16 @@ internal class AstronomicalUniverse {
             }
             collisions(h)
             cm += lastContactMs
+            buildCenters()
+            accelerations(gravity)
+            gm += lastGravityMs
+            gravityRebuilds++
+            for (i in grains.indices) {
+                val p = grains[i]
+                p.vx = (p.vx+fx[i]*h*.5).toFloat()
+                p.vy = (p.vy+fy[i]*h*.5).toFloat()
+            }
+            dissipate(h * .5)
         }
         lastGravityMs = gm; lastContactMs = cm
         tick++
@@ -835,27 +863,38 @@ internal class AstronomicalUniverse {
         return GrainTotals(mass,px,py,kinetic,internal,chemical)
     }
 
+    /** O(particles × clouds), matching the integrated potential, not all-pairs N². */
     fun totalEnergy(gravity: Float): Double {
+        buildCenters()
         val t = totals()
         var result = t.kinetic+t.internal+t.chemical
         val g = gConstant * gravity
-        for (i in grains.indices) for (j in i+1 until grains.size) {
-            val a = grains[i]; val b = grains[j]
-            val dx = (a.x-b.x).toDouble()
-            val dy = (a.y-b.y).toDouble()
-            result -= g*a.mass*b.mass /
-                sqrt(dx*dx+dy*dy+orbitalSoft2)
+        for (p in grains) {
+            val own = centersById[p.owner]?.takeIf { it.mass > 0.0 }
+            if (own != null) {
+                val dx = p.x-own.x; val dy = p.y-own.y
+                result += .5*p.mass*own.stiffness*(dx*dx+dy*dy)
+            }
+            val weight = if (own == null) 1.0 else .5
+            for (c in centers) {
+                if (c.id == p.owner) continue
+                val dx = p.x-c.x; val dy = p.y-c.y
+                result -= weight*g*p.mass*c.mass/sqrt(dx*dx+dy*dy+orbitalSoft2)
+            }
         }
         return result
     }
 
     fun summarizeBodies(previous: List<CelestialBody>): List<CelestialBody> {
         buildCenters()
+        val heat = HashMap<Int, Double>()
+        for (p in grains) if (p.owner >= 0) heat[p.owner] = (heat[p.owner] ?: 0.0) + p.heat
         return previous.mapNotNull { b ->
             val c = centersById[b.id] ?: return@mapNotNull null
             b.copy(mass = c.mass.toFloat(),
                 x = c.x.toFloat(), y = c.y.toFloat(),
-                vx = c.vx.toFloat(), vy = c.vy.toFloat())
+                vx = c.vx.toFloat(), vy = c.vy.toFloat(),
+                temperature = ((heat[b.id] ?: 0.0)/(c.mass*.000001)).toFloat())
         }
     }
 

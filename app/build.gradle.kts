@@ -12,8 +12,8 @@ android {
         applicationId = "dev.axiom.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.23.0-beta.1"
+        versionCode = 24
+        versionName = "0.24.0-observatory"
     }
 
     compileOptions {
@@ -48,5 +48,6 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.3")
     testImplementation("junit:junit:4.13.2")
 }

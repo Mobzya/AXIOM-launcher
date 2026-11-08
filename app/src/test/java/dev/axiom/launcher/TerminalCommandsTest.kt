@@ -66,8 +66,9 @@ class UniverseTest {
             weak.bodies.first().y - strong.bodies.first().y)
         assertTrue(dx + dy > .0001f)
     }
-    @Test fun mathematicsAppearsIndependentlyOfCinematicEvents() {
+    @Test fun enabledMathematicsAppearsIndependentlyOfCinematicEvents() {
         val world = CosmicWorld(7)
+        world.configureObservation(maths=true)
         repeat(900) { world.step(1f / 60f) }
         assertTrue(world.mathMoment.active)
         assertEquals(CosmicEventKind.QUIET, world.episode.kind)

@@ -29,11 +29,21 @@ class ThemeModeTest {
         assertEquals(AxiomThemeMode.LIGHT, modeFromPreference("LIGHT"))
     }
 
-    @Test fun monochromePaletteHasHighContrast() {
+    @Test fun observatoryPalettesKeepReadableTextContrast() {
+        fun luminance(color: androidx.compose.ui.graphics.Color): Double {
+            fun channel(v: Float): Double = if(v <= .04045f) v/12.92 else
+                Math.pow((v+.055)/1.055,2.4)
+            return .2126*channel(color.red)+.7152*channel(color.green)+.0722*channel(color.blue)
+        }
+        fun contrast(a: androidx.compose.ui.graphics.Color,b: androidx.compose.ui.graphics.Color): Double {
+            val x=luminance(a);val y=luminance(b)
+            return (maxOf(x,y)+.05)/(minOf(x,y)+.05)
+        }
         assertTrue(AxiomPalette.DAY.light)
         assertFalse(AxiomPalette.NIGHT.light)
-        assertEquals(androidx.compose.ui.graphics.Color.White, AxiomPalette.DAY.background)
-        assertEquals(androidx.compose.ui.graphics.Color.Black, AxiomPalette.NIGHT.background)
-        assertEquals(androidx.compose.ui.graphics.Color(0xFF0A0A0A), AxiomPalette.DAY.ink)
+        for(palette in listOf(AxiomPalette.DAY,AxiomPalette.NIGHT)) {
+            assertTrue(contrast(palette.ink,palette.background)>7.0)
+            assertTrue(contrast(palette.muted,palette.surface)>4.5)
+        }
     }
 }

@@ -1,4 +1,4 @@
-name: AXIOM Debug APK
+name: AXIOM Tests and APK
 
 on:
   push:
@@ -16,6 +16,7 @@ permissions:
 jobs:
   android-debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -34,6 +35,25 @@ jobs:
           gradle-version: '8.13'
       - name: Unit tests and both APK builds
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+      - name: Verify optimized APK and record source
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/AXIOM-0.24-observatory.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/AXIOM-0.24-observatory.apk
+          cd dist
+          sha256sum AXIOM-0.24-observatory.apk > SHA256SUMS.txt
+          printf 'Source: %s\nCommit: %s\nRun: %s\nSigning: Android test/debug key\n' \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > BUILD-INFO.txt
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXIOM-test-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/test-results/testDebugUnitTest
+          retention-days: 14
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
@@ -44,5 +64,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AXIOM-optimized-test-APK
-          path: app/build/outputs/apk/release/app-release.apk
+          path: dist/*
+          retention-days: 30
           if-no-files-found: error

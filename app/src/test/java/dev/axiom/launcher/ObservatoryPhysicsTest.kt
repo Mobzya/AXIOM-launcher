@@ -58,6 +58,17 @@ class ObservatoryPhysicsTest {
         assertEquals(angular,angular(u),2e-9)
     }
 
+    @Test fun accretingDustDoesNotLoseTangentialAngularMomentumToFriction() {
+        val u=AstronomicalUniverse()
+        u.grains.add(SandGrain(1,.498f,.5f,.002f,-.008f,.001f,.00001,MatterMaterial.ICE))
+        u.grains.add(SandGrain(2,.502f,.5f,-.002f,.008f,.001f,.00001,MatterMaterial.ICE))
+        val angular=angular(u);val momentum=u.totals()
+        repeat(30) {u.step(1f/240f,0f)}
+        assertEquals(angular,angular(u),2e-10)
+        assertEquals(momentum.momentumX,u.totals().momentumX,1e-10)
+        assertEquals(momentum.momentumY,u.totals().momentumY,1e-10)
+    }
+
     @Test fun wallClockRateDoesNotChangeTrajectoriesAndDoubleSpeedWorks() {
         val a=CosmicWorld(42,initialPreset=CosmicPreset.RESONANCE)
         val b=CosmicWorld(42,initialPreset=CosmicPreset.RESONANCE)

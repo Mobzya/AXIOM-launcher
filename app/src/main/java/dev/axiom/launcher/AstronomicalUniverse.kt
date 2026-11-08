@@ -515,14 +515,16 @@ internal class AstronomicalUniverse {
                 val relativeY = (p.vy-a.vy).toDouble()
                 val damp = (.08 * event.intensity.heatFactor)
                     .coerceIn(.015, .65)
-                val jx = mu*damp*relativeX
-                val jy = mu*damp*relativeY
+                val distance = hypot(p.x-a.x,p.y-a.y).coerceAtLeast(1e-7f)
+                val nx = (p.x-a.x)/distance; val ny = (p.y-a.y)/distance
+                val normalSpeed = relativeX*nx+relativeY*ny
+                val jx = mu*damp*normalSpeed*nx
+                val jy = mu*damp*normalSpeed*ny
                 a.vx = (a.vx+jx*invA).toFloat()
                 a.vy = (a.vy+jy*invA).toFloat()
                 p.vx = (p.vx-jx*invB).toFloat()
                 p.vy = (p.vy-jy*invB).toFloat()
-                val lost = .5*mu*(relativeX*relativeX+
-                    relativeY*relativeY)*(2*damp-damp*damp)
+                val lost = .5*mu*normalSpeed*normalSpeed*(2*damp-damp*damp)
                 a.heat += lost * .5
                 p.heat += lost * .5
                 if (++handled >= 512) break
@@ -705,13 +707,14 @@ internal class AstronomicalUniverse {
                             val rvx = (q.vx-p.vx).toDouble()
                             val rvy = (q.vy-p.vy).toDouble()
                             val damping = 1.0-kotlin.math.exp(-.72*h)
-                            val jx = mu*damping*rvx
-                            val jy = mu*damping*rvy
+                            val normalSpeed = rvx*nx+rvy*ny
+                            val jx = mu*damping*normalSpeed*nx
+                            val jy = mu*damping*normalSpeed*ny
                             p.vx = (p.vx+jx*invA).toFloat()
                             p.vy = (p.vy+jy*invA).toFloat()
                             q.vx = (q.vx-jx*invB).toFloat()
                             q.vy = (q.vy-jy*invB).toFloat()
-                            val lost = .5*mu*(rvx*rvx+rvy*rvy) *
+                            val lost = .5*mu*normalSpeed*normalSpeed *
                                 (2*damping-damping*damping)
                             p.heat += lost*.5; q.heat += lost*.5
                         }

@@ -387,7 +387,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         val compactHome = maxHeight < 520.dp
         val restTop = if(compactHome) (maxHeight-162.dp).coerceAtLeast(90.dp)
             else maxHeight-196.dp
-        val activeTop = (maxHeight * .115f).coerceAtLeast(25.dp)
+        val activeTop = (maxHeight * .115f).coerceAtLeast(78.dp)
         val dockTop by animateDpAsState(
             targetValue = if (searching) activeTop else restTop,
             animationSpec = if(world.reducedMotion) tween(0) else spring(

@@ -64,11 +64,18 @@ class ObservatoryUiTest {
             assertTrue(visible("Начальные условия"))
             val search=device.wait(Until.findObject(By.clazz("android.widget.EditText")),10_000)
             assertNotNull("Scenario search is missing",search)
+            search.click()
             search.text="бездны"
             scenario.onActivity {activity ->
                 androidx.core.view.WindowCompat.getInsetsController(activity.window,activity.window.decorView)
                     .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }
+            android.os.SystemClock.sleep(500)
+            // Android 11 UiAutomation retains old Compose virtual nodes after
+            // ACTION_SET_TEXT. Setting the same service info clears its cache
+            // (UiAutomation.setServiceInfo), without changing the app or flags.
+            val automation=instrumentation.uiAutomation
+            automation.serviceInfo=automation.serviceInfo
             val scene=device.wait(Until.findObject(By.descStartsWith("Сцена: У края бездны.")),10_000)
             assertNotNull("Filtered black-hole scene is missing",scene)
             scene.click()

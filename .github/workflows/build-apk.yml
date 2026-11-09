@@ -38,10 +38,10 @@ jobs:
       - name: Verify optimized APK and record source
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AXIOM-0.24-observatory.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/AXIOM-0.24-observatory.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AXIOM-0.25-living-cosmos.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/AXIOM-0.25-living-cosmos.apk
           cd dist
-          sha256sum AXIOM-0.24-observatory.apk > SHA256SUMS.txt
+          sha256sum AXIOM-0.25-living-cosmos.apk > SHA256SUMS.txt
           printf 'Source: %s\nCommit: %s\nRun: %s\nSigning: Android test/debug key\n' \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > BUILD-INFO.txt
@@ -68,3 +68,46 @@ jobs:
           path: dist/*
           retention-days: 30
           if-no-files-found: error
+
+  android-ui:
+    name: Native Android UI and screenshots
+    needs: android-debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Enable hosted runner KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run native Android checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 300
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -memory 2048 -cores 2
+          script: bash ci/run-ui-smoke.sh
+      - name: Upload UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AXIOM-native-UI
+          path: |
+            ui-artifacts
+            app/build/reports/androidTests
+            app/build/outputs/androidTest-results
+          retention-days: 14

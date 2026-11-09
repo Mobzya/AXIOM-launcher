@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.*
 
-internal val AX_ACCENT get() = if (AxiomColors.palette.light) Color(0xff326d72) else Color(0xffa3d5cf)
+internal val AX_ACCENT get() = AxiomColors.sceneAccent ?: if (AxiomColors.palette.light) Color(0xff326d72) else Color(0xffa3d5cf)
 internal val AX_LILAC get() = if (AxiomColors.palette.light) Color(0xff745584) else Color(0xffc6b5df)
 internal fun number(value: Double, digits: Int = 2) = "% .${digits}f".format(Locale.US,value).trim()
 
@@ -70,7 +70,7 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
             }
         }
         Row(Modifier.padding(horizontal=18.dp,vertical=12.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-            listOf("Сцены","Объекты","Наука","Среда").forEachIndexed { index,label ->
+            listOf("Сцены","Объекты","Жизнь","Наука","Среда").forEachIndexed { index,label ->
                 Choice(label,tab==index,Modifier.weight(1f)) { tab=index }
             }
         }
@@ -82,7 +82,8 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
                 when(page) {
                     0 -> ScenarioPage(world,onScene)
                     1 -> CreationPage(world)
-                    2 -> ObservationPage(world,onLab)
+                    2 -> CivilizationPage(world,onPersist)
+                    3 -> ObservationPage(world,onLab,onPersist)
                     else -> EnvironmentPage(world,onPersist)
                 }
                 Spacer(Modifier.height(18.dp))
@@ -133,9 +134,16 @@ private fun ScenarioPreview(preset: CosmicPreset,modifier:Modifier) {
         bodies.forEach { body ->
             val radius=(1.5f+sqrt(body.mass)*1.1f).dp.toPx().coerceAtMost(7.dp.toPx())
             val point=origin+Offset(body.x*side,body.y*side)
-            val color=if(body.stellarClass==StellarClass.STAR) Color(0xffe2bb87) else lilac
+            val color=when(body.nature) {
+                CelestialNature.BLACK_HOLE -> lilac
+                CelestialNature.NEUTRON_STAR,CelestialNature.WHITE_DWARF -> Color(0xffb9d1f3)
+                else -> if(body.stellarClass==StellarClass.STAR)Color(0xffe2bb87) else lilac
+            }
             drawCircle(color.copy(alpha=.09f),radius*2.8f,point)
-            drawCircle(color.copy(alpha=.9f),radius,point)
+            if(body.nature==CelestialNature.BLACK_HOLE) {
+                drawCircle(Color(0xff080b17),radius,point)
+                drawCircle(color.copy(alpha=.8f),radius*1.2f,point,style=Stroke(.8.dp.toPx()))
+            } else drawCircle(color.copy(alpha=.9f),radius,point)
         }
         if(preset==CosmicPreset.SATURN_RINGS || preset==CosmicPreset.PROTOPLANETARY ||
             preset==CosmicPreset.COLD_NURSERY) repeat(65) { i ->
@@ -198,7 +206,7 @@ private fun CreationPage(world:CosmicWorld) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit) {
+private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit,onPersist:()->Unit) {
     val t=world.telemetry
     SectionIntro("От движения к пониманию", "Измерения берутся из текущей симуляции. Единицы нормированы; это двумерная физическая модель.")
     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -214,6 +222,8 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit) {
         Text("K = ${number(t.kinetic,5)}   Uтепл = ${number(t.heat,5)}",color=AX_GRAY,
             fontSize=11.sp,fontFamily=FontFamily.Monospace)
         Text("Eмодели = ${number(t.energy,5)}",color=AX_WHITE,fontSize=13.sp)
+        Text("Внешнее излучение +${number(t.externalRadiation,5)} · излучено ${number(t.radiated,5)}",
+            color=AX_GRAY,fontSize=11.sp)
         Text("При ударах движение переходит в тепло. Стены, создание объектов, события и смена G меняют условия эксперимента.",
             color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
     }
@@ -228,8 +238,9 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit) {
             color=AX_LILAC,fontSize=12.sp) }
         Text("Локальная онлайн-регрессия учится на ускорениях центров масс. Ошибка считается до обучения на новом наблюдении. Близкие столкновения исключаются; приливы и протяжённость тел могут давать расхождение с точечной моделью.",
             color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
-        Text("Модель наблюдает за физикой и не управляет орбитами.",color=AX_GRAY,fontSize=11.sp)
+        Text("Орбиты рассчитывает физика. Изученная оценка G помогает автопилотам кораблей компенсировать притяжение.",color=AX_GRAY,fontSize=11.sp)
     }
+    QuantumPanel(world,onPersist)
     Text("ВЫБЕРИ ТЕЛО",color=AX_GRAY,fontSize=10.sp,letterSpacing=1.5.sp)
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         world.bodies.forEach { body -> Choice("№${body.id}",world.selectedBody?.id==body.id) {
@@ -240,8 +251,15 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit) {
         ?: world.bodies.minByOrNull { it.mass }
     if(body!=null) {
         val primary=world.bodies.filter { it.id!=body.id }.maxByOrNull { it.mass }
-        NoteCard("Тело №${body.id} · ${materialName(body.material)}") {
-            Text("m = ${number(body.mass.toDouble())} · T ≈ ${number(body.temperature.toDouble(),0)} K",
+        NoteCard("Тело №${body.id} · ${if(body.nature==CelestialNature.ORDINARY)materialName(body.material) else body.nature.title}") {
+            if(body.nature==CelestialNature.BLACK_HOLE) {
+                Text("m = ${number(body.mass.toDouble())} · rгор ≈ ${number(horizonRadius(body.mass).toDouble(),3)}",
+                    color=AX_WHITE,fontSize=13.sp)
+                Text("Спин накопленного вещества · ${number(body.spinAngularMomentum,5)}",
+                    color=AX_LILAC,fontSize=11.sp)
+                Text("Горизонт поглощения — эффективная граница этой 2D-модели. Температура Хокинга и ОТО не рассчитываются.",
+                    color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
+            } else Text("m = ${number(body.mass.toDouble())} · T ≈ ${number(body.temperature.toDouble(),0)} K",
                 color=AX_WHITE,fontSize=13.sp)
             if(primary!=null) {
                 val orbit=OrbitMechanics.orbit(body,primary,world.gravity)
@@ -264,6 +282,7 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit) {
 @Composable
 private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     SectionIntro("Твой темп наблюдения", "Спокойный домашний экран или активный эксперимент — настрой поведение вселенной.")
+    UniverseCyclePanel(world,onPersist)
     Toggle("Следы орбит","Показывать историю движения тел",world.showTrails) {
         world.configureObservation(trails=it); onPersist()
     }
@@ -282,8 +301,14 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     Toggle("Обучение на орбитах","Локальная регрессия по движениям тел",world.learningEnabled) {
         world.configureObservation(ml=it); onPersist()
     }
-    Toggle("Отражающие границы","Материя отражается от краёв квадратной области",world.wallsEnabled) {
+    Toggle("Отражающие границы","Стены почти у краёв всего экрана, включая область над часами",world.wallsEnabled) {
         world.updateWalls(it); onPersist()
+    }
+    Toggle("Часы — физическая стена","Контур совпадает с видимыми цифрами и обновляется каждую минуту",world.clockWallsEnabled) {
+        world.configureCosmos(clockWall=it);onPersist()
+    }
+    Toggle("Тепловой баланс миров","Нагрев от конечного запаса энергии звезды и охлаждение излучением",world.radiativeClimate) {
+        world.configureCosmos(thermalBalance=it);onPersist()
     }
     Text("Сила притяжения · ${number(world.gravity.toDouble())}×",color=AX_WHITE,fontSize=14.sp)
     Slider(value=world.gravity,onValueChange={world.updateGravity(it);onPersist()},valueRange=.25f..2.2f)
@@ -319,6 +344,7 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
         Action("↗  $title") {world.trigger(kind,intensity);message="$title · ${intensity.label}"}
     }
     if(message.isNotEmpty()) Text(message,color=AX_ACCENT,fontSize=12.sp)
+    PhenomenaPanel(world,onPersist)
     Action("↶  Вернуться на 3 секунды") {
         message=if(world.rewind(3)) "Восстановлено сохранённое состояние" else "Нужно немного истории движения"
     }
@@ -326,13 +352,13 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
 }
 
 @Composable
-private fun SectionIntro(title:String,description:String) {
+internal fun SectionIntro(title:String,description:String) {
     Text(title,color=AX_WHITE,fontSize=23.sp,fontWeight=FontWeight.Light)
     Text(description,color=AX_GRAY,fontSize=12.sp,lineHeight=19.sp)
 }
 
 @Composable
-private fun Metric(label:String,value:String,modifier:Modifier) {
+internal fun Metric(label:String,value:String,modifier:Modifier) {
     Column(modifier.clip(RoundedCornerShape(16.dp)).background(AX_SURFACE).padding(14.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text(label,color=AX_GRAY,fontSize=9.sp,letterSpacing=.5.sp)
@@ -341,7 +367,7 @@ private fun Metric(label:String,value:String,modifier:Modifier) {
 }
 
 @Composable
-private fun NoteCard(title:String,content:@Composable ColumnScope.()->Unit) {
+internal fun NoteCard(title:String,content:@Composable ColumnScope.()->Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(AX_SURFACE)
         .border(1.dp,AX_BORDER,RoundedCornerShape(18.dp)).padding(16.dp),
         verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -351,7 +377,7 @@ private fun NoteCard(title:String,content:@Composable ColumnScope.()->Unit) {
 }
 
 @Composable
-private fun Toggle(title:String,description:String,value:Boolean,onChange:(Boolean)->Unit) {
+internal fun Toggle(title:String,description:String,value:Boolean,onChange:(Boolean)->Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
         .toggleable(value=value,role=Role.Switch,onValueChange=onChange).padding(vertical=7.dp),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -379,7 +405,7 @@ internal fun Choice(title:String,active:Boolean,modifier:Modifier=Modifier,
 }
 
 @Composable
-private fun Action(title:String,onClick:()->Unit) {
+internal fun Action(title:String,onClick:()->Unit) {
     OutlinedButton(onClick=onClick,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),
         shape=RoundedCornerShape(14.dp),border=androidx.compose.foundation.BorderStroke(1.dp,AX_BORDER)) {
         Text(title,color=AX_ACCENT,fontSize=12.sp)

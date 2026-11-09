@@ -56,6 +56,11 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -165,6 +170,19 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         world.updateWalls(prefs.getBoolean("wall_mode",false))
         world.updateMatterMode(matterModeFromPreference(
             prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+    }
+    val lifecycle=LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(world,world.hourlyScenes,lifecycle) {
+        if(world.hourlyScenes)lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while(true) {
+                val hour=ZonedDateTime.now().truncatedTo(ChronoUnit.HOURS).toEpochSecond()/3600
+                if(world.checkSceneHour(hour))saveObservation(prefs,world)
+                delay((3_600_000-System.currentTimeMillis()%3_600_000).coerceIn(500,15_000))
+            }
+        }
+    }
+    LaunchedEffect(world.preset,world.matchSceneAccent,AxiomColors.palette.light) {
+        AxiomColors.applyScene(world.preset,world.matchSceneAccent)
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -321,11 +339,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     detectTapGestures(
                         onTap = { point ->
                             UniverseViewport(size.width.toFloat(),size.height.toFloat())
-                                .normalized(point.x,point.y)?.let { (x,y) -> world.interact(x,y) }
+                                .let {if(world.wallsEnabled)it.screenPoint(point.x,point.y) else it.normalized(point.x,point.y)}?.let { (x,y) -> world.interact(x,y) }
                         },
                         onDoubleTap = { point ->
                             val location = UniverseViewport(size.width.toFloat(),size.height.toFloat())
-                                .normalized(point.x,point.y) ?: return@detectTapGestures
+                                .let {if(world.wallsEnabled)it.screenPoint(point.x,point.y) else it.normalized(point.x,point.y)} ?: return@detectTapGestures
                             val (x,y) = location
                             val math = world.mathMoment
                             if (math.active && x in (math.x-.06f)..(math.x+.43f) &&
@@ -353,11 +371,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { pos ->
                             UniverseViewport(size.width.toFloat(),size.height.toFloat())
-                                .normalized(pos.x,pos.y)?.let { (x,y) -> world.startBrush(x,y) }
+                                .let {if(world.wallsEnabled)it.screenPoint(pos.x,pos.y) else it.normalized(pos.x,pos.y)}?.let { (x,y) -> world.startBrush(x,y) }
                         },
                         onDrag = { change, _ ->
                             UniverseViewport(size.width.toFloat(),size.height.toFloat())
-                                .normalized(change.position.x,change.position.y)?.let { (x,y) -> world.moveBrush(x,y) }
+                                .let {if(world.wallsEnabled)it.screenPoint(change.position.x,change.position.y) else it.normalized(change.position.x,change.position.y)}?.let { (x,y) -> world.moveBrush(x,y) }
                             change.consume()
                         },
                         onDragEnd = { world.endBrush() },
@@ -408,7 +426,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
 
         if (mode == AxiomMode.HOME && !observatoryOpen) {
-            if (!compactHome) ObservatoryClock(Modifier.align(Alignment.TopStart).padding(start=27.dp,top=82.dp))
+            if (!compactHome) ObservatoryClock(world,Modifier.align(Alignment.TopStart).padding(start=27.dp,top=82.dp))
+            if(!compactHome)LivingHomeBadge(world,Modifier.align(Alignment.TopStart).padding(start=27.dp,top=188.dp))
             val favoriteApps = apps.filter { it.packageName in favorites }.take(5)
             if(!compactHome && favoriteApps.isNotEmpty()) Row(Modifier.align(Alignment.BottomCenter)
                 .padding(bottom=211.dp),horizontalArrangement=Arrangement.spacedBy(17.dp)) {

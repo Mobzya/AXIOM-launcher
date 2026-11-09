@@ -379,7 +379,7 @@ internal fun AxiomSettings(
                 fontFamily = FontFamily.Monospace)
         }
         Spacer(Modifier.height(36.dp))
-        Text("AXIOM 0.24  /  OBSERVATORY", color = AX_DARK,
+        Text("AXIOM 0.25  /  LIVING COSMOS", color = AX_DARK,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 24.dp))
     }

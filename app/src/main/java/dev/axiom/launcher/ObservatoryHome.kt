@@ -23,21 +23,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-internal fun ObservatoryClock(modifier:Modifier=Modifier) {
-    var now by remember { mutableStateOf(LocalDateTime.now()) }
-    val context=LocalContext.current
-    LaunchedEffect(Unit) { while(true) { now=LocalDateTime.now(); delay(15_000) } }
-    val format=if(DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm"
-    Column(modifier,verticalArrangement=Arrangement.spacedBy(5.dp)) {
-        Text(now.format(DateTimeFormatter.ofPattern(format)),color=AX_WHITE,
-            fontSize=54.sp,fontWeight=FontWeight.ExtraLight,letterSpacing=(-2).sp)
-        Text(now.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",Locale.getDefault()))
-            .replaceFirstChar {it.titlecase(Locale.getDefault())},
-            color=AX_GRAY,fontSize=13.sp,letterSpacing=.4.sp)
-    }
-}
-
-@Composable
 internal fun HomeNavigation(modifier:Modifier=Modifier,onApps:()->Unit,
     onCosmos:()->Unit,onTerminal:()->Unit) {
     Row(modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp))
@@ -54,4 +39,14 @@ internal fun HomeNavigation(modifier:Modifier=Modifier,onApps:()->Unit,
             }
         }
     }
+}
+
+@Composable
+internal fun LivingHomeBadge(world:CosmicWorld,modifier:Modifier=Modifier) {
+    val counts by remember(world) {derivedStateOf {
+        Triple(world.civilization.colonies.size,world.civilization.ships.size,world.civilizationConfig.mode)
+    }}
+    if(counts.third!=LifeMode.OFF && (counts.first>0 || counts.second>0))
+        Text("Колонии ${counts.first}  ·  корабли ${counts.second}",
+            modifier=modifier,color=AX_ACCENT.copy(alpha=.8f),fontSize=10.sp,letterSpacing=.4.sp)
 }

@@ -27,6 +27,7 @@ internal data class BoundMatter(
 
 /** Radius is shared by collision detection, tidal stress and particle rendering. */
 internal fun structureRadius(body: CelestialBody): Float {
+    if(body.nature==CelestialNature.BLACK_HOLE)return horizonRadius(body.mass)
     val densityFactor = when (body.stellarClass) {
         StellarClass.PLANET -> 1f
         StellarClass.STAR -> 1.38f

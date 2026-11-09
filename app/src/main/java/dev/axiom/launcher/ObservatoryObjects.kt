@@ -6,7 +6,7 @@ internal enum class LaunchStyle(val title: String) {
 
 internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
     val mass: Float, val temperature: Float, val classification: StellarClass,
-    val description: String) {
+    val description: String, val nature:CelestialNature=CelestialNature.ORDINARY) {
     ROCKY("Каменный мир", MatterMaterial.ROCK, 1f, 290f, StellarClass.PLANET,
         "Железное ядро, силикатная мантия и каменная кора"),
     IRON("Металлическое ядро", MatterMaterial.IRON, 1.8f, 420f, StellarClass.PLANET,
@@ -30,5 +30,21 @@ internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
     PLASMA("Плазменное ядро", MatterMaterial.PLASMA, 16f, 8500f, StellarClass.QUASAR,
         "Компактное горячее скопление; выбросы расходуют его энергию"),
     CLOUD("Молекулярное облако", MatterMaterial.AMMONIA, .6f, 90f, StellarClass.CLOUD,
-        "Разреженная смесь летучих веществ, льда и органики")
+        "Разреженная смесь летучих веществ, льда и органики"),
+    BLACK_HOLE("Чёрная дыра",MatterMaterial.IRON,14f,3f,StellarClass.QUASAR,
+        "Поглощает настоящее вещество у горизонта, сохраняя массу и импульс. Смягчённая 2D-модель, без ОТО.",CelestialNature.BLACK_HOLE),
+    NEUTRON("Нейтронная звезда",MatterMaterial.NICKEL,5f,18000f,StellarClass.STAR,
+        "Компактное горячее светило с вращающимися световыми полюсами",CelestialNature.NEUTRON_STAR),
+    WHITE_DWARF("Белый карлик",MatterMaterial.HELIUM,3f,12000f,StellarClass.STAR,
+        "Малое горячее звёздное ядро",CelestialNature.WHITE_DWARF),
+    COMET("Комета",MatterMaterial.ICE,.08f,95f,StellarClass.PLANET,
+        "Ледяное тело; потенциальная угроза колониям при сближении",CelestialNature.COMET),
+    ASTEROID("Астероид",MatterMaterial.IRON,.06f,180f,StellarClass.PLANET,
+        "Небольшое металлическое тело; колонии могут пытаться его перехватить",CelestialNature.ASTEROID),
+    BLUE_STAR("Голубая звезда",MatterMaterial.HYDROGEN,22f,20000f,StellarClass.STAR,
+        "Горячее массивное светило и большой запас тепловой энергии"),
+    BASALT("Базальтовая луна",MatterMaterial.BASALT,.24f,240f,StellarClass.PLANET,
+        "Холодный каменный спутник с минеральной корой"),
+    AMMONIA("Аммиачный мир",MatterMaterial.AMMONIA,1.6f,120f,StellarClass.PLANET,
+        "Мир летучих соединений: необычный, но слишком холодный для здешних колоний")
 }

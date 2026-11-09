@@ -15,6 +15,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -64,6 +68,12 @@ internal fun CosmicEnvironment(
     )
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val displayDensity=LocalDensity.current.density
+    val sceneFade=remember {Animatable(1f)}
+    LaunchedEffect(world.sceneRevision,world.reducedMotion) {
+        if(world.reducedMotion)sceneFade.snapTo(1f)
+        else {sceneFade.snapTo(.24f);sceneFade.animateTo(1f,tween(650))}
+    }
     val reducedPower = remember(context, interacting) {
         val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val battery = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -149,13 +159,32 @@ internal fun CosmicEnvironment(
         }
     }
 
-    Canvas(modifier) {
+    Canvas(modifier.onGloballyPositioned {coordinates ->
+        val p=coordinates.positionInRoot()
+        world.updateViewport(coordinates.size.width.toFloat(),coordinates.size.height.toFloat(),p.x,p.y,displayDensity)
+    }) {
+        val dim=dim*sceneFade.value
+        val snapshot=world.grainFrames
+        val renderedBodies=interpolateBodies(snapshot,interpolatedFrameFraction)
         val viewport = UniverseViewport(size.width,size.height)
         val unit = viewport.side
         val ink = if (AxiomColors.palette.light) Color(0xff526f86) else Color(0xffa4bad1)
+        val lenses=renderedBodies.filter {it.nature==CelestialNature.BLACK_HOLE}.take(3).toMutableList()
+        if(world.episode.kind==CosmicEventKind.MICROLENSING)
+            renderedBodies.maxByOrNull {it.mass}?.let {if(it !in lenses)lenses.add(it)}
         for (star in starLayers) {
+            var point=Offset(star.x*size.width,star.y*size.height)
+            for(lens in lenses) {
+                val center=Offset(viewport.x(lens.x),viewport.y(lens.y))
+                val delta=point-center;val distance=delta.getDistance().coerceAtLeast(1f)
+                if(distance<unit*.28f) {
+                    val strength=if(lens.nature==CelestialNature.BLACK_HOLE).018f else .036f*world.episode.alpha
+                    val deflection=(unit*unit*strength*strength/distance).coerceAtMost(unit*.04f)
+                    point+=delta/distance*deflection
+                }
+            }
             drawCircle(ink.copy(alpha=(.13f+.12f/star.z)*dim),
-                star.radius*density*.55f,Offset(star.x*size.width,star.y*size.height))
+                star.radius*density*.55f,point)
         }
         if (world.showTrails) {
             for ((_, points) in world.trails) {
@@ -169,7 +198,7 @@ internal fun CosmicEnvironment(
                 drawPath(trailPath,ink.copy(alpha=.24f*dim),style=Stroke(.8f*density))
             }
         }
-        if (world.showVectors) for (body in world.bodies) {
+        if (world.showVectors) for (body in renderedBodies) {
             val start = Offset(viewport.x(body.x),viewport.y(body.y))
             val end = start+Offset(body.vx*unit*1.5f,body.vy*unit*1.5f)
             drawLine(Color(0xff83cfc5).copy(alpha=.65f*dim),start,end,1.dp.toPx())
@@ -181,7 +210,7 @@ internal fun CosmicEnvironment(
             }
         }
         world.selectedBody?.let { selected ->
-            val body = world.bodies.firstOrNull { it.id == selected.id }
+            val body = renderedBodies.firstOrNull { it.id == selected.id }
             if (body != null) drawCircle(ink.copy(alpha=.65f*dim),
                 (structureRadius(body)*unit+8.dp.toPx()),
                 Offset(viewport.x(body.x),viewport.y(body.y)),style=Stroke(1.dp.toPx()))
@@ -189,7 +218,7 @@ internal fun CosmicEnvironment(
         // A low-cost, soft volumetric light falloff derived from the position
         // of a PHYSICAL star. This is illumination, never fake particle mass.
         if (!interacting && !AxiomColors.palette.light) {
-            val luminous = world.bodies.firstOrNull {
+            val luminous = renderedBodies.firstOrNull {
                 it.stellarClass == StellarClass.STAR ||
                     it.stellarClass == StellarClass.QUASAR
             }
@@ -215,7 +244,6 @@ internal fun CosmicEnvironment(
         }
         // All grains are actual independent masses. Batching by material
         // uses one native drawPoints per material, even at 4800 grains.
-        val snapshot = world.grainFrames
         val frame = snapshot.current
         val old = snapshot.previous
         val blend = interpolatedFrameFraction
@@ -229,8 +257,9 @@ internal fun CosmicEnvironment(
                 old[i+1] + (frame[i+1] - old[i+1]) * blend
                 else frame[i+1]
             val material = frame[i+3].toInt()
-            if (x >= -.035f && x <= 1.035f &&
-                y >= -.035f && y <= 1.035f &&
+            val px=viewport.x(x);val py=viewport.y(y)
+            if (px >= -8f && px <= size.width+8f &&
+                py >= -8f && py <= size.height+8f &&
                 material in buffers.indices) {
                 val k = counts[material]
                 val buffer = buffers[material]
@@ -278,12 +307,15 @@ internal fun CosmicEnvironment(
                     radius, coronaPaint)
                 coronaPaint.style = Paint.Style.FILL
             }
-            for (body in world.bodies) {
+            for (body in renderedBodies) {
+                if(body.nature==CelestialNature.BLACK_HOLE)continue
                 if (body.stellarClass != StellarClass.STAR &&
                     body.stellarClass != StellarClass.QUASAR &&
                     !(world.preset == CosmicPreset.SATURN_RINGS &&
                         body.id == 1)) continue
                 val color = when {
+                    body.nature==CelestialNature.NEUTRON_STAR || body.nature==CelestialNature.WHITE_DWARF ->
+                        android.graphics.Color.rgb(181,207,255)
                     body.stellarClass == StellarClass.QUASAR ->
                         android.graphics.Color.rgb(125, 167, 255)
                     body.stellarClass == StellarClass.STAR ->
@@ -311,6 +343,7 @@ internal fun CosmicEnvironment(
                 native.drawPoints(buffers[k], 0, count, paint)
             }
         }
+        drawCosmicSystems(world,viewport,renderedBodies,dim,System.nanoTime())
         world.brushPoint?.let { brush ->
             drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),
                 Offset(viewport.x(brush.x),viewport.y(brush.y)))

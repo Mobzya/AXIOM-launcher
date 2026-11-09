@@ -102,6 +102,7 @@ private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
                     .background(AX_SURFACE).border(1.dp,
                         if(world.preset==preset) AX_ACCENT.copy(alpha=.65f) else AX_BORDER,
                         RoundedCornerShape(19.dp))
+                    .semantics { contentDescription="Сцена: ${preset.title}. ${preset.details}" }
                     .clickable(role=Role.Button) { onScene(preset) }
                     .padding(13.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     ScenarioPreview(preset,Modifier.fillMaxWidth().height(82.dp))

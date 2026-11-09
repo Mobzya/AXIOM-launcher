@@ -34,6 +34,11 @@ class ObservatoryUiTest {
         // UiAutomation uses Runtime.exec: commands have no shell expansion.
         val bytes=device.executeShellCommand("stat -c%s $directory/$name.png").trim().toLongOrNull() ?: 0L
         assertTrue("Screenshot was not saved: $name",bytes>0)
+        val hierarchy=java.io.ByteArrayOutputStream()
+        device.dumpWindowHierarchy(hierarchy)
+        hierarchy.toString("UTF-8").chunked(2000).forEachIndexed { index,chunk ->
+            android.util.Log.i("AXIOM_UI","$name[$index] $chunk")
+        }
     }
     @Test fun homeLifeScienceCreationAndBlackHoleSceneAreAccessible() {
         prepare();device.setOrientationNatural()
@@ -59,7 +64,7 @@ class ObservatoryUiTest {
             assertTrue(visible("Начальные условия"))
             var opened=false
             for(i in 0 until 24) {
-                val target=device.findObject(By.textContains("У края бездны"))
+                val target=device.findObject(By.descStartsWith("Сцена: У края бездны."))
                 val bounds=target?.visibleBounds
                 // A Compose card can expose its label while only the preview
                 // is on screen. Reveal it fully before tapping or stopping.

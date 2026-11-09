@@ -57,17 +57,24 @@ class ObservatoryUiTest {
             screenshot("04-objects")
             click("Сцены")
             assertTrue(visible("Начальные условия"))
-            for(i in 0 until 14) {
+            var opened=false
+            for(i in 0 until 24) {
                 val target=device.findObject(By.textContains("У края бездны"))
-                if(target!=null && !target.visibleBounds.isEmpty) { break }
-                // Use the same upward finger gesture as a person. Modal sheet
-                // accessibility nodes need not expose an Android ScrollView.
-                device.swipe(device.displayWidth/2,(device.displayHeight*.86).toInt(),
-                    device.displayWidth/2,(device.displayHeight*.48).toInt(),35)
-                android.os.SystemClock.sleep(250)
+                val bounds=target?.visibleBounds
+                // A Compose card can expose its label while only the preview
+                // is on screen. Reveal it fully before tapping or stopping.
+                if(target!=null && bounds!=null && bounds.height()>30 &&
+                    bounds.top>device.displayHeight*.47 && bounds.bottom<device.displayHeight*.90) {
+                    target.click();opened=true;break
+                }
+                val nearTarget=bounds!=null && bounds.height()>0
+                val from=if(nearTarget && bounds!!.top<device.displayHeight*.47).70 else .89
+                val to=if(nearTarget && bounds!!.top<device.displayHeight*.47).78 else if(nearTarget).81 else .57
+                device.swipe(device.displayWidth/2,(device.displayHeight*from).toInt(),
+                    device.displayWidth/2,(device.displayHeight*to).toInt(),40)
+                android.os.SystemClock.sleep(500)
             }
-            assertTrue(device.wait(Until.hasObject(By.textContains("У края бездны")),10_000))
-            device.findObject(By.textContains("У края бездны")).click()
+            assertTrue("Black-hole scene card was never fully revealed",opened)
             assertTrue(visible("Космос"))
             assertTrue(visible("У края бездны"))
             screenshot("05-black-hole")

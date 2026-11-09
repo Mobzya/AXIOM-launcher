@@ -91,6 +91,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
@@ -146,6 +148,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var refresh by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(AxiomMode.HOME) }
     var observatoryOpen by remember { mutableStateOf(false) }
+    val sceneScope=rememberCoroutineScope()
+    var loadingScene by remember {mutableStateOf(false)}
     val observatorySheet = rememberModalBottomSheetState(skipPartiallyExpanded=true)
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
@@ -176,7 +180,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         if(world.hourlyScenes)lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while(true) {
                 val hour=ZonedDateTime.now().truncatedTo(ChronoUnit.HOURS).toEpochSecond()/3600
-                if(world.checkSceneHour(hour))saveObservation(prefs,world)
+                if(withContext(Dispatchers.Default){world.checkSceneHour(hour)})saveObservation(prefs,world)
                 delay((3_600_000-System.currentTimeMillis()%3_600_000).coerceIn(500,15_000))
             }
         }
@@ -548,12 +552,23 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                 scrimColor=AX_BLACK.copy(alpha=.36f),shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp)) {
                 UniverseControlPanel(world=world,onPersist={saveObservation(prefs,world)},
                     onScene={next ->
-                        world.loadPreset(next);saveObservation(prefs,world);observatoryOpen=false
+                        if(!loadingScene) {
+                            loadingScene=true;observatoryOpen=false
+                            sceneScope.launch {
+                                try {
+                                    withContext(Dispatchers.Default){world.loadPreset(next)}
+                                    saveObservation(prefs,world)
+                                } finally {loadingScene=false}
+                            }
+                        }
                     },onLab={choice ->
                         lab.select(choice);observatoryOpen=false;mode=AxiomMode.LAB
                     },onDismiss={observatoryOpen=false})
             }
         }
+
+        if(loadingScene)Text("Готовим сцену…",color=AX_GRAY,fontSize=12.sp,
+            modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=24.dp))
 
         if (mode == AxiomMode.ATLAS) {
             AxiomAtlas(

@@ -45,6 +45,16 @@ internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
         "Горячее массивное светило и большой запас тепловой энергии"),
     BASALT("Базальтовая луна",MatterMaterial.BASALT,.24f,240f,StellarClass.PLANET,
         "Холодный каменный спутник с минеральной корой"),
+    SUPERMASSIVE("Сверхмассивная дыра",MatterMaterial.CARBON,1800f,3f,StellarClass.QUASAR,
+        "Гигантский горизонт и тяжёлое ядро. Масштаб сцены условный; это не перевод массы в массы Солнца.",CelestialNature.BLACK_HOLE),
+    HYPERGIANT("Гипергигант",MatterMaterial.HYDROGEN,150f,14000f,StellarClass.STAR,
+        "Очень большое светило: размер не требует миллионов частиц"),
     AMMONIA("Аммиачный мир",MatterMaterial.AMMONIA,1.6f,120f,StellarClass.PLANET,
-        "Мир летучих соединений: необычный, но слишком холодный для здешних колоний")
+        "Мир летучих соединений: необычный, но слишком холодный для здешних колоний");
+
+    val maximumMass:Float get()=when(this) {
+        SUPERMASSIVE -> 6400f
+        HYPERGIANT -> 300f
+        else -> 24f
+    }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,10 +78,10 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
         HorizontalDivider(color=AX_DIVIDER)
         Crossfade(tab,animationSpec=tween(if(world.reducedMotion) 0 else 220),label="observatory pages",
             modifier=Modifier.weight(1f)) { page ->
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            if(page==0)ScenarioPage(world,onScene)
+            else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                 when(page) {
-                    0 -> ScenarioPage(world,onScene)
                     1 -> CreationPage(world)
                     2 -> CivilizationPage(world,onPersist)
                     3 -> ObservationPage(world,onLab,onPersist)
@@ -94,25 +95,39 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
 
 @Composable
 private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
-    SectionIntro("Начальные условия", "Выбери историю и наблюдай, как её продолжит физика. Загрузка заменяет только космическую сцену.")
-    CosmicPreset.entries.chunked(2).forEach { pair ->
-        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            pair.forEach { preset ->
-                Column(Modifier.weight(1f).clip(RoundedCornerShape(19.dp))
-                    .background(AX_SURFACE).border(1.dp,
-                        if(world.preset==preset) AX_ACCENT.copy(alpha=.65f) else AX_BORDER,
-                        RoundedCornerShape(19.dp))
-                    .semantics { contentDescription="Сцена: ${preset.title}. ${preset.details}" }
-                    .clickable(role=Role.Button) { onScene(preset) }
-                    .padding(13.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    ScenarioPreview(preset,Modifier.fillMaxWidth().height(82.dp))
-                    Text(preset.title,color=AX_WHITE,fontSize=14.sp,fontWeight=FontWeight.Medium)
-                    Text(preset.details,color=AX_GRAY,fontSize=11.sp,lineHeight=16.sp,
-                        modifier=Modifier.heightIn(min=48.dp))
-                    Text(if(world.preset==preset) "↺  Начать заново" else "↗  Открыть сцену",
-                        color=AX_ACCENT,fontSize=11.sp)
-                }
+    var query by rememberSaveable {mutableStateOf("")}
+    val scenes=remember(query) {CosmicPreset.entries.filter {
+        query.isBlank() || it.title.contains(query.trim(),ignoreCase=true) || it.details.contains(query.trim(),ignoreCase=true)
+    }}
+    LazyVerticalGrid(columns=GridCells.Fixed(2),modifier=Modifier.fillMaxSize(),
+        contentPadding=PaddingValues(20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),
+        verticalArrangement=Arrangement.spacedBy(14.dp)) {
+        item(span={GridItemSpan(maxLineSpan)}) {
+            Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                SectionIntro("Начальные условия", "Выбери историю и наблюдай, как её продолжит физика. Загрузка заменяет только космическую сцену.")
+                OutlinedTextField(value=query,onValueChange={query=it},singleLine=true,
+                    label={Text("Найти сценарий")},
+                    modifier=Modifier.fillMaxWidth().semantics {contentDescription="Поиск сценария"})
             }
+        }
+        items(scenes,key={it.name}) {preset ->
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(19.dp))
+                .background(AX_SURFACE).border(1.dp,
+                    if(world.preset==preset) AX_ACCENT.copy(alpha=.65f) else AX_BORDER,
+                    RoundedCornerShape(19.dp))
+                .semantics {contentDescription="Сцена: ${preset.title}. ${preset.details}"}
+                .clickable(role=Role.Button) {onScene(preset)}
+                .padding(13.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                ScenarioPreview(preset,Modifier.fillMaxWidth().height(82.dp))
+                Text(preset.title,color=AX_WHITE,fontSize=14.sp,fontWeight=FontWeight.Medium)
+                Text(preset.details,color=AX_GRAY,fontSize=11.sp,lineHeight=16.sp,
+                    modifier=Modifier.heightIn(min=48.dp))
+                Text(if(world.preset==preset) "↺  Начать заново" else "↗  Открыть сцену",
+                    color=AX_ACCENT,fontSize=11.sp)
+            }
+        }
+        if(scenes.isEmpty())item(span={GridItemSpan(maxLineSpan)}) {
+            Text("Нет подходящих сценариев",color=AX_GRAY)
         }
     }
 }
@@ -171,7 +186,7 @@ private fun CreationPage(world:CosmicWorld) {
     Text(recipe.description,color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
     Text("Масса · ${number(mass.toDouble())}",color=AX_WHITE,fontSize=14.sp)
     // Logarithmic control makes moons and large stars equally easy to tune.
-    Slider(value=ln(mass),onValueChange={mass=exp(it)},valueRange=ln(.04f)..ln(24f))
+    Slider(value=ln(mass),onValueChange={mass=exp(it)},valueRange=ln(.04f)..ln(recipe.maximumMass))
     Text("Точка появления · коснись карты",color=AX_GRAY,fontSize=12.sp)
     val bodies=world.bodies; val accent=AX_ACCENT; val border=AX_BORDER
     Canvas(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(16.dp))

@@ -38,10 +38,10 @@ jobs:
       - name: Verify optimized APK and record source
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AXIOM-0.25-living-cosmos.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/AXIOM-0.25-living-cosmos.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AXIOM-0.25.1-living-cosmos.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/AXIOM-0.25.1-living-cosmos.apk
           cd dist
-          sha256sum AXIOM-0.25-living-cosmos.apk > SHA256SUMS.txt
+          sha256sum AXIOM-0.25.1-living-cosmos.apk > SHA256SUMS.txt
           printf 'Source: %s\nCommit: %s\nRun: %s\nSigning: Android test/debug key\n' \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > BUILD-INFO.txt

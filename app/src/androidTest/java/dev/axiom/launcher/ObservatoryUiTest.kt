@@ -14,9 +14,9 @@ import org.junit.runner.RunWith
 class ObservatoryUiTest {
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val device get()=UiDevice.getInstance(instrumentation)
-    private fun prepare() {
+    private fun prepare(preset:CosmicPreset=CosmicPreset.LIVING_SYSTEM) {
         instrumentation.targetContext.getSharedPreferences("axiom_prefs",0).edit().clear()
-            .putString("cosmic_preset",CosmicPreset.LIVING_SYSTEM.name)
+            .putString("cosmic_preset",preset.name)
             .putString("life_mode",LifeMode.SEEDED.name)
             .putBoolean("auto_events",false).putBoolean("rare_events",false)
             .putBoolean("wall_mode",true).putBoolean("clock_wall",true).commit()
@@ -42,7 +42,7 @@ class ObservatoryUiTest {
     }
     @Test fun homeLifeScienceCreationAndBlackHoleSceneAreAccessible() {
         prepare();device.setOrientationNatural()
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use {scenario ->
           try {
             assertTrue(visible("Космос"))
             assertTrue(device.wait(Until.hasObject(By.descStartsWith("Время ")),10_000))
@@ -62,24 +62,16 @@ class ObservatoryUiTest {
             screenshot("04-objects")
             click("Сцены")
             assertTrue(visible("Начальные условия"))
-            var opened=false
-            for(i in 0 until 24) {
-                val target=device.findObject(By.descStartsWith("Сцена: У края бездны."))
-                val bounds=target?.visibleBounds
-                // A Compose card can expose its label while only the preview
-                // is on screen. Reveal it fully before tapping or stopping.
-                if(target!=null && bounds!=null && bounds.height()>30 &&
-                    bounds.top>device.displayHeight*.47 && bounds.bottom<device.displayHeight*.90) {
-                    target.click();opened=true;break
-                }
-                val nearTarget=bounds!=null && bounds.height()>0
-                val from=if(nearTarget && bounds!!.top<device.displayHeight*.47).70 else .89
-                val to=if(nearTarget && bounds!!.top<device.displayHeight*.47).78 else if(nearTarget).81 else .57
-                device.swipe(device.displayWidth/2,(device.displayHeight*from).toInt(),
-                    device.displayWidth/2,(device.displayHeight*to).toInt(),40)
-                android.os.SystemClock.sleep(500)
+            val search=device.wait(Until.findObject(By.clazz("android.widget.EditText")),10_000)
+            assertNotNull("Scenario search is missing",search)
+            search.text="бездны"
+            scenario.onActivity {activity ->
+                androidx.core.view.WindowCompat.getInsetsController(activity.window,activity.window.decorView)
+                    .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }
-            assertTrue("Black-hole scene card was never fully revealed",opened)
+            val scene=device.wait(Until.findObject(By.descStartsWith("Сцена: У края бездны.")),10_000)
+            assertNotNull("Filtered black-hole scene is missing",scene)
+            scene.click()
             assertTrue(visible("Космос"))
             assertTrue(visible("У края бездны"))
             screenshot("05-black-hole")
@@ -97,6 +89,14 @@ class ObservatoryUiTest {
                 screenshot("06-landscape")
             }
         } finally {device.setOrientationNatural()}
+    }
+    @Test fun supermassiveSceneRendersAtLauncherScale() {
+        prepare(CosmicPreset.GALACTIC_NUCLEUS);device.setOrientationNatural()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            assertTrue(visible("Космос"))
+            assertTrue(visible("Сверхмассивное ядро"))
+            screenshot("07-supermassive")
+        }
     }
     @Test fun collisionFieldUsesTheActualRenderedClockInk() {
         val raster=rasterClock("08:08",108f,-4f)

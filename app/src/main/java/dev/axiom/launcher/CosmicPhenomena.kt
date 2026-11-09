@@ -7,7 +7,12 @@ internal enum class CelestialNature(val title:String) {
     ORDINARY("Мир"), BLACK_HOLE("Чёрная дыра"), NEUTRON_STAR("Нейтронная звезда"),
     WHITE_DWARF("Белый карлик"), COMET("Комета"), ASTEROID("Астероид")
 }
-internal fun horizonRadius(mass:Float)=(.004f+.002f*sqrt(mass.coerceAtLeast(.01f))).coerceIn(.005f,.045f)
+internal fun horizonRadius(mass:Float)=(.004f+.002f*sqrt(mass.coerceAtLeast(.01f))).coerceIn(.005f,.16f)
+
+/** A merger is not a stellar supernova. These are projected wavefronts and
+ * a finite-energy flare of the surrounding matter, without ejecting the hole. */
+internal data class CompactMerger(val x:Float,val y:Float,val mass:Float,
+    val releasedEnergy:Double,val age:Float=0f,val duration:Float=10f)
 
 internal enum class CatastropheRate(val title:String,val factor:Float) {
     VERY_RARE("Почти легенды",.25f), NATURAL("Очень редко",1f), CINEMATIC("Насыщенно",4f)

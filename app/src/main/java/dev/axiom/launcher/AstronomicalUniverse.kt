@@ -647,7 +647,7 @@ internal class AstronomicalUniverse {
     /** A collapsed core replaces captured packets with their actual total mass.
      * COM, momentum and orbital angular momentum (returned as intrinsic spin)
      * are accounted for. Relative kinetic energy becomes heat/radiation. */
-    fun accrete(coreOwner:Int,radius:Float):Accretion {
+    fun accrete(coreOwner:Int,radius:Float,otherHorizons:Map<Int,Float> = emptyMap()):Accretion {
         val coreIndex=grains.indexOfFirst {it.owner==coreOwner}
         if(coreIndex<0 || radius<=0)return Accretion()
         val core=grains[coreIndex];val captured=ArrayList<Int>()
@@ -658,7 +658,9 @@ internal class AstronomicalUniverse {
         var angular=mass*(core.x.toDouble()*core.vy-core.y.toDouble()*core.vx)
         for(i in grains.indices) {
             val p=grains[i]
-            if(p.owner==coreOwner || hypot(p.x-core.x,p.y-core.y)>=radius)continue
+            val reach=radius+(otherHorizons[p.owner] ?: 0f)
+            val dx=p.x-core.x;val dy=p.y-core.y
+            if(p.owner==coreOwner || dx*dx+dy*dy>=reach*reach)continue
             captured.add(i)
             val m=p.mass.toDouble();mass+=m;mx+=m*p.x;my+=m*p.y;px+=m*p.vx;py+=m*p.vy
             heat+=p.heat;chemical+=m*thermalPotential(p.material);kinetic+=.5*m*(p.vx*p.vx+p.vy*p.vy)
@@ -671,8 +673,37 @@ internal class AstronomicalUniverse {
         grains[coreIndex]=SandGrain(core.id,x.toFloat(),y.toFloat(),vx.toFloat(),vy.toFloat(),
             mass.toFloat(),(heat+dissipated*.8+chemical-mass*thermalPotential(core.material)).coerceAtLeast(0.0),core.material,coreOwner)
         radiatedHeat+=dissipated*.2
-        for(i in captured.asReversed())grains.removeAt(i)
+        // One stable linear compaction; repeated removeAt shifts the tail
+        // thousands of times during a large capture and causes visible stalls.
+        var write=0;var nextCaptured=0
+        for(read in grains.indices) {
+            if(nextCaptured<captured.size && read==captured[nextCaptured])nextCaptured++
+            else {if(write!=read)grains[write]=grains[read];write++}
+        }
+        grains.subList(write,grains.size).clear()
         return Accretion(mass-core.mass,angular-mass*(x*vy-y*vx),owners)
+    }
+
+    /** Transfer a bounded portion of remnant heat to nearby disk packets.
+     * Unabsorbed light enters the radiation ledger. No invented energy/mass. */
+    fun releaseMergerFlare(coreOwner:Int,radius:Float=.32f):Double {
+        val core=grains.firstOrNull {it.owner==coreOwner} ?: return 0.0
+        val released=core.heat*.08
+        if(released<=0)return 0.0
+        core.heat-=released
+        var weight=0.0
+        for(p in grains)if(p.owner!=coreOwner) {
+            val dx=p.x-core.x;val dy=p.y-core.y
+            val d2=dx*dx+dy*dy
+            if(d2<radius*radius)weight+=p.mass*(1-d2/(radius*radius))
+        }
+        val absorbed=if(weight>0)released*.65 else 0.0
+        if(weight>0)for(p in grains)if(p.owner!=coreOwner) {
+            val dx=p.x-core.x;val dy=p.y-core.y;val d2=dx*dx+dy*dy
+            if(d2<radius*radius)p.heat+=absorbed*p.mass*(1-d2/(radius*radius))/weight
+        }
+        radiatedHeat+=released-absorbed
+        return released
     }
 
     /** External engineering energy from a civilisation's finite resource budget.

@@ -130,7 +130,7 @@ internal fun CosmicEnvironment(
                 val start = System.nanoTime()
                 val dt = ((start-lastPhysics)/1e9).toFloat().coerceIn(0f,.1f)
                 lastPhysics = start
-                world.step(dt)
+                world.step(dt,maxSubsteps=4,budgetNanos=12_000_000L)
                 val spent = System.nanoTime() - start
                 val remaining = physicsPeriod - spent
                 // Never spin or queue up overdue expensive physics steps.

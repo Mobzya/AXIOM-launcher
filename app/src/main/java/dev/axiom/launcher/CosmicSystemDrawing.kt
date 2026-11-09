@@ -107,6 +107,21 @@ internal fun DrawScope.drawCosmicSystems(world:CosmicWorld,viewport:UniverseView
                 (2f+progress*15f).dp.toPx(),center,style=Stroke(.8.dp.toPx()))
         }
     }
+    for(merger in world.compactMergers) {
+        val t=(merger.age/merger.duration).coerceIn(0f,1f)
+        val fade=sin(PI.toFloat()*t).coerceAtLeast(0f)*alpha
+        val center=point(merger.x,merger.y)
+        val radius=unit*(horizonRadius(merger.mass)+t*1.6f)
+        val color=if(light)Color(0xff6d65a4) else Color(0xffd3c0f0)
+        for(k in 0..3) {
+            val r=radius-k*unit*.028f
+            if(r>0)drawCircle(color.copy(alpha=fade*(.28f-k*.045f)),r,center,
+                style=Stroke((1.4f+k*.45f).dp.toPx()))
+        }
+        val pulse=sin(PI.toFloat()*(t*3f).coerceAtMost(1f)).coerceAtLeast(0f)
+        drawCircle(Color(0xffeccaa3).copy(alpha=pulse*.18f*alpha),
+            unit*(horizonRadius(merger.mass)*2f+t*.18f),center)
+    }
     val event=world.episode
     val envelope=event.alpha*alpha
     if(event.kind==CosmicEventKind.GAMMA_BURST) {

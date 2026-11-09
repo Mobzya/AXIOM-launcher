@@ -29,7 +29,10 @@ internal enum class CosmicPreset(val title: String, val details: String) {
     PULSAR_REEF("Пульсарный риф", "Нейтронная звезда и планеты под вращающимся светом полюсов"),
     WHITE_DWARF_RELIC("После звезды", "Белый карлик среди уцелевших лун и обломков"),
     ASTEROID_CORRIDOR("Рубеж колонии", "Обитаемый мир и приближающиеся астероиды: ресурсы и перехват"),
-    QUANTUM_SHORES("Квантовые берега", "Спокойная система и двухуровневый квантовый эксперимент")
+    QUANTUM_SHORES("Квантовые берега", "Спокойная система и двухуровневый квантовый эксперимент"),
+    BLACK_HOLE_MERGER("Слияние бездн", "Две чёрные дыры, сближение горизонтов и световой фронт слияния"),
+    GALACTIC_NUCLEUS("Сверхмассивное ядро", "Огромный горизонт, аккреционный диск и звёзды вокруг тяжёлого ядра"),
+    HYPERGIANT_SYSTEM("Владения гипергиганта", "Гигантское светило и крошечные внешние миры: сравни размеры")
 }
 
 internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<CelestialBody> {
@@ -133,6 +136,23 @@ internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<Celes
                 .copy(nature=CelestialNature.BLACK_HOLE))+
                 satellites(18f,.5f,.5f,listOf(.23f,.36f),listOf(.2f,.5f),
                     listOf(MatterMaterial.IRON,MatterMaterial.ICE),2)
+        CosmicPreset.BLACK_HOLE_MERGER -> listOf(
+            body(1,.42f,.5f,16f,MatterMaterial.CARBON,StellarClass.QUASAR,vx=.018f,vy=.002f,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(2,.58f,.5f,12f,MatterMaterial.CARBON,StellarClass.QUASAR,vx=-.024f,vy=-.002666667f,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(3,.5f,.86f,.04f,MatterMaterial.IRON,vx=-.045f,temperature=180f))
+        CosmicPreset.GALACTIC_NUCLEUS -> listOf(
+            body(1,.5f,.5f,1800f,MatterMaterial.CARBON,StellarClass.QUASAR,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(2,.79f,.5f,2f,MatterMaterial.HYDROGEN,StellarClass.STAR,
+                vy=OrbitMechanics.circularSpeed(1802f,.29f),temperature=6000f),
+            body(3,.12f,.5f,1f,MatterMaterial.HELIUM,StellarClass.STAR,
+                vy=-OrbitMechanics.circularSpeed(1801f,.38f),temperature=9000f))
+        CosmicPreset.HYPERGIANT_SYSTEM -> listOf(
+            body(1,.5f,.5f,150f,MatterMaterial.HYDROGEN,StellarClass.STAR,temperature=14000f).copy(sizeFactor=2.5f))+
+            satellites(150f,.5f,.5f,listOf(.28f,.43f),listOf(.08f,.18f),
+                listOf(MatterMaterial.BASALT,MatterMaterial.ICE),2)
         CosmicPreset.PULSAR_REEF -> listOf(
             body(1,.5f,.5f,6f,MatterMaterial.NICKEL,StellarClass.STAR,temperature=18000f)
                 .copy(nature=CelestialNature.NEUTRON_STAR,sizeFactor=.25f))+
@@ -226,6 +246,7 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
             }
         CosmicPreset.DEEP_SPACE -> if (detail) 250 else 76
         CosmicPreset.LIVING_SYSTEM,CosmicPreset.BLACK_HOLE_NURSERY,
+        CosmicPreset.BLACK_HOLE_MERGER,CosmicPreset.GALACTIC_NUCLEUS,CosmicPreset.HYPERGIANT_SYSTEM,
         CosmicPreset.PULSAR_REEF,CosmicPreset.WHITE_DWARF_RELIC,
         CosmicPreset.ASTEROID_CORRIDOR,CosmicPreset.QUANTUM_SHORES,
         CosmicPreset.RESONANCE, CosmicPreset.COMET_PASSAGE,

@@ -9,7 +9,6 @@ import androidx.test.uiautomator.Until
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class ObservatoryUiTest {
@@ -32,10 +31,9 @@ class ObservatoryUiTest {
         val directory="/sdcard/Download/axiom-ui"
         device.executeShellCommand("mkdir -p $directory")
         device.executeShellCommand("screencap -p $directory/$name.png")
-        assertEquals("saved",device.executeShellCommand("sh -c 'test -s $directory/$name.png && echo saved'").trim())
-        val hierarchy=File(instrumentation.targetContext.cacheDir,"$name.xml")
-        device.dumpWindowHierarchy(hierarchy)
-        device.executeShellCommand("sh -c 'run-as dev.axiom.launcher cat ${hierarchy.absolutePath} > $directory/$name.xml'")
+        // UiAutomation uses Runtime.exec: commands have no shell expansion.
+        val bytes=device.executeShellCommand("stat -c%s $directory/$name.png").trim().toLongOrNull() ?: 0L
+        assertTrue("Screenshot was not saved: $name",bytes>0)
     }
     @Test fun homeLifeScienceCreationAndBlackHoleSceneAreAccessible() {
         prepare();device.setOrientationNatural()

@@ -6,7 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import java.util.Calendar
 
-/** Monochrome palette. A single snapshot update repaints Compose and Canvas. */
+/** Quiet observatory palette. A single snapshot update repaints Compose and Canvas. */
 internal enum class AxiomThemeMode { DARK, LIGHT, AUTO }
 
 /** User-settable daylight interval in LOCAL device minutes. Wraps midnight. */
@@ -59,37 +59,50 @@ internal data class AxiomPalette(
 ) {
     companion object {
         val NIGHT = AxiomPalette(
-            background = Color(0xFF000000),
-            ink = Color(0xFFF8F8F8),
-            muted = Color(0xFF989898),
-            faint = Color(0xFF575757),
-            border = Color(0xFF494949),
-            glass = Color(0xB3181818),
-            panel = Color(0xF5080808),
-            surface = Color(0xFF161616),
-            tile = Color(0xFF282828),
-            hint = Color(0xFFD3D3D3),
-            divider = Color(0xFF292929),
+            background = Color(0xFF0B101A),
+            ink = Color(0xFFECEEF4),
+            muted = Color(0xFFA3ADBE),
+            faint = Color(0xFF78869C),
+            border = Color(0xFF303D50),
+            glass = Color(0xE016202F),
+            panel = Color(0xFF111A28),
+            surface = Color(0xFF182334),
+            tile = Color(0xFF25344A),
+            hint = Color(0xFFCBD5E2),
+            divider = Color(0xFF243247),
             light = false
         )
         val DAY = AxiomPalette(
-            background = Color.White,
-            ink = Color(0xFF0A0A0A),
-            muted = Color(0xFF525252),
-            faint = Color(0xFF777777),
-            border = Color(0xFFC1C1C1),
-            glass = Color(0xDDF7F7F7),
-            panel = Color(0xFCFFFFFF),
-            surface = Color(0xFFF5F5F5),
-            tile = Color(0xFFEEEEEE),
-            hint = Color(0xFF4D4D4D),
-            divider = Color(0xFFE1E1E1),
+            background = Color(0xFFF3F6F8),
+            ink = Color(0xFF24364A),
+            muted = Color(0xFF53657B),
+            faint = Color(0xFF63758C),
+            border = Color(0xFFBCCBD6),
+            glass = Color(0xEDF2F5F6),
+            panel = Color(0xFFF3F6F8),
+            surface = Color(0xFFE7EEF2),
+            tile = Color(0xFFDCE6ED),
+            hint = Color(0xFF4F647A),
+            divider = Color(0xFFCFDCE5),
             light = true
         )
     }
 }
 
 internal object AxiomColors {
+    var sceneAccent by mutableStateOf<Color?>(null)
+        private set
+    fun applyScene(preset:CosmicPreset,matched:Boolean) {
+        if(!matched){sceneAccent=null;return}
+        val color=when(preset) {
+            CosmicPreset.LIVING_SYSTEM,CosmicPreset.ASTEROID_CORRIDOR -> Color(0xffa6d8b5)
+            CosmicPreset.BLACK_HOLE_NURSERY,CosmicPreset.PULSAR_REEF -> Color(0xffc5b0e4)
+            CosmicPreset.QUANTUM_SHORES -> Color(0xff9bcfe5)
+            CosmicPreset.COLLISION_LAB,CosmicPreset.WHITE_DWARF_RELIC -> Color(0xffe1bd9a)
+            else -> Color(0xffa3d5cf)
+        }
+        sceneAccent=if(palette.light)Color(color.red*.48f,color.green*.48f,color.blue*.48f) else color
+    }
     var palette by mutableStateOf(AxiomPalette.NIGHT)
         private set
 

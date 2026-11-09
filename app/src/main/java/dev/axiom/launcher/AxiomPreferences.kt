@@ -37,6 +37,15 @@ internal object AxiomBackup {
             put("maxBodies", prefs.getInt("max_bodies",23))
             put("walls", prefs.getBoolean("wall_mode",false))
             put("matterMode", prefs.getString("matter_mode", MatterMode.BALANCED.name))
+            put("cosmicPreset",prefs.getString("cosmic_preset",CosmicPreset.SOLAR_SYSTEM.name))
+            for ((key,default) in observationDefaults) put(key,prefs.getBoolean(key,default))
+            put("lifeMode",prefs.getString("life_mode",LifeMode.EMERGENCE.name))
+            put("lifePace",prefs.getFloat("life_pace",1f).toDouble())
+            put("rareRate",prefs.getString("rare_rate",CatastropheRate.NATURAL.name))
+            put("quantumCoupling",prefs.getFloat("quantum_coupling",1f).toDouble())
+            put("quantumDephasing",prefs.getFloat("quantum_dephasing",.06f).toDouble())
+            put("scenePool",JSONArray((prefs.getStringSet("scene_pool",null)
+                ?: CosmicPreset.entries.map {it.name}.toSet()).sorted()))
             put("favorites", JSONArray(
                 prefs.getStringSet("favorites", emptySet())?.sorted() ?: emptyList<String>()
             ))
@@ -71,6 +80,16 @@ internal object AxiomBackup {
         val theme = modeFromPreference(json.optString("themeMode", "DARK"))
         val g = json.optDouble("gravity", 1.0).toFloat()
         require(g.isFinite()) { "Некорректная гравитация" }
+        val pace=json.optDouble("lifePace",1.0).toFloat()
+        val coupling=json.optDouble("quantumCoupling",1.0).toFloat()
+        val dephasing=json.optDouble("quantumDephasing",.06).toFloat()
+        require(pace.isFinite() && coupling.isFinite() && dephasing.isFinite()) {"Некорректные параметры симуляции"}
+        val pool=json.optJSONArray("scenePool")
+        require(pool==null || pool.length()<=100) {"Слишком много сценариев"}
+        val poolNames=if(pool==null)CosmicPreset.entries.map {it.name}.toSet() else
+            (0 until pool.length()).mapNotNull {i ->
+                CosmicPreset.entries.firstOrNull {it.name==pool.optString(i)}?.name
+            }.toSet().ifEmpty {CosmicPreset.entries.map {it.name}.toSet()}
         context.getSharedPreferences("axiom_prefs", Context.MODE_PRIVATE)
             .edit()
             .putFloat("gravity", g.coerceIn(.25f, 2.2f))
@@ -81,6 +100,17 @@ internal object AxiomBackup {
             .putBoolean("wall_mode",json.optBoolean("walls",false))
             .putString("matter_mode",matterModeFromPreference(
                 json.optString("matterMode",MatterMode.BALANCED.name)).name)
+            .putString("cosmic_preset",CosmicPreset.entries.firstOrNull {
+                it.name==json.optString("cosmicPreset")
+            }?.name ?: CosmicPreset.SOLAR_SYSTEM.name)
+            .also { editor -> for((key,default) in observationDefaults)
+                editor.putBoolean(key,json.optBoolean(key,default)) }
+            .putString("life_mode",LifeMode.entries.firstOrNull {it.name==json.optString("lifeMode")}?.name ?: LifeMode.EMERGENCE.name)
+            .putFloat("life_pace",pace.coerceIn(.5f,3f))
+            .putString("rare_rate",CatastropheRate.entries.firstOrNull {it.name==json.optString("rareRate")}?.name ?: CatastropheRate.NATURAL.name)
+            .putFloat("quantum_coupling",coupling.coerceIn(.1f,3f))
+            .putFloat("quantum_dephasing",dephasing.coerceIn(0f,2f))
+            .putStringSet("scene_pool",poolNames)
             .putStringSet("favorites", favorites)
             .putStringSet("space_work", work)
             .putStringSet("space_tools", tools)
@@ -88,3 +118,60 @@ internal object AxiomBackup {
         return favorites.size + work.size + tools.size
     }
 }
+
+internal fun loadObservation(prefs: android.content.SharedPreferences, world: CosmicWorld) {
+    world.configureObservation(
+        events=prefs.getBoolean("auto_events",true),
+        trails=prefs.getBoolean("orbit_trails",true),
+        vectors=prefs.getBoolean("velocity_vectors",false),
+        motion=prefs.getBoolean("reduced_motion",false),
+        maths=prefs.getBoolean("ambient_math",false),
+        ml=prefs.getBoolean("orbit_learning",true))
+    world.configureCosmos(rare=prefs.getBoolean("rare_events",true),
+        rate=CatastropheRate.entries.firstOrNull {it.name==prefs.getString("rare_rate",null)} ?: CatastropheRate.NATURAL,
+        hourly=prefs.getBoolean("hourly_scenes",false),
+        pool=CosmicPreset.entries.filter {prefs.getStringSet("scene_pool",null)?.contains(it.name) ?: true}.toSet(),
+        clockWall=prefs.getBoolean("clock_wall",true),accent=prefs.getBoolean("scene_accent",true),
+        quantumOn=prefs.getBoolean("quantum_enabled",true),coupling=prefs.getFloat("quantum_coupling",1f),
+        decoherence=prefs.getFloat("quantum_dephasing",.06f),thermalBalance=prefs.getBoolean("radiative_climate",true))
+    world.configureCivilization(CivilizationConfig(
+        mode=LifeMode.entries.firstOrNull {it.name==prefs.getString("life_mode",null)} ?: LifeMode.EMERGENCE,
+        colonization=prefs.getBoolean("life_colonization",true),defense=prefs.getBoolean("life_defense",true),
+        routes=prefs.getBoolean("life_routes",true),pace=prefs.getFloat("life_pace",1f)))
+}
+
+internal fun saveObservation(prefs: android.content.SharedPreferences, world: CosmicWorld) {
+    prefs.edit().putBoolean("auto_events",world.automaticEvents)
+        .putBoolean("orbit_trails",world.showTrails)
+        .putBoolean("velocity_vectors",world.showVectors)
+        .putBoolean("reduced_motion",world.reducedMotion)
+        .putBoolean("ambient_math",world.ambientMath)
+        .putBoolean("orbit_learning",world.learningEnabled)
+        .putBoolean("wall_mode",world.wallsEnabled)
+        .putString("cosmic_preset",world.preset.name)
+        .putString("matter_mode",world.matterMode.name)
+        .putBoolean("radiative_climate",world.radiativeClimate)
+        .putBoolean("rare_events",world.rareCatastrophes)
+        .putString("rare_rate",world.catastropheRate.name)
+        .putBoolean("hourly_scenes",world.hourlyScenes)
+        .putStringSet("scene_pool",world.scenePool.map {it.name}.toSet())
+        .putBoolean("clock_wall",world.clockWallsEnabled)
+        .putBoolean("scene_accent",world.matchSceneAccent)
+        .putBoolean("quantum_enabled",world.quantumEnabled)
+        .putFloat("quantum_coupling",world.quantumCoupling)
+        .putFloat("quantum_dephasing",world.quantumDephasing)
+        .putString("life_mode",world.civilizationConfig.mode.name)
+        .putFloat("life_pace",world.civilizationConfig.pace)
+        .putBoolean("life_colonization",world.civilizationConfig.colonization)
+        .putBoolean("life_defense",world.civilizationConfig.defense)
+        .putBoolean("life_routes",world.civilizationConfig.routes)
+        .putInt("max_bodies",world.maxBodies)
+        .putFloat("gravity",world.gravity).apply()
+}
+
+private val observationDefaults = mapOf("auto_events" to true,"orbit_trails" to true,
+    "velocity_vectors" to false,"reduced_motion" to false,
+    "ambient_math" to false,"orbit_learning" to true,
+    "rare_events" to true,"hourly_scenes" to false,"clock_wall" to true,
+    "scene_accent" to true,"quantum_enabled" to true,"life_colonization" to true,
+    "life_defense" to true,"life_routes" to true,"radiative_climate" to true)

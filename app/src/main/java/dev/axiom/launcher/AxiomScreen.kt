@@ -17,14 +17,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,7 +31,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,7 +50,17 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -87,6 +91,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
@@ -104,6 +110,7 @@ internal val AX_HINT get() = AxiomColors.palette.hint
 
 internal enum class AxiomMode { HOME, SEARCH, ATLAS, SETTINGS, TERMINAL, LAB }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     val context = LocalContext.current
@@ -128,11 +135,9 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     SideEffect {
         (context as? Activity)?.window?.let { window ->
             @Suppress("DEPRECATION")
-            window.statusBarColor = if (currentPalette.light)
-                android.graphics.Color.WHITE else android.graphics.Color.BLACK
+            window.statusBarColor = currentPalette.background.toArgb()
             @Suppress("DEPRECATION")
-            window.navigationBarColor = if (currentPalette.light)
-                android.graphics.Color.WHITE else android.graphics.Color.BLACK
+            window.navigationBarColor = currentPalette.background.toArgb()
             WindowCompat.getInsetsController(window, window.decorView)
                 .isAppearanceLightStatusBars = currentPalette.light
             WindowCompat.getInsetsController(window, window.decorView)
@@ -143,6 +148,9 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     var refresh by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(AxiomMode.HOME) }
     var observatoryOpen by remember { mutableStateOf(false) }
+    val sceneScope=rememberCoroutineScope()
+    var loadingScene by remember {mutableStateOf(false)}
+    val observatorySheet = rememberModalBottomSheetState(skipPartiallyExpanded=true)
     var query by remember { mutableStateOf("") }
     var atlasQuery by remember { mutableStateOf("") }
     var atlasFilter by remember { mutableStateOf("Все") }
@@ -153,17 +161,32 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             initialPreset = CosmicPreset.entries.firstOrNull {
                 it.name == prefs.getString("cosmic_preset",
                     CosmicPreset.SOLAR_SYSTEM.name)
-            } ?: CosmicPreset.SOLAR_SYSTEM
+            } ?: CosmicPreset.SOLAR_SYSTEM,
+            initialGravity = prefs.getFloat("gravity",1f)
         )
     }
     val lab = remember { ScienceLab() }
     var terminalInitial by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
+        loadObservation(prefs,world)
         world.updateGravity(prefs.getFloat("gravity", 1f))
         world.updateMaximumBodies(prefs.getInt("max_bodies",23))
         world.updateWalls(prefs.getBoolean("wall_mode",false))
         world.updateMatterMode(matterModeFromPreference(
             prefs.getString("matter_mode", MatterMode.BALANCED.name)))
+    }
+    val lifecycle=LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(world,world.hourlyScenes,lifecycle) {
+        if(world.hourlyScenes)lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while(true) {
+                val hour=ZonedDateTime.now().truncatedTo(ChronoUnit.HOURS).toEpochSecond()/3600
+                if(withContext(Dispatchers.Default){world.checkSceneHour(hour)})saveObservation(prefs,world)
+                delay((3_600_000-System.currentTimeMillis()%3_600_000).coerceIn(500,15_000))
+            }
+        }
+    }
+    LaunchedEffect(world.preset,world.matchSceneAccent,AxiomColors.palette.light) {
+        AxiomColors.applyScene(world.preset,world.matchSceneAccent)
     }
     var favorites by remember {
         mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
@@ -224,7 +247,8 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             AxiomBackup.import(context, json)
         }.onSuccess {
             favorites = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
-            world.updateGravity(prefs.getFloat("gravity", 1f))
+            loadObservation(prefs,world)
+        world.updateGravity(prefs.getFloat("gravity", 1f))
             themeMode = modeFromPreference(prefs.getString("theme_mode", "DARK"))
             sunStart=prefs.getInt("day_start",7*60).coerceIn(0,1439)
             sunEnd=prefs.getInt("night_start",19*60).coerceIn(0,1439)
@@ -313,19 +337,18 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             .background(AX_BLACK)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .pointerInput(world, mode) {
+            .pointerInput(world, mode, observatoryOpen) {
                 // Ambient gestures must never steal touches from search or overlays.
-                if (mode == AxiomMode.HOME) {
+                if (mode == AxiomMode.HOME && !observatoryOpen) {
                     detectTapGestures(
                         onTap = { point ->
-                            world.interact(
-                                point.x / size.width.toFloat().coerceAtLeast(1f),
-                                point.y / size.height.toFloat().coerceAtLeast(1f)
-                            )
+                            UniverseViewport(size.width.toFloat(),size.height.toFloat())
+                                .let {if(world.wallsEnabled)it.screenPoint(point.x,point.y) else it.normalized(point.x,point.y)}?.let { (x,y) -> world.interact(x,y) }
                         },
                         onDoubleTap = { point ->
-                            val x = point.x / size.width.toFloat().coerceAtLeast(1f)
-                            val y = point.y / size.height.toFloat().coerceAtLeast(1f)
+                            val location = UniverseViewport(size.width.toFloat(),size.height.toFloat())
+                                .let {if(world.wallsEnabled)it.screenPoint(point.x,point.y) else it.normalized(point.x,point.y)} ?: return@detectTapGestures
+                            val (x,y) = location
                             val math = world.mathMoment
                             if (math.active && x in (math.x-.06f)..(math.x+.43f) &&
                                 y in (math.y-.06f)..(math.y+.34f)) {
@@ -347,18 +370,16 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     )
                 }
             }
-            .pointerInput(world, mode) {
-                if (mode == AxiomMode.HOME) {
+            .pointerInput(world, mode, observatoryOpen) {
+                if (mode == AxiomMode.HOME && !observatoryOpen) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { pos ->
-                            world.startBrush(
-                                pos.x / size.width.toFloat().coerceAtLeast(1f),
-                                pos.y / size.height.toFloat().coerceAtLeast(1f))
+                            UniverseViewport(size.width.toFloat(),size.height.toFloat())
+                                .let {if(world.wallsEnabled)it.screenPoint(pos.x,pos.y) else it.normalized(pos.x,pos.y)}?.let { (x,y) -> world.startBrush(x,y) }
                         },
                         onDrag = { change, _ ->
-                            world.moveBrush(
-                                change.position.x / size.width.toFloat().coerceAtLeast(1f),
-                                change.position.y / size.height.toFloat().coerceAtLeast(1f))
+                            UniverseViewport(size.width.toFloat(),size.height.toFloat())
+                                .let {if(world.wallsEnabled)it.screenPoint(change.position.x,change.position.y) else it.normalized(change.position.x,change.position.y)}?.let { (x,y) -> world.moveBrush(x,y) }
                             change.consume()
                         },
                         onDragEnd = { world.endBrush() },
@@ -366,28 +387,18 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     )
                 }
             }
-            .pointerInput(mode) {
-                if (mode == AxiomMode.HOME) {
-                    detectHorizontalDragGestures { change, amount ->
-                        world.shiftPerspective(
-                            amount / size.width.toFloat().coerceAtLeast(1f) * 2f
-                        )
-                        change.consume()
-                    }
-                }
-            }
             // Parent-level gesture detector; swiping empty space opens the atlas.
-            .pointerInput(mode) {
-                if (mode == AxiomMode.HOME) {
+            .pointerInput(mode,observatoryOpen) {
+                if (mode == AxiomMode.HOME && !observatoryOpen) {
                     var dragged = 0f
                     detectVerticalDragGestures(
                         onDragStart = { dragged = 0f },
                         onVerticalDrag = { change, distance ->
                             dragged += distance
-                            if (distance > 0) change.consume()
+                            change.consume()
                         },
                         onDragEnd = {
-                            if (dragged > 55f) atlas()
+                            if (kotlin.math.abs(dragged) > 55f) atlas()
                         }
                     )
                 }
@@ -395,12 +406,14 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     ) {
         val searching = mode == AxiomMode.SEARCH
         val suggestionLimit = (maxHeight * .44f).coerceAtMost(350.dp)
-        val restTop = (maxHeight - 57.dp) / 2f
-        val activeTop = (maxHeight * .115f).coerceAtLeast(25.dp)
+        val compactHome = maxHeight < 520.dp
+        val restTop = if(compactHome) (maxHeight-162.dp).coerceAtLeast(90.dp)
+            else maxHeight-196.dp
+        val activeTop = (maxHeight * .115f).coerceAtLeast(78.dp)
         val dockTop by animateDpAsState(
             targetValue = if (searching) activeTop else restTop,
-            animationSpec = spring(
-                dampingRatio = .83f,
+            animationSpec = if(world.reducedMotion) tween(0) else spring(
+                dampingRatio = .95f,
                 stiffness = Spring.StiffnessLow
             ),
             label = "physical dock translation"
@@ -416,27 +429,37 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             )
         }
 
-        // Tapping a nearby entity opens a tiny, self-dismissing scientific inspector.
-        val inspected = world.selectedBody
-        if (mode == AxiomMode.HOME && inspected != null) {
-            Column(
-                Modifier.align(Alignment.BottomStart)
-                    .padding(start = 23.dp, bottom = 56.dp)
-                    .background(AX_SURFACE.copy(alpha = .92f), RoundedCornerShape(14.dp))
-                    .border(1.dp, AX_BORDER, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 14.dp, vertical = 11.dp)
-            ) {
-                Text("OBJECT  /  ${inspected.id}", color = AX_GRAY,
-                    fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                Text("m = ${"%.2f".format(java.util.Locale.US, inspected.mass)}   " +
-                    "z = ${"%.2f".format(java.util.Locale.US, inspected.depth)}",
-                    color = AX_WHITE, fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace)
-                Text("v = ${"%.3f".format(java.util.Locale.US,
-                    kotlin.math.hypot(inspected.vx, inspected.vy))}",
-                    color = AX_GRAY, fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace)
+        if (mode == AxiomMode.HOME && !observatoryOpen) {
+            if (!compactHome) Column(Modifier.align(Alignment.TopStart).padding(start=27.dp,top=82.dp)) {
+                ObservatoryClock(world)
+                Spacer(Modifier.height(10.dp))
+                LivingHomeBadge(world)
             }
+            val favoriteApps = apps.filter { it.packageName in favorites }.take(5)
+            if(!compactHome && favoriteApps.isNotEmpty()) Row(Modifier.align(Alignment.BottomCenter)
+                .padding(bottom=211.dp),horizontalArrangement=Arrangement.spacedBy(17.dp)) {
+                favoriteApps.forEach { app ->
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                        .clickable {openApp(app)}.semantics {contentDescription=app.label},
+                        contentAlignment=Alignment.Center) { AxiomAppIcon(app,34.dp) }
+                }
+            }
+            val inspected=world.bodies.firstOrNull {it.id==world.selectedBody?.id}
+            if(inspected!=null) Column(Modifier.align(Alignment.BottomStart)
+                .padding(start=25.dp,bottom=273.dp)
+                .clip(RoundedCornerShape(14.dp)).background(AX_GLASS)
+                .border(1.dp,AX_BORDER,RoundedCornerShape(14.dp)).padding(12.dp)) {
+                Text("ТЕЛО №${inspected.id}",color=AX_ACCENT,fontSize=10.sp,letterSpacing=1.sp)
+                Text("m = ${number(inspected.mass.toDouble())} · ${number(inspected.temperature.toDouble(),0)} K",
+                    color=AX_WHITE,fontSize=12.sp)
+            }
+            HomeNavigation(Modifier.align(Alignment.BottomCenter)
+                .padding(horizontal=24.dp).padding(bottom=if(compactHome) 12.dp else 28.dp),
+                onApps=::atlas,onCosmos={observatoryOpen=true},onTerminal={
+                    terminalInitial="";mode=AxiomMode.TERMINAL
+                })
+            if(!compactHome) Text(world.preset.title,color=AX_GRAY.copy(alpha=.7f),fontSize=10.sp,
+                letterSpacing=.8.sp,modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=113.dp))
         }
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
             Column(
@@ -447,6 +470,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             ) {
                 CentralSearchDock(
                     expanded = searching,
+                    reducedMotion = world.reducedMotion,
                     query = query,
                     onQuery = { query = it },
                     focusRequester = searchFocus,
@@ -506,16 +530,10 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
 
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
-            TerminalCorner(
-                modifier = Modifier.align(Alignment.TopStart)
-                    .padding(top = 11.dp, start = 19.dp),
-                onClick = {
-                    terminalInitial = ""
-                    keyboard?.hide()
-                    focus.clearFocus()
-                    mode = AxiomMode.TERMINAL
-                }
-            )
+            Column(Modifier.align(Alignment.TopStart).padding(start=27.dp,top=21.dp)) {
+                Text("A X I O M",color=AX_WHITE,fontSize=14.sp,fontFamily=FontFamily.Monospace)
+                Text("ДОМ С ПРИТЯЖЕНИЕМ",color=AX_GRAY,fontSize=8.sp,letterSpacing=1.4.sp)
+            }
         }
 
         if (mode == AxiomMode.HOME || mode == AxiomMode.SEARCH) {
@@ -528,43 +546,29 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             }
         }
 
-        if (mode == AxiomMode.HOME && !observatoryOpen) {
-            Box(Modifier.align(Alignment.BottomEnd)
-                .padding(end = 22.dp,bottom = 30.dp)
-                .size(54.dp).clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(listOf(
-                    Color(0xff527d99).copy(alpha = .48f),
-                    AX_TILE,
-                    Color(0xff746096).copy(alpha = .42f)
-                )))
-                .border(1.dp,AX_BORDER,RoundedCornerShape(18.dp))
-                .clickable { observatoryOpen = true }
-                .semantics {
-                    contentDescription = "Открыть обсерваторию и создание планет"
-                },
-                contentAlignment = Alignment.Center) {
-                Text("✦",color=AX_WHITE,fontSize=24.sp)
-            }
-        }
         if (mode == AxiomMode.HOME && observatoryOpen) {
-            Box(Modifier.fillMaxSize()
-                .background(AX_BLACK.copy(alpha=.45f))
-                .clickable { observatoryOpen=false })
-            Box(Modifier.align(Alignment.BottomCenter)
-                .padding(horizontal=16.dp).padding(bottom=32.dp)) {
-            UniverseControlPanel(
-                grainCount = world.sand.grains.size,
-                maxGrains = world.matterMode.maxParticles,
-                onSpawn = { material,mass -> world.createObject(material,mass) },
-                onPerturb = { power ->
-                    world.applyObservatoryImpulse(.5f,.5f,power)
-                },
-                onEvent = { power -> world.triggerRandomEvent(power) },
-                onTime = { speed -> world.updateTimeScale(speed) },
-                onDismiss = { observatoryOpen = false }
-            )
+            ModalBottomSheet(onDismissRequest={observatoryOpen=false},sheetState=observatorySheet,
+                containerColor=AX_PANEL,contentColor=AX_WHITE,
+                scrimColor=AX_BLACK.copy(alpha=.36f),shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp)) {
+                UniverseControlPanel(world=world,onPersist={saveObservation(prefs,world)},
+                    onScene={next ->
+                        if(!loadingScene) {
+                            loadingScene=true;observatoryOpen=false
+                            sceneScope.launch {
+                                try {
+                                    withContext(Dispatchers.Default){world.loadPreset(next)}
+                                    saveObservation(prefs,world)
+                                } finally {loadingScene=false}
+                            }
+                        }
+                    },onLab={choice ->
+                        lab.select(choice);observatoryOpen=false;mode=AxiomMode.LAB
+                    },onDismiss={observatoryOpen=false})
             }
         }
+
+        if(loadingScene)Text("Готовим сцену…",color=AX_GRAY,fontSize=12.sp,
+            modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=24.dp))
 
         if (mode == AxiomMode.ATLAS) {
             AxiomAtlas(
@@ -599,46 +603,7 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     sunEnd=it.coerceIn(0,1439)
                     prefs.edit().putInt("night_start",sunEnd).apply()
                 },
-                maximumBodies = world.maxBodies,
-                matterMode = world.matterMode,
-                cosmicPreset = world.preset,
-                onCosmicPreset = { next ->
-                    world.loadPreset(next)
-                    prefs.edit().putString("cosmic_preset", next.name).apply()
-                    mode = AxiomMode.HOME
-                },
-                onMatterMode = { next ->
-                    world.updateMatterMode(next)
-                    prefs.edit().putString("matter_mode", next.name).apply()
-                },
-                particleCount = world.sand.grains.count { it.owner < 0 },
-                boundParticleCount = world.sand.grains.count { it.owner >= 0 },
-                totalMatterMass = world.sand.totals().mass,
-                physicsCostMs = world.physicsCostMs,
-                onStressTest = {
-                    world.populateStressScene(4600)
-                    prefs.edit().putString("matter_mode",
-                        MatterMode.DETAILED.name).apply()
-                },
-                reactionCount = world.sand.reactions,
-                planetCount = world.bodies.count {
-                    it.stellarClass == StellarClass.PLANET
-                },
-                onMaximumBodies = {
-                    world.updateMaximumBodies(it)
-                    prefs.edit().putInt("max_bodies",world.maxBodies).apply()
-                },
-                wallsEnabled = world.wallsEnabled,
-                onWallsEnabled = {
-                    world.updateWalls(it)
-                    prefs.edit().putBoolean("wall_mode",it).apply()
-                },
-                gravity = world.gravity,
-                onGravity = {
-                    world.updateGravity(it)
-                    prefs.edit().putFloat("gravity", world.gravity).apply()
-                },
-                onResetUniverse = { world.reset() },
+                onObservatory = {mode=AxiomMode.HOME;observatoryOpen=true},
                 onSelectHome = {
                     runCatching {
                         context.startActivity(android.content.Intent(
@@ -654,20 +619,12 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
                     lab.select(LabKind.WAVE)
                     mode = AxiomMode.LAB
                 },
-                timeScale = world.timeScale,
-                onTimeScale = { world.updateTimeScale(it) },
-                onBinary = { world.spawnBinary() },
-                onRewind = { world.rewind(3) },
                 onExport = { exportSettings.launch("axiom-settings.json") },
                 onImport = { importSettings.launch(arrayOf("application/json",
                     "text/plain")) },
                 onProfiler = { meter.toggle() },
                 profilerEnabled = meter.enabled,
                 profilerSummary = meter.summary,
-                onSurprise = { world.triggerRandomEvent() },
-                onEventIntensity = { world.triggerRandomEvent(it) },
-                currentEpisode = world.episode.kind.name +
-                    " / " + world.episode.intensity.label,
                 onTerminal = {
                     terminalInitial = ""
                     mode = AxiomMode.TERMINAL
@@ -725,25 +682,6 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
     }
 }
 
-/** Small, accessible terminal entry point. Kept away from the centered dock. */
-@Composable
-private fun TerminalCorner(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = modifier.size(48.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Открыть терминал AXIOM" }
-            .border(1.dp, AX_BORDER, RoundedCornerShape(15.dp)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(">_", color = AX_WHITE, fontFamily = FontFamily.Monospace,
-            fontSize = 16.sp, letterSpacing = 0.sp)
-    }
-}
-
 @Composable
 private fun SettingsCorner(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
@@ -776,6 +714,7 @@ private fun SettingsCorner(modifier: Modifier = Modifier, onClick: () -> Unit) {
 @Composable
 private fun CentralSearchDock(
     expanded: Boolean,
+    reducedMotion: Boolean,
     query: String,
     onQuery: (String) -> Unit,
     focusRequester: FocusRequester,
@@ -785,8 +724,8 @@ private fun CentralSearchDock(
 ) {
     val height by animateDpAsState(
         targetValue = if (expanded) 70.dp else 57.dp,
-        animationSpec = spring(
-            dampingRatio = .86f,
+        animationSpec = if(reducedMotion) tween(0) else spring(
+            dampingRatio = .95f,
             stiffness = Spring.StiffnessMediumLow
         ),
         label = "search elevation"
@@ -794,12 +733,12 @@ private fun CentralSearchDock(
     val shape = RoundedCornerShape(24.dp)
     val halo by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(560),
+        animationSpec = tween(if(reducedMotion) 0 else 420),
         label = "search luminous halo"
     )
     val scale by animateFloatAsState(
-        targetValue = if (expanded) 1.018f else 1f,
-        animationSpec = spring(dampingRatio = .82f,
+        targetValue = if (expanded && !reducedMotion) 1.008f else 1f,
+        animationSpec = if(reducedMotion) tween(0) else spring(dampingRatio = .95f,
             stiffness = Spring.StiffnessMediumLow),
         label = "search volume"
     )
@@ -864,9 +803,9 @@ private fun CentralSearchDock(
         Spacer(Modifier.size(16.dp))
         if (!expanded) {
             Text(
-                "Поиск",
+                "Найти приложение или вычислить…",
                 modifier = Modifier.weight(1f),
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Light,
                 letterSpacing = .4.sp,
                 color = AX_HINT

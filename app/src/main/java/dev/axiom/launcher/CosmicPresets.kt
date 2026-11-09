@@ -17,10 +17,25 @@ internal enum class CosmicPreset(val title: String, val details: String) {
     BINARY_STARS("Двойная звезда", "Два светила на общей орбите и планеты"),
     PROTOPLANETARY("Рождение планет", "Звезда и диск пыли, где формируются сгустки"),
     TITAN_SYSTEM("Титаны и карлики",
-        "Гигантское светило, крошечные луны и тяжёлый газовый гигант")
+        "Гигантское светило, крошечные луны и тяжёлый газовый гигант"),
+    RESONANCE("Музыка орбит", "Три мира с периодами 1 : 2 : 4; следы раскрывают резонанс"),
+    COMET_PASSAGE("Возвращение кометы", "Ледяное тело на вытянутой орбите и внутренние планеты"),
+    TROJAN_GARDEN("Троянский сад", "Гигант и малые тела около точек Лагранжа L₄ и L₅"),
+    ROGUE_ENCOUNTER("Звезда-странник", "Пролёт второй звезды возмущает спокойную систему"),
+    COLLISION_LAB("Косой удар", "Ледяной и каменный миры: обмен импульсом и ударный нагрев"),
+    COLD_NURSERY("Холодная колыбель", "Малое светило, холодные планеты и диск ледяной пыли"),
+    LIVING_SYSTEM("Обитаемый архипелаг", "Устойчивые миры, первые цивилизации и маршруты колонизации"),
+    BLACK_HOLE_NURSERY("У края бездны", "Чёрная дыра, аккреционный диск и холодные внешние миры"),
+    PULSAR_REEF("Пульсарный риф", "Нейтронная звезда и планеты под вращающимся светом полюсов"),
+    WHITE_DWARF_RELIC("После звезды", "Белый карлик среди уцелевших лун и обломков"),
+    ASTEROID_CORRIDOR("Рубеж колонии", "Обитаемый мир и приближающиеся астероиды: ресурсы и перехват"),
+    QUANTUM_SHORES("Квантовые берега", "Спокойная система и двухуровневый квантовый эксперимент"),
+    BLACK_HOLE_MERGER("Слияние бездн", "Две чёрные дыры, сближение горизонтов и световой фронт слияния"),
+    GALACTIC_NUCLEUS("Сверхмассивное ядро", "Огромный горизонт, аккреционный диск и звёзды вокруг тяжёлого ядра"),
+    HYPERGIANT_SYSTEM("Владения гипергиганта", "Гигантское светило и крошечные внешние миры: сравни размеры")
 }
 
-internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
+internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<CelestialBody> {
     fun body(
         id: Int, x: Float, y: Float, mass: Float,
         material: MatterMaterial, classification: StellarClass =
@@ -49,8 +64,7 @@ internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
         val x = cx + radius * cos(angle).toFloat()
         val y = cy + radius * sin(angle).toFloat()
         // Correct the circular speed for the solver's near-field gravity.
-        val boost = 1f + 1.55f / (1f + radius*radius / (.05f*.05f))
-        val orbital = sqrt(.000052f * starMass * boost / radius) * .99f
+        val orbital = OrbitMechanics.circularSpeed(starMass + masses[index], radius)
         body(firstId + index, x, y, masses[index],
             composition[index],
             vx = -orbital * sin(angle).toFloat(),
@@ -106,7 +120,113 @@ internal fun presetBodies(preset: CosmicPreset): List<CelestialBody> {
             body(3, .35f, .57f, .25f, MatterMaterial.ICE,
                 vx = -.020f, vy = -.036f, temperature = 160f)
         )
+        CosmicPreset.LIVING_SYSTEM, CosmicPreset.QUANTUM_SHORES -> {
+            val star=body(1,.5f,.5f,9f,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=5000f)
+            listOf(star)+satellites(9f,.5f,.5f,listOf(.12f,.26f,.44f),
+                listOf(.020f,.028f,.035f),listOf(MatterMaterial.ROCK,MatterMaterial.WATER,MatterMaterial.ORGANICS),2)
+                .mapIndexed {index,b ->
+                    val radius=listOf(.12f,.26f,.44f)[index]
+                    val temperature=278f+index*12f
+                    b.copy(temperature=temperature,climateFactor=temperature/(288f*sqrt(.235f/radius)))
+                }
+        }
+        CosmicPreset.BLACK_HOLE_NURSERY -> listOf(
+            body(1,.5f,.5f,18f,MatterMaterial.IRON,StellarClass.QUASAR,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE))+
+                satellites(18f,.5f,.5f,listOf(.23f,.36f),listOf(.2f,.5f),
+                    listOf(MatterMaterial.IRON,MatterMaterial.ICE),2)
+        CosmicPreset.BLACK_HOLE_MERGER -> listOf(
+            body(1,.42f,.5f,16f,MatterMaterial.CARBON,StellarClass.QUASAR,vx=.018f,vy=.002f,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(2,.58f,.5f,12f,MatterMaterial.CARBON,StellarClass.QUASAR,vx=-.024f,vy=-.002666667f,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(3,.5f,.86f,.04f,MatterMaterial.IRON,vx=-.045f,temperature=180f))
+        CosmicPreset.GALACTIC_NUCLEUS -> listOf(
+            body(1,.5f,.5f,1800f,MatterMaterial.CARBON,StellarClass.QUASAR,temperature=3f)
+                .copy(nature=CelestialNature.BLACK_HOLE),
+            body(2,.79f,.5f,2f,MatterMaterial.HYDROGEN,StellarClass.STAR,
+                vy=OrbitMechanics.circularSpeed(1802f,.29f),temperature=6000f),
+            body(3,.12f,.5f,1f,MatterMaterial.HELIUM,StellarClass.STAR,
+                vy=-OrbitMechanics.circularSpeed(1801f,.38f),temperature=9000f))
+        CosmicPreset.HYPERGIANT_SYSTEM -> listOf(
+            body(1,.5f,.5f,150f,MatterMaterial.HYDROGEN,StellarClass.STAR,temperature=14000f).copy(sizeFactor=2.5f))+
+            satellites(150f,.5f,.5f,listOf(.28f,.43f),listOf(.08f,.18f),
+                listOf(MatterMaterial.BASALT,MatterMaterial.ICE),2)
+        CosmicPreset.PULSAR_REEF -> listOf(
+            body(1,.5f,.5f,6f,MatterMaterial.NICKEL,StellarClass.STAR,temperature=18000f)
+                .copy(nature=CelestialNature.NEUTRON_STAR,sizeFactor=.25f))+
+                satellites(6f,.5f,.5f,listOf(.14f,.25f,.36f),listOf(.1f,.25f,.12f),
+                    listOf(MatterMaterial.IRON,MatterMaterial.SILICATE,MatterMaterial.ICE),2)
+        CosmicPreset.WHITE_DWARF_RELIC -> listOf(
+            body(1,.5f,.5f,3f,MatterMaterial.HELIUM,StellarClass.STAR,temperature=12000f)
+                .copy(nature=CelestialNature.WHITE_DWARF,sizeFactor=.5f))+
+                satellites(3f,.5f,.5f,listOf(.14f,.25f),listOf(.08f,.18f),
+                    listOf(MatterMaterial.BASALT,MatterMaterial.CRYSTAL),2)
+        CosmicPreset.ASTEROID_CORRIDOR -> listOf(
+            body(1,.5f,.50f,7f,MatterMaterial.HYDROGEN,StellarClass.STAR,temperature=4800f),
+            body(2,.5f,.76f,.7f,MatterMaterial.ROCK,
+                vx=-OrbitMechanics.circularSpeed(7.7f,.26f),temperature=294f),
+            body(3,.24f,.76f,.04f,MatterMaterial.IRON,vx=.045f,vy=.006f,temperature=180f)
+                .copy(kind=1,nature=CelestialNature.ASTEROID),
+            body(4,.78f,.72f,.065f,MatterMaterial.ICE,vx=-.04f,vy=.01f,temperature=100f)
+                .copy(kind=1,nature=CelestialNature.COMET),
+            body(5,.73f,.36f,.5f,MatterMaterial.WATER,
+                vx=.012f,vy=.034f,temperature=286f))
+        CosmicPreset.RESONANCE -> {
+            val mass = 9f
+            val radii = listOf(.115f, .115f*1.587401f, .115f*2.519842f)
+            listOf(body(1,.5f,.5f,mass,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=4600f)) +
+                satellites(mass,.5f,.5f,radii,listOf(.025f,.035f,.045f),
+                    listOf(MatterMaterial.IRON,MatterMaterial.ROCK,MatterMaterial.ICE),2)
+        }
+        CosmicPreset.COMET_PASSAGE -> {
+            val star = body(1,.5f,.5f,10f,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=5700f)
+            // Vis-viva at apocenter: r=a(1+e), e=.68.
+            val speed = sqrt(OrbitMechanics.G*10f*(2.0/.36-1.0/(.36/1.68))).toFloat()
+            listOf(star, body(2,.86f,.5f,.045f,MatterMaterial.ICE,
+                vy=speed,temperature=110f).copy(nature=CelestialNature.COMET,kind=1)) +
+                satellites(10f,.5f,.5f,listOf(.13f,.22f),listOf(.10f,.15f),
+                    listOf(MatterMaterial.SILICATE,MatterMaterial.METHANE),3)
+        }
+        CosmicPreset.TROJAN_GARDEN -> {
+            val radius = .25f
+            val speed = OrbitMechanics.circularSpeed(12.25f,radius)
+            listOf(body(1,.5f,.5f,12f,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=5400f),
+                body(2,.75f,.5f,.25f,MatterMaterial.METHANE,vy=speed,temperature=170f)) +
+                listOf(-1,1).flatMap { sign -> (0..2).map { index ->
+                    val angle = sign*(PI/3 + (index-1)*.045)
+                    val r = radius+(index-1)*.004f
+                    body(3+(if(sign<0) 0 else 3)+index,
+                        .5f+r*cos(angle).toFloat(),.5f+r*sin(angle).toFloat(),
+                        .004f,MatterMaterial.ROCK,
+                        vx=-speed*sin(angle).toFloat(),vy=speed*cos(angle).toFloat(),
+                        temperature=180f)
+                } }
+        }
+        CosmicPreset.ROGUE_ENCOUNTER -> {
+            listOf(body(1,.43f,.5f,8f,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=5200f),
+                body(2,.87f,.16f,3f,MatterMaterial.HYDROGEN,
+                    StellarClass.STAR,vx=-.045f,vy=.024f,temperature=3600f)) +
+                satellites(8f,.43f,.5f,listOf(.12f,.23f),listOf(.15f,.20f),
+                    listOf(MatterMaterial.ROCK,MatterMaterial.ICE),3)
+        }
+        CosmicPreset.COLLISION_LAB -> listOf(
+            body(1,.32f,.482f,1.3f,MatterMaterial.ROCK,vx=.036f,temperature=310f),
+            body(2,.68f,.518f,.85f,MatterMaterial.ICE,vx=-.0550588f,temperature=150f))
+        CosmicPreset.COLD_NURSERY -> listOf(
+            body(1,.5f,.5f,5f,MatterMaterial.HYDROGEN,
+                StellarClass.STAR,temperature=3100f)) +
+                satellites(5f,.5f,.5f,listOf(.14f,.25f),listOf(.08f,.13f),
+                    listOf(MatterMaterial.ICE,MatterMaterial.AMMONIA),2)
         CosmicPreset.DEEP_SPACE -> emptyList()
+    }.map { body ->
+        val factor = if (preset == CosmicPreset.COLLISION_LAB) 1f else sqrt(gravity.coerceAtLeast(0f))
+        body.copy(vx=body.vx*factor,vy=body.vy*factor)
     }
 }
 
@@ -125,6 +245,18 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
                 else -> if (detail) 340 else 140
             }
         CosmicPreset.DEEP_SPACE -> if (detail) 250 else 76
+        CosmicPreset.LIVING_SYSTEM,CosmicPreset.BLACK_HOLE_NURSERY,
+        CosmicPreset.BLACK_HOLE_MERGER,CosmicPreset.GALACTIC_NUCLEUS,CosmicPreset.HYPERGIANT_SYSTEM,
+        CosmicPreset.PULSAR_REEF,CosmicPreset.WHITE_DWARF_RELIC,
+        CosmicPreset.ASTEROID_CORRIDOR,CosmicPreset.QUANTUM_SHORES,
+        CosmicPreset.RESONANCE, CosmicPreset.COMET_PASSAGE,
+        CosmicPreset.TROJAN_GARDEN, CosmicPreset.ROGUE_ENCOUNTER,
+        CosmicPreset.COLLISION_LAB, CosmicPreset.COLD_NURSERY -> when {
+            body.mass < .01f -> if (detail) 12 else 6
+            body.mass < .1f -> if (detail) 42 else 20
+            body.stellarClass == StellarClass.STAR -> if (detail) 440 else 190
+            else -> if (detail) 210 else 70
+        }
         CosmicPreset.SOLAR_SYSTEM ->
             if (body.stellarClass == StellarClass.STAR)
                 if (detail) 460 else 220
@@ -147,7 +279,7 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
 internal fun AstronomicalUniverse.seedOrbitalDisk(
     cx: Float, cy: Float, centralMass: Float, count: Int,
     innerRadius: Float, outerRadius: Float, owner: Int = -1,
-    rocky: Boolean = false
+    rocky: Boolean = false, gravity: Float = 1f
 ) {
     if (count <= 0 || outerRadius <= innerRadius) return
     val n = minOf(count, mode.maxParticles - grains.size)
@@ -160,8 +292,7 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
             outerRadius * outerRadius * f)
         val a = golden * i
         val mass = if (rocky) .0018f else .0009f
-        val near = 1.0 + 1.55 / (1.0 + r*r / (.05*.05))
-        val speed = sqrt(.000052 * centralMass * near / r) * .99
+        val speed = OrbitMechanics.circularSpeed(centralMass,r.toFloat(),gravity).toDouble()
         val material = if (rocky) when (i % 7) {
             0 -> MatterMaterial.IRON
             1, 2 -> MatterMaterial.ROCK

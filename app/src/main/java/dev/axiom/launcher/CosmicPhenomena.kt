@@ -24,7 +24,7 @@ internal val extremePhenomena=listOf(
     ExtremePhenomenon(CosmicEventKind.KILONOVA,"Килоновая",10.0,
         "Мощный фронт нагрева и радиационная опасность для колоний"),
     ExtremePhenomenon(CosmicEventKind.SUPERNOVA,"Сверхновая",6.0,
-        "Звёздный выброс превращает запас тепла в разлетающееся вещество")
+        "Выброс настоящего светила; если светила нет — далёкий фронт излучения")
 )
 
 /** Separate active-wall-time Poisson clock. Scene resets do not reroll it.
@@ -105,7 +105,8 @@ internal fun radiationExposure(event:CosmicEpisode,x:Float,y:Float):Float {
             if(along<0 || along>event.progress*3f || across>.028f+along*.10f)0f
             else (1f-across/(.028f+along*.10f))*.9f
         }
-        CosmicEventKind.DISTANT_CLUSTER_BURST,CosmicEventKind.KILONOVA -> {
+        CosmicEventKind.DISTANT_CLUSTER_BURST,CosmicEventKind.KILONOVA,CosmicEventKind.SUPERNOVA -> {
+            if(event.kind==CosmicEventKind.SUPERNOVA && event.sourceOwner>=0)return 0f
             val distance=hypot(dx,dy)
             if(distance>event.progress*3.2f)0f else (1f/(1f+distance*.4f))*.7f
         }

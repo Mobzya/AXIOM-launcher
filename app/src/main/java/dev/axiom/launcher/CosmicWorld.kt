@@ -44,7 +44,8 @@ internal data class CosmicEpisode(
     val y: Float = .37f,
     val serial: Int = 0,
     val intensity: CosmicEventIntensity = CosmicEventIntensity.NORMAL,
-    val axis:Float = 0f
+    val axis:Float = 0f,
+    val sourceOwner:Int = -1
 ) {
     val progress: Float get() = (age / duration).coerceIn(0f, 1f)
     val alpha: Float get() {
@@ -777,6 +778,7 @@ internal class CosmicWorld(
         // Anchor active physics to REAL matter rather than an empty corner.
         // Solar phenomena prefer hot gas, tides prefer a compact massive core.
         val selectedSource = when (kind) {
+            CosmicEventKind.SUPERNOVA -> bodies.filter {it.stellarClass==StellarClass.STAR}.maxByOrNull {it.mass}
             CosmicEventKind.SOLAR_WIND, CosmicEventKind.IONIZATION_FRONT,
             CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.PULSAR,
             CosmicEventKind.QUASAR_JET, CosmicEventKind.SOLAR_FLARE ->
@@ -847,9 +849,11 @@ internal class CosmicWorld(
             y = selectedSource?.y ?: .5f,
             serial = eventSerial,
             intensity = intensity,
-            axis = random.nextFloat()*2f*PI.toFloat()
+            axis = random.nextFloat()*2f*PI.toFloat(),
+            sourceOwner = selectedSource?.id ?: -1
         )
-        if(kind==CosmicEventKind.GAMMA_BURST || kind==CosmicEventKind.DISTANT_CLUSTER_BURST || kind==CosmicEventKind.KILONOVA) {
+        if(kind==CosmicEventKind.GAMMA_BURST || kind==CosmicEventKind.DISTANT_CLUSTER_BURST ||
+            kind==CosmicEventKind.KILONOVA || (kind==CosmicEventKind.SUPERNOVA && selectedSource==null)) {
             // External cosmic radiation enters from a real screen edge; it has
             // an explicit energy ledger rather than an invented gravitating mass.
             val bounds=viewport.screenBounds()

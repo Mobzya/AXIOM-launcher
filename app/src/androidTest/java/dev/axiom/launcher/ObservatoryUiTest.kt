@@ -32,10 +32,10 @@ class ObservatoryUiTest {
         val directory="/sdcard/Download/axiom-ui"
         device.executeShellCommand("mkdir -p $directory")
         device.executeShellCommand("screencap -p $directory/$name.png")
-        assertEquals("saved",device.executeShellCommand("test -s $directory/$name.png && echo saved").trim())
+        assertEquals("saved",device.executeShellCommand("sh -c 'test -s $directory/$name.png && echo saved'").trim())
         val hierarchy=File(instrumentation.targetContext.cacheDir,"$name.xml")
         device.dumpWindowHierarchy(hierarchy)
-        device.executeShellCommand("run-as dev.axiom.launcher cat '${hierarchy.absolutePath}' > '$directory/$name.xml'")
+        device.executeShellCommand("sh -c 'run-as dev.axiom.launcher cat ${hierarchy.absolutePath} > $directory/$name.xml'")
     }
     @Test fun homeLifeScienceCreationAndBlackHoleSceneAreAccessible() {
         prepare();device.setOrientationNatural()

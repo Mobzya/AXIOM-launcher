@@ -473,7 +473,8 @@ internal class AstronomicalUniverse {
 
     private fun releaseEventHeat(event: CosmicEpisode) {
         if (event.kind == CosmicEventKind.QUIET ||
-            event.kind == CosmicEventKind.METEORS) return
+            event.kind == CosmicEventKind.METEORS ||
+            (event.kind==CosmicEventKind.SUPERNOVA && event.sourceOwner<0)) return
         val repeat = event.kind == CosmicEventKind.PULSAR ||
             event.kind == CosmicEventKind.QUASAR_JET ||
             event.kind == CosmicEventKind.MAGNETAR_FLARE ||
@@ -591,6 +592,7 @@ internal class AstronomicalUniverse {
         var activated = 0
         for (i in grains.indices) {
             val p = grains[i]
+            if(event.kind==CosmicEventKind.SUPERNOVA && p.owner!=event.sourceOwner)continue
             val dx = p.x - event.x; val dy = p.y - event.y
             if (dx*dx + dy*dy > radius2 || p.heat <= 0.0) continue
             if (repeat && !p.material.gas) continue
@@ -626,7 +628,8 @@ internal class AstronomicalUniverse {
 
     private fun releaseExternalRadiation(event:CosmicEpisode) {
         if(event.kind!=CosmicEventKind.GAMMA_BURST &&
-            event.kind!=CosmicEventKind.DISTANT_CLUSTER_BURST && event.kind!=CosmicEventKind.KILONOVA)return
+            event.kind!=CosmicEventKind.DISTANT_CLUSTER_BURST && event.kind!=CosmicEventKind.KILONOVA &&
+            !(event.kind==CosmicEventKind.SUPERNOVA && event.sourceOwner<0))return
         if(exposureSerial!=event.serial){exposureSerial=event.serial;exposedGrains.clear()}
         for(p in grains) {
             if(p.id in exposedGrains)continue

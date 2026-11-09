@@ -152,6 +152,29 @@ class CompactObjectTest {
 }
 
 class PhenomenaAndQuantumTest {
+    @Test fun supernovaEjectsItsStellarSourceAndCannotEraseANearbyBlackHole() {
+        val world=CosmicWorld(15,initialPreset=CosmicPreset.BLACK_HOLE_NURSERY)
+        world.configureObservation(events=false)
+        assertTrue(world.createObject(MatterMaterial.HYDROGEN,4f,.7f,.5f,recipe=BodyRecipe.DWARF_STAR))
+        val star=world.bodies.last();val hole=world.bodies.first()
+        val mass=world.sand.totals().mass
+        world.trigger(CosmicEventKind.SUPERNOVA,CosmicEventIntensity.CATASTROPHIC)
+        assertEquals(star.id,world.episode.sourceOwner)
+        world.step(1f/30f)
+        assertTrue(world.sand.grains.any {it.owner==hole.id})
+        assertTrue(world.bodies.any {it.id==hole.id && it.nature==CelestialNature.BLACK_HOLE})
+        assertEquals(mass,world.sand.totals().mass,1e-5)
+    }
+    @Test fun starlessSupernovaIsAnExternalFrontAndLeavesTheCollapsedCoreIntact() {
+        val world=CosmicWorld(15,initialPreset=CosmicPreset.BLACK_HOLE_NURSERY)
+        world.configureObservation(events=false)
+        val hole=world.bodies.first()
+        world.trigger(CosmicEventKind.SUPERNOVA,CosmicEventIntensity.CATASTROPHIC)
+        assertEquals(-1,world.episode.sourceOwner)
+        repeat(300){world.step(1f/30f)}
+        assertTrue(world.bodies.any {it.id==hole.id && it.nature==CelestialNature.BLACK_HOLE})
+        assertTrue(world.sand.externalRadiationEnergy>0)
+    }
     @Test fun radiationHasAnExternalEnergyLedgerAndDoesNotWarmOutsideTheBeam() {
         val u=AstronomicalUniverse()
         u.grains.add(SandGrain(1,.5f,.5f,0f,0f,.1f,.00001,MatterMaterial.IRON))

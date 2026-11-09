@@ -318,6 +318,10 @@ internal fun CosmicEnvironment(
                         android.graphics.Color.rgb(181,207,255)
                     body.stellarClass == StellarClass.QUASAR ->
                         android.graphics.Color.rgb(125, 167, 255)
+                    body.stellarClass==StellarClass.STAR && body.temperature>9000 ->
+                        android.graphics.Color.rgb(157,199,255)
+                    body.stellarClass==StellarClass.STAR && body.temperature<4000 ->
+                        android.graphics.Color.rgb(239,158,125)
                     body.stellarClass == StellarClass.STAR ->
                         android.graphics.Color.rgb(255, 201, 100)
                     else -> android.graphics.Color.rgb(173, 197, 239)

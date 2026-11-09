@@ -121,6 +121,10 @@ internal class CosmicWorld(
         val old = grainFrames.current
         val now = System.nanoTime()
         val interval = (now-grainFrames.committedAtNanos).coerceIn(8_333_333L,100_000_000L)
+        if(civilization.ships!=shipFrames.current) {
+            val shipInterval=(now-shipFrames.committedAtNanos).coerceIn(8_333_333L,400_000_000L)
+            shipFrames=ShipRenderPair(shipFrames.current,civilization.ships,now,shipInterval)
+        }
         grainFrames = GrainRenderPair(
             if (sameParticles && old.size == next.size) old else next,
             next,now,interval,
@@ -408,8 +412,6 @@ internal class CosmicWorld(
         lifeTimer+=h
         if(lifeTimer>=.05f) {
             val duration=lifeTimer;lifeTimer=0f
-            val now=System.nanoTime()
-            val previous=civilization.ships
             var latest=sand.summarizeBodies(bodies)
             if(radiativeClimate) {
                 sand.exchangeStellarRadiation(latest,duration)
@@ -419,12 +421,10 @@ internal class CosmicWorld(
                 if(learningEnabled && learning.samples>=24)learning.gravity.toFloat().coerceIn(.25f,2.2f) else 1f,
                 radiationDose,civilizationConfig,learningEnabled,
                 if(wallsEnabled)viewport.screenBounds() else SpaceBounds(-2f,-2f,3f,3f),
-                if(wallsEnabled && clockWallsEnabled)clockObstacle else null)
+                if(wallsEnabled && clockWallsEnabled)clockObstacle else null,bounce=wallsEnabled)
             for(bomb in detonations)sand.disruptBody(bomb.bodyId,bomb.energy)
             if(detonations.isNotEmpty())bodies=sand.summarizeBodies(bodies)
             civilization=ecosystem.reading
-            shipFrames=ShipRenderPair(previous,civilization.ships,now,
-                (duration/timeScale.coerceAtLeast(.01f)*1e9).toLong().coerceIn(8_333_333L,400_000_000L))
         }
     }
     private fun spawnStreamWave() {
@@ -1026,9 +1026,13 @@ internal class CosmicWorld(
 
     @Synchronized
     fun disturb(x: Float, y: Float) {
-        val bounds=if(wallsEnabled)viewport.screenBounds() else SpaceBounds()
-        val px=x.coerceIn(bounds.left,bounds.right)
-        val py=y.coerceIn(bounds.top,bounds.bottom)
+        val bounds = if (wallsEnabled) {
+            viewport.screenBounds()
+        } else {
+            SpaceBounds()
+        }
+        val px = x.coerceIn(bounds.left, bounds.right)
+        val py = y.coerceIn(bounds.top, bounds.bottom)
         ripples = (ripples + SpaceRipple(px, py)).takeLast(4)
         val closest = bodies.minByOrNull { hypot(it.x - px, it.y - py) }
         selectedBody = closest?.takeIf {
@@ -1037,7 +1041,9 @@ internal class CosmicWorld(
         inspectAge = 0f
         // An explicit finger impulse exchanges energy with the user, not with
         // a fabricated particle emitter. All masses and grain IDs remain.
-        if (selectedBody == null) sand.perturb(px, py, .045f)
+        if (selectedBody == null) {
+            sand.perturb(px, py, .045f)
+        }
         // Body summaries are UI-only views, but must reflect the grain
         // velocities immediately after an intentional user impulse.
         bodies = sand.summarizeBodies(bodies)
@@ -1064,8 +1070,9 @@ internal class CosmicWorld(
 
     @Synchronized
     fun startBrush(x: Float, y: Float) {
-        brushStartX = x.coerceIn(0f, 1f)
-        brushStartY = y.coerceIn(0f, 1f)
+        val bounds = if (wallsEnabled) viewport.screenBounds() else SpaceBounds()
+        brushStartX = x.coerceIn(bounds.left, bounds.right)
+        brushStartY = y.coerceIn(bounds.top, bounds.bottom)
         brushPrevX = brushStartX
         brushPrevY = brushStartY
         brushGestureDistance = 0f
@@ -1076,9 +1083,13 @@ internal class CosmicWorld(
 
     @Synchronized
     fun moveBrush(x: Float, y: Float) {
-        val bounds=if(wallsEnabled)viewport.screenBounds() else SpaceBounds()
-        val px=x.coerceIn(bounds.left,bounds.right)
-        val py=y.coerceIn(bounds.top,bounds.bottom)
+        val bounds = if (wallsEnabled) {
+            viewport.screenBounds()
+        } else {
+            SpaceBounds()
+        }
+        val px = x.coerceIn(bounds.left, bounds.right)
+        val py = y.coerceIn(bounds.top, bounds.bottom)
         brushGestureDistance += hypot(px - brushPrevX, py - brushPrevY)
         brushPrevX = px
         brushPrevY = py

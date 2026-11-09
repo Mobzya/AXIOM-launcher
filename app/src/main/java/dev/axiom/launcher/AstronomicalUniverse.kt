@@ -81,6 +81,8 @@ internal class AstronomicalUniverse {
         var recoilY = 0.0
         var angular = 0.0
         var inertia = 0.0
+        var heat = 0.0
+        var radiativeDelta = 0.0
     }
 
     private val centers = ArrayList<Center>()
@@ -334,6 +336,7 @@ internal class AstronomicalUniverse {
         centers.clear()
         for (c in centersById.values) {
             c.mass = 0.0; c.x = 0.0; c.y = 0.0; c.vx = 0.0; c.vy = 0.0
+            c.heat = 0.0; c.radiativeDelta = 0.0
             c.stiffness = 0.0; c.damping = 0.0; c.recoilX = 0.0; c.recoilY = 0.0
         }
         for (p in grains) if (p.owner >= 0) {
@@ -345,8 +348,14 @@ internal class AstronomicalUniverse {
             c.stiffness += m * stiffness(p.material)
             c.damping += m * damping(p.material)
             c.mass += m
+            c.heat += p.heat
             c.x += p.x*m; c.y += p.y*m
             c.vx += p.vx*m; c.vy += p.vy*m
+        }
+        val cached=centersById.entries.iterator()
+        while(cached.hasNext()) {
+            val entry=cached.next()
+            if(entry.value.mass<=0){centralRadius.remove(entry.key);cached.remove()}
         }
         for (c in centers) {
             if (c.mass <= 0) continue
@@ -706,15 +715,12 @@ internal class AstronomicalUniverse {
      * initial gravitational settling without setting temperatures by fiat. */
     fun exchangeStellarRadiation(bodies:List<CelestialBody>,dt:Float) {
         if(dt<=0 || !dt.isFinite())return
+        buildCenters()
         val sources=bodies.filter {it.stellarClass==StellarClass.STAR && it.temperature>1000}
-        val mass=HashMap<Int,Double>();val heat=HashMap<Int,Double>()
-        for(p in grains)if(p.owner>=0){mass[p.owner]=(mass[p.owner] ?: 0.0)+p.mass;heat[p.owner]=(heat[p.owner] ?: 0.0)+p.heat}
-        val change=HashMap<Int,Double>()
         val fraction=1-kotlin.math.exp(-dt/7.0)
         for(body in bodies) {
             if(body.stellarClass!=StellarClass.PLANET || body.nature!=CelestialNature.ORDINARY)continue
-            val m=mass[body.id] ?: continue
-            val available=heat[body.id] ?: continue
+            val owner=centersById[body.id]?.takeIf {it.mass>0} ?: continue
             val source=sources.maxByOrNull {
                 it.mass*(it.temperature/5000.0).let {v->v*v*v*v}/
                     ((it.x-body.x)*(it.x-body.x)+(it.y-body.y)*(it.y-body.y)+.0001)
@@ -722,23 +728,27 @@ internal class AstronomicalUniverse {
             val equilibrium=if(source==null)70.0 else {
                 val distance=hypot(body.x-source.x,body.y-source.y).coerceAtLeast(.025f)
                 val luminosity=(source.mass/9.0)*(source.temperature/5000.0).let {it*it*it*it}
-                (288*Math.pow(luminosity.coerceAtLeast(.0001),.25)*sqrt(.235/distance)*body.climateFactor.coerceIn(.3f,2f)).coerceIn(70.0,2200.0)
+                (288*Math.pow(luminosity.coerceAtLeast(.0001),.25)*sqrt(.235/distance)*
+                    body.climateFactor.coerceIn(.3f,2f)).coerceIn(70.0,2200.0)
             }
-            val delta=(m*.000001*equilibrium-available)*fraction
+            val delta=(owner.mass*.000001*equilibrium-owner.heat)*fraction
             if(delta<0) {
-                val emitted=min(-delta,(available+(change[body.id] ?: 0.0)).coerceAtLeast(0.0))
-                change[body.id]=(change[body.id] ?: 0.0)-emitted;radiatedHeat+=emitted
+                val emitted=min(-delta,(owner.heat+owner.radiativeDelta).coerceAtLeast(0.0))
+                owner.radiativeDelta-=emitted
+                radiatedHeat+=emitted
             } else if(source!=null) {
-                val sourceHeat=((heat[source.id] ?: 0.0)+(change[source.id] ?: 0.0)).coerceAtLeast(0.0)
-                val transferred=min(delta,sourceHeat*.02)
-                change[source.id]=(change[source.id] ?: 0.0)-transferred
-                change[body.id]=(change[body.id] ?: 0.0)+transferred
+                val donor=centersById[source.id] ?: continue
+                val transferred=min(delta,(donor.heat+donor.radiativeDelta).coerceAtLeast(0.0)*.02)
+                donor.radiativeDelta-=transferred
+                owner.radiativeDelta+=transferred
             }
         }
+        // Reuse source aggregates: no boxed Double/hash-map allocation per grain.
         for(p in grains) {
-            val delta=change[p.owner] ?: continue
-            if(delta>=0)p.heat+=delta*p.mass/(mass[p.owner] ?: 1.0)
-            else p.heat=(p.heat*(1+delta/(heat[p.owner] ?: 1.0))).coerceAtLeast(0.0)
+            val owner=centersById[p.owner] ?: continue
+            val delta=owner.radiativeDelta
+            if(delta>=0)p.heat+=delta*p.mass/owner.mass
+            else p.heat=(p.heat*(1+delta/owner.heat.coerceAtLeast(1e-30))).coerceAtLeast(0.0)
         }
     }
 
@@ -1059,14 +1069,12 @@ internal class AstronomicalUniverse {
 
     fun summarizeBodies(previous: List<CelestialBody>): List<CelestialBody> {
         buildCenters()
-        val heat = HashMap<Int, Double>()
-        for (p in grains) if (p.owner >= 0) heat[p.owner] = (heat[p.owner] ?: 0.0) + p.heat
         return previous.mapNotNull { b ->
-            val c = centersById[b.id] ?: return@mapNotNull null
+            val c = centersById[b.id]?.takeIf {it.mass>0} ?: return@mapNotNull null
             b.copy(mass = c.mass.toFloat(),
                 x = c.x.toFloat(), y = c.y.toFloat(),
                 vx = c.vx.toFloat(), vy = c.vy.toFloat(),
-                temperature = ((heat[b.id] ?: 0.0)/(c.mass*.000001)).toFloat())
+                temperature = (c.heat/(c.mass*.000001)).toFloat())
         }
     }
 

@@ -426,8 +426,11 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
         }
 
         if (mode == AxiomMode.HOME && !observatoryOpen) {
-            if (!compactHome) ObservatoryClock(world,Modifier.align(Alignment.TopStart).padding(start=27.dp,top=82.dp))
-            if(!compactHome)LivingHomeBadge(world,Modifier.align(Alignment.TopStart).padding(start=27.dp,top=188.dp))
+            if (!compactHome) Column(Modifier.align(Alignment.TopStart).padding(start=27.dp,top=82.dp)) {
+                ObservatoryClock(world)
+                Spacer(Modifier.height(10.dp))
+                LivingHomeBadge(world)
+            }
             val favoriteApps = apps.filter { it.packageName in favorites }.take(5)
             if(!compactHome && favoriteApps.isNotEmpty()) Row(Modifier.align(Alignment.BottomCenter)
                 .padding(bottom=211.dp),horizontalArrangement=Arrangement.spacedBy(17.dp)) {

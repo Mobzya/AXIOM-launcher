@@ -119,7 +119,7 @@ internal class CivilizationSimulation(private val random:Random=Random(725)) {
 
     fun step(dt:Float,bodies:List<CelestialBody>,gravity:Float,estimatedGravity:Float,
         radiation:Map<Int,Float>,config:CivilizationConfig,learning:Boolean,
-        bounds:SpaceBounds=SpaceBounds(),clock:ClockObstacle?=null):List<Detonation> {
+        bounds:SpaceBounds=SpaceBounds(),clock:ClockObstacle?=null,bounce:Boolean=false):List<Detonation> {
         if(dt<=0 || !dt.isFinite() || config.mode==LifeMode.OFF)return emptyList()
         val h=dt*config.pace.coerceIn(.5f,3f)
         val climates=bodies.associate {it.id to climate(it,bodies,(radiation[it.id] ?: 0f).toDouble())}
@@ -206,6 +206,13 @@ internal class CivilizationSimulation(private val random:Random=Random(725)) {
             if(force>limit && force>0){ax*=limit/force;ay*=limit/force}
             var vx=ship.vx+(field.first+ax)*h;var vy=ship.vy+(field.second+ay)*h
             var px=ship.x+vx*h;var py=ship.y+vy*h
+            if(bounce) {
+                val r=.0015f
+                if(px<bounds.left+r && vx<0){px=2*(bounds.left+r)-px;vx=-vx}
+                if(px>bounds.right-r && vx>0){px=2*(bounds.right-r)-px;vx=-vx}
+                if(py<bounds.top+r && vy<0){py=2*(bounds.top+r)-py;vy=-vy}
+                if(py>bounds.bottom-r && vy>0){py=2*(bounds.bottom-r)-py;vy=-vy}
+            }
             clock?.collide(px,py,vx,vy,.0015f)?.let {px=it.x;py=it.y;vx=it.vx;vy=it.vy}
             if(!px.isFinite() || !py.isFinite() || px<bounds.left-.3 || px>bounds.right+.3 ||
                 py<bounds.top-.3 || py>bounds.bottom+.3){lose(ship,target,learning);continue}

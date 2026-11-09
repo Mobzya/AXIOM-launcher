@@ -72,10 +72,16 @@ class CompactObjectTest {
         assertEquals(1,u.grains.size);assertEquals(10.0,u.totals().mass,1e-6)
         u.grains.add(SandGrain(5,.506f,.5f,-.03f,.07f,.2f,.0001,MatterMaterial.ICE,2))
         u.grains.add(SandGrain(6,.7f,.6f,.02f,0f,.1f,.0001,MatterMaterial.ROCK,3))
+        val templates=listOf(CelestialBody(1,99,10f,1f,.5f,.5f,.01f,.02f,nature=CelestialNature.BLACK_HOLE),
+            CelestialBody(2,2,.2f,1f,.506f,.5f,-.03f,.07f),CelestialBody(3,2,.1f,1f,.7f,.6f,.02f,0f))
+        u.summarizeBodies(templates) // Prime the cache before removing an owner.
         val before=u.totals();val angular=angular(u)
         val result=u.accrete(1,.015f)
         assertEquals(.2,result.consumedMass,1e-6)
         assertEquals(2,u.grains.size)
+        val summaries=u.summarizeBodies(templates)
+        assertEquals(setOf(1,3),summaries.map {it.id}.toSet())
+        assertTrue(summaries.all {it.mass>0 && it.temperature.isFinite()})
         val after=u.totals()
         assertEquals(before.mass,after.mass,1e-6)
         assertEquals(before.momentumX,after.momentumX,1e-7)
@@ -251,6 +257,21 @@ class CivilizationTest {
         assertTrue("Launching must spend accumulated resources",spent)
         assertTrue("The autopilot should land on a quiet destination",sim.reading.colonies.any {it.bodyId==2})
         assertTrue(sim.reading.colonies.all {it.resources in 0.0..250.0})
+    }
+    @Test fun spacecraftRespectReflectingScreenWallsWithoutTeleportingToTheirTarget() {
+        val sim=CivilizationSimulation(Random(1));val bodies=listOf(planet(1,.25f),planet(2,.7f))
+        sim.seed(bodies[0],bodies)
+        val bounds=SpaceBounds(.05f,0f,.31f,1f)
+        var sawShip=false;var sawReflection=false
+        repeat(650) {
+            sim.step(.05f,bodies,0f,0f,emptyMap(),config,true,bounds=bounds,bounce=true)
+            for(ship in sim.reading.ships) {
+                sawShip=true;if(ship.vx<0)sawReflection=true
+                assertTrue(ship.x>=bounds.left && ship.x<=bounds.right)
+            }
+        }
+        assertTrue(sawShip);assertTrue(sawReflection)
+        assertEquals(0,sim.reading.settlements)
     }
     @Test fun radiationCanSterilizeAnOtherwiseStableColony() {
         val sim=CivilizationSimulation();val home=planet(1)

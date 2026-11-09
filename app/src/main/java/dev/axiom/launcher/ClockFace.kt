@@ -18,6 +18,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -57,11 +60,14 @@ internal fun ObservatoryClock(world:CosmicWorld,modifier:Modifier=Modifier) {
     val context=LocalContext.current;val density=LocalDensity.current
     val format=if(DateFormat.is24HourFormat(context))"HH:mm" else "h:mm"
     val text=now.format(DateTimeFormatter.ofPattern(format))
-    LaunchedEffect(Unit) {
+    val lifecycle=LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
         while(true) {
             now=LocalDateTime.now()
             val millis=System.currentTimeMillis()
             delay((60_000-millis%60_000).coerceIn(100,60_000))
+        }
         }
     }
     val textPixels=with(density){54.sp.toPx()};val spacing=with(density){(-2).sp.toPx()}

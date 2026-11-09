@@ -4,7 +4,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.*
@@ -29,13 +28,19 @@ class ObservatoryUiTest {
         device.findObject(By.text(text)).click()
     }
     private fun screenshot(name:String) {
-        val folder=instrumentation.targetContext.getExternalFilesDir("screenshots")!!
-        folder.mkdirs()
-        assertTrue(device.takeScreenshot(File(folder,"$name.png")))
+        android.os.SystemClock.sleep(700)
+        val directory="/sdcard/Download/axiom-ui"
+        device.executeShellCommand("mkdir -p $directory")
+        device.executeShellCommand("screencap -p $directory/$name.png")
+        assertEquals("saved",device.executeShellCommand("test -s $directory/$name.png && echo saved").trim())
+        val hierarchy=File(instrumentation.targetContext.cacheDir,"$name.xml")
+        device.dumpWindowHierarchy(hierarchy)
+        device.executeShellCommand("cp '${hierarchy.absolutePath}' '$directory/$name.xml'")
     }
     @Test fun homeLifeScienceCreationAndBlackHoleSceneAreAccessible() {
         prepare();device.setOrientationNatural()
         ActivityScenario.launch(MainActivity::class.java).use {
+          try {
             assertTrue(visible("Космос"))
             assertTrue(device.wait(Until.hasObject(By.descStartsWith("Время ")),10_000))
             screenshot("01-home-living")
@@ -53,13 +58,23 @@ class ObservatoryUiTest {
             assertTrue(visible("Добавь новый мир"))
             screenshot("04-objects")
             click("Сцены")
-            for(i in 0 until 12) {
-                if(device.hasObject(By.text("У края бездны")))break
-                device.findObject(By.scrollable(true))?.scroll(Direction.DOWN,.75f)
+            assertTrue(visible("Начальные условия"))
+            for(i in 0 until 14) {
+                val target=device.findObject(By.text("У края бездны"))
+                if(target!=null && !target.visibleBounds.isEmpty)break
+                // Use the same upward finger gesture as a person. Modal sheet
+                // accessibility nodes need not expose an Android ScrollView.
+                device.swipe(device.displayWidth/2,(device.displayHeight*.86).toInt(),
+                    device.displayWidth/2,(device.displayHeight*.48).toInt(),35)
+                android.os.SystemClock.sleep(250)
             }
             click("У края бездны")
             assertTrue(visible("Космос"))
             screenshot("05-black-hole")
+          } catch(failure:Throwable) {
+            runCatching {screenshot("99-navigation-failure")}
+            throw failure
+          }
         }
     }
     @Test fun compactLandscapeKeepsLauncherNavigationUsable() {

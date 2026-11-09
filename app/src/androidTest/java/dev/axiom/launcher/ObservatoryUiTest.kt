@@ -70,10 +70,8 @@ class ObservatoryUiTest {
             val automation=instrumentation.uiAutomation
             // The sheet owns a Dialog window. Activity insets cannot hide its
             // keyboard; BACK is consumed by the visible IME before the sheet.
-            if(automation.windows.any {it.type==android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD}) {
-                device.pressBack()
-                android.os.SystemClock.sleep(700)
-            }
+            device.pressBack()
+            android.os.SystemClock.sleep(700)
             automation.serviceInfo=automation.serviceInfo
             val scene=device.wait(Until.findObject(By.descStartsWith("Сцена: У края бездны.")),10_000)
             assertNotNull("Filtered black-hole scene is missing",scene)

@@ -882,9 +882,26 @@ internal class AstronomicalUniverse {
         lastGravityMs = (System.nanoTime() - beginning) / 1e6
     }
 
+    private fun refreshCenterVelocities() {
+        for (c in centers) {
+            c.vx = 0.0
+            c.vy = 0.0
+        }
+        for (i in grains.indices) {
+            val c = grainCenters[i] ?: continue
+            val p = grains[i]
+            val mass = p.mass.toDouble()
+            c.vx += p.vx * mass
+            c.vy += p.vy * mass
+        }
+        for (c in centers) {
+            c.vx /= c.mass
+            c.vy /= c.mass
+        }
+    }
+
     /** Viscous motion around each cloud's orbit and spin becomes heat. */
     private fun dissipate(h: Double) {
-        buildCenters()
         for (c in centers) {
             c.angular = 0.0
             c.inertia = 0.0
@@ -969,7 +986,8 @@ internal class AstronomicalUniverse {
                         val radii = p.collisionRadius+q.collisionRadius
                         val radius2 = radii*radii
                         var fraction = 1.0
-                        if (sweep && !interruptedPath[i] && !interruptedPath[other]) {
+                        if (sweep && (p.owner != q.owner || p.owner < 0 || neighborRange > 1) &&
+                            !interruptedPath[i] && !interruptedPath[other]) {
                             val vx = q.vx - p.vx
                             val vy = q.vy - p.vy
                             // Most neighbours rotate together. Only solve the
@@ -1117,8 +1135,9 @@ internal class AstronomicalUniverse {
         val substeps = if (grains.size < 1000) 2 else 1
         var gm = .0; var cm = .0
         for (part in 0 until substeps) {
-            // The damping pass refreshed the centres. Its changes to
-            // velocities do not affect the position-only force calculation.
+            // The second substep starts from the centres already rebuilt
+            // after the previous drift. Only velocities have changed.
+            if (part == 0) buildCenters() else refreshCenterVelocities()
             dissipate(h * .5)
             accelerations(gravity)
             gm += lastGravityMs
@@ -1170,6 +1189,7 @@ internal class AstronomicalUniverse {
                 p.vx = (p.vx+fx[i]*h*.5).toFloat()
                 p.vy = (p.vy+fy[i]*h*.5).toFloat()
             }
+            refreshCenterVelocities()
             dissipate(h * .5)
         }
         lastGravityMs = gm; lastContactMs = cm

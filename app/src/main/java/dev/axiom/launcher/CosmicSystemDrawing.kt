@@ -39,9 +39,13 @@ internal fun DrawScope.drawCosmicSystems(world:CosmicWorld,viewport:UniverseView
             drawCircle(Color(0xfff1d1ad).copy(alpha=(.16f+feeding*.5f)*alpha),radius*1.55f,
                 center,style=Stroke((.6f+feeding*.5f).dp.toPx()))
             // An optical annotation around a real collapsed mass, not hidden matter.
-            drawArc(glow.copy(alpha=.22f*alpha),-35f,110f,false,
-                center-Offset(radius*2.6f,radius*1.6f),
-                androidx.compose.ui.geometry.Size(radius*5.2f,radius*3.2f),style=Stroke(.65.dp.toPx()))
+            val diskPhase = if (world.reducedMotion) 0f else world.elapsed * (16f + feeding * 10f)
+            val diskBounds = center - Offset(radius * 2.6f, radius * 1.6f)
+            val diskSize = Size(radius * 5.2f, radius * 3.2f)
+            drawArc(glow.copy(alpha = (.28f + feeding * .15f) * alpha), diskPhase - 35f, 118f,
+                false, diskBounds, diskSize, style = Stroke(.75.dp.toPx()))
+            drawArc(Color(0xfff1c992).copy(alpha = (.24f + feeding * .34f) * alpha), diskPhase + 145f, 70f,
+                false, diskBounds, diskSize, style = Stroke(1.1.dp.toPx()))
         } else if(body.nature==CelestialNature.NEUTRON_STAR) {
             val angle=if(world.reducedMotion).6f else world.elapsed*.7f+body.id
             val radius=max(2.dp.toPx(),structureRadius(body)*unit)

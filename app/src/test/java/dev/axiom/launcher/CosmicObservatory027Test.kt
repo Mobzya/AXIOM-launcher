@@ -17,15 +17,15 @@ class CosmicObservatory027Test {
     @Test fun blastCrossesNearerGrainsFirstAndBookkeepsExternalEnergy() {
         val universe = AstronomicalUniverse()
         val near = SandGrain(1, .60f, .50f, 0f, 0f, .01f, .000003, MatterMaterial.ROCK)
-        val far = SandGrain(2, .72f, .50f, 0f, 0f, .02f, .000006, MatterMaterial.ROCK)
+        val far = SandGrain(2, .5f, .72f, 0f, 0f, .02f, .000006, MatterMaterial.ROCK)
         universe.grains.addAll(listOf(near, far))
         val initial = universe.totals()
         val event = CosmicEpisode(CosmicEventKind.BLAST_SHELL, duration = 7f, y = .5f, serial = 20)
         for (frame in 1..72) universe.step(1f / 60, 0f, event.copy(age = frame / 60f))
         assertTrue(near.vx > 0f)
-        assertEquals(0f, far.vx, 0f)
+        assertEquals(0f, far.vy, 0f)
         for (frame in 73..360) universe.step(1f / 60, 0f, event.copy(age = frame / 60f))
-        assertTrue(far.vx > 0f)
+        assertTrue(far.vy > 0f)
         val final = universe.totals()
         val input = universe.externalFrontEnergy
         assertEquals(initial.mass, final.mass, 0.0)

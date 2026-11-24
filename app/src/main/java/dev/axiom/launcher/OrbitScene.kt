@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
@@ -115,6 +116,15 @@ internal fun CosmicEnvironment(
         fun radial(near: Int, middle: Int) = RadialGradient(
             0f, 0f, 1f, intArrayOf(near, middle, 0), floatArrayOf(0f, .52f, 1f), Shader.TileMode.CLAMP)
         arrayOf(radial(0x354d7294, 0x154d7294), radial(0x35776db5, 0x15776db5))
+    }
+    val planetGlows = remember(lightPalette) {
+        materials.map { material ->
+            val rgb = material.argb and 0x00ffffff
+            val central = (if (lightPalette) 0x26000000 else 0x5a000000) or rgb
+            val surface = 0x1a000000 or rgb
+            RadialGradient(0f, 0f, 1f, intArrayOf(central, surface, rgb),
+                floatArrayOf(0f, .65f, 1f), Shader.TileMode.CLAMP)
+        }
     }
     val nativePaints = remember(lightPalette) {
         materials.map { material ->
@@ -291,6 +301,9 @@ internal fun CosmicEnvironment(
         }
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
+            val lightSource = renderedBodies.maxByOrNull {
+                if (it.stellarClass == StellarClass.STAR && it.nature != CelestialNature.BLACK_HOLE) it.mass else -1f
+            }?.takeIf { it.stellarClass == StellarClass.STAR }
             if (!interacting && !lightPalette) {
                 val luminous = renderedBodies.firstOrNull {
                     it.nature != CelestialNature.BLACK_HOLE &&
@@ -342,6 +355,24 @@ internal fun CosmicEnvironment(
                 native.drawCircle(viewport.x(ep.x),viewport.y(ep.y),
                     radius, coronaPaint)
                 coronaPaint.style = Paint.Style.FILL
+            }
+            if (!interacting) for (body in renderedBodies) {
+                if (body.stellarClass != StellarClass.PLANET || body.nature != CelestialNature.ORDINARY) continue
+                val radius = structureRadius(body) * unit
+                if (radius < 4.dp.toPx()) continue
+                val x = viewport.x(body.x)
+                val y = viewport.y(body.y)
+                if (x < -radius || x > size.width + radius || y < -radius || y > size.height + radius) continue
+                val dx = (lightSource?.x ?: .25f) - body.x
+                val dy = (lightSource?.y ?: .25f) - body.y
+                val distance = hypot(dx, dy).coerceAtLeast(.015f)
+                val shader = planetGlows[body.material.ordinal]
+                glowMatrix.setScale(radius, radius)
+                glowMatrix.postTranslate(x + dx / distance * radius * .26f, y + dy / distance * radius * .26f)
+                shader.setLocalMatrix(glowMatrix)
+                glowPaint.shader = shader
+                glowPaint.alpha = (dim * 255f).toInt()
+                native.drawCircle(x, y, radius, glowPaint)
             }
             for (body in renderedBodies) {
                 if(body.nature==CelestialNature.BLACK_HOLE)continue

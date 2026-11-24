@@ -44,6 +44,8 @@ internal class AstronomicalUniverse {
         -2, 0, 2, 0, 0, -2, 0, 2, -2, -1, -2, 1, 2, -1, 2, 1,
         -1, -2, 1, -2, -1, 2, 1, 2, -2, -2, -2, 2, 2, -2, 2, 2
     )
+    private val materialStiffness = DoubleArray(MatterMaterial.entries.size) { stiffness(MatterMaterial.entries[it]) }
+    private val materialDamping = DoubleArray(MatterMaterial.entries.size) { damping(MatterMaterial.entries[it]) }
     private val cellMask = 16383
     private val cellHeads = IntArray(cellMask + 1)
     private var next = IntArray(0)
@@ -398,8 +400,8 @@ internal class AstronomicalUniverse {
             grainCenters[i] = c
             val m = p.mass.toDouble()
             if (c.mass == 0.0) centers.add(c)
-            c.stiffness += m * stiffness(p.material)
-            c.damping += m * damping(p.material)
+            c.stiffness += m * materialStiffness[p.material.ordinal]
+            c.damping += m * materialDamping[p.material.ordinal]
             c.mass += m
             c.heat += p.heat
             c.x += p.x*m; c.y += p.y*m
@@ -1021,6 +1023,7 @@ internal class AstronomicalUniverse {
         val sweepSpeedFactor = .35 / (h * h)
         val reach = maxContactRange + travel * 2f
         val useFringe = reach > contactSize
+        val fastCloud = travel > contactSize
         val offsetLimit = if (useFringe) contactOffsets.size else 18
         val stickingDamping = 1.0 - kotlin.math.exp(-.72 * h)
         val overlapCorrection = 1.0 - kotlin.math.exp(-24.0 * h)
@@ -1032,6 +1035,7 @@ internal class AstronomicalUniverse {
         for (i in grains.indices) {
             val p = grains[i]
             val x = cxCell[i]; val y = cyCell[i]
+            val localReach = maxContactRange + travel + max(abs(p.x - startX[i]), abs(p.y - startY[i]))
             var visits = 0
             var hits = 0
             var offset = 0
@@ -1039,8 +1043,6 @@ internal class AstronomicalUniverse {
                     val cx = x + contactOffsets[offset++]
                     val cy = y + contactOffsets[offset++]
                     if (offset > 18) {
-                        val localReach = maxContactRange + travel +
-                            max(abs(p.x - startX[i]), abs(p.y - startY[i]))
                         if (p.x + localReach < cx * contactSize || p.x - localReach > (cx + 1) * contactSize ||
                             p.y + localReach < cy * contactSize || p.y - localReach > (cy + 1) * contactSize) continue
                     }
@@ -1058,7 +1060,7 @@ internal class AstronomicalUniverse {
                         val radii = p.collisionRadius+q.collisionRadius
                         val radius2 = radii*radii
                         var fraction = 1.0
-                        if (sweep && (p.owner != q.owner || p.owner < 0 || useFringe) &&
+                        if (sweep && (p.owner != q.owner || p.owner < 0 || fastCloud) &&
                             !interruptedPath[i] && !interruptedPath[other]) {
                             val vx = q.vx - p.vx
                             val vy = q.vy - p.vy

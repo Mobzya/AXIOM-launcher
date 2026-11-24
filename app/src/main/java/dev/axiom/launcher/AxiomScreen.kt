@@ -80,7 +80,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -551,6 +553,19 @@ internal fun AxiomScreen(resumeVersion: Int, meter: FrameMeter) {
             ModalBottomSheet(onDismissRequest={observatoryOpen=false},sheetState=observatorySheet,
                 containerColor=AX_PANEL,contentColor=AX_WHITE,
                 scrimColor=AX_BLACK.copy(alpha=.36f),shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp)) {
+                val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+                val lightBars = AxiomColors.palette.light
+                val navigationColor = AX_PANEL.toArgb()
+                SideEffect {
+                    dialogWindow?.let { window ->
+                        @Suppress("DEPRECATION")
+                        window.navigationBarColor = navigationColor
+                        WindowCompat.getInsetsController(window, window.decorView).apply {
+                            isAppearanceLightStatusBars = lightBars
+                            isAppearanceLightNavigationBars = lightBars
+                        }
+                    }
+                }
                 UniverseControlPanel(world=world,onPersist={saveObservation(prefs,world)},
                     onScene={next ->
                         if(!loadingScene) {

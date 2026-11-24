@@ -242,17 +242,16 @@ private fun ScenarioPreview(preset: CosmicPreset, selected: Boolean, reducedMoti
 @Composable
 private fun CreationPage(world:CosmicWorld) {
     var recipe by rememberSaveable { mutableStateOf(BodyRecipe.ROCKY) }
-    var mass by remember { mutableFloatStateOf(recipe.mass) }
+    var mass by rememberSaveable { mutableFloatStateOf(recipe.mass) }
     var launch by rememberSaveable { mutableStateOf(LaunchStyle.ORBIT) }
     var point by remember { mutableStateOf(Offset(.72f,.38f)) }
     var message by remember { mutableStateOf("") }
     SectionIntro("Добавь новый мир", "Состав, масса и начальная скорость определяют поведение объекта.")
-    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        BodyRecipe.entries.forEach { choice ->
-            Choice(choice.title,recipe==choice) { recipe=choice; mass=choice.mass }
-        }
+    RecipeSelector(recipe, world.reducedMotion) { choice ->
+        recipe = choice
+        mass = choice.mass
+        message = ""
     }
-    Text(recipe.description,color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
     Text("Масса · ${number(mass.toDouble())}",color=AX_WHITE,fontSize=14.sp)
     // Logarithmic control makes moons and large stars equally easy to tune.
     Slider(value=ln(mass),onValueChange={mass=exp(it)},valueRange=ln(.04f)..ln(recipe.maximumMass))
@@ -287,6 +286,68 @@ private fun CreationPage(world:CosmicWorld) {
         else "Достигнут лимит тел или частиц. Выбери другую сцену или увеличь лимит в настройках."
     }
     if(message.isNotEmpty()) Text(message,color=AX_ACCENT,fontSize=12.sp,lineHeight=18.sp)
+}
+
+private enum class RecipeGroup(val title: String, val recipes: List<BodyRecipe>) {
+    WORLDS("Планеты", BodyRecipe.entries.filter {
+        it.classification == StellarClass.PLANET && it.nature == CelestialNature.ORDINARY && it.mass >= .3f
+    }),
+    MOONS("Малые тела", BodyRecipe.entries.filter {
+        it.classification == StellarClass.PLANET && (it.mass < .3f || it.nature != CelestialNature.ORDINARY)
+    }),
+    STARS("Звёзды", BodyRecipe.entries.filter { it.classification == StellarClass.STAR }),
+    PHENOMENA("Аномалии", BodyRecipe.entries.filter {
+        it.classification == StellarClass.CLOUD || it.classification == StellarClass.QUASAR
+    })
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeSelector(recipe: BodyRecipe, reducedMotion: Boolean, onChoose: (BodyRecipe) -> Unit) {
+    var group by rememberSaveable { mutableStateOf(RecipeGroup.entries.first { recipe in it.recipes }) }
+    var expanded by remember { mutableStateOf(false) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        for (option in RecipeGroup.entries) {
+            Choice(option.title, group == option) {
+                group = option
+                if (recipe !in option.recipes) onChoose(option.recipes.first())
+            }
+        }
+    }
+    val tint by animateColorAsState(Color(recipe.material.argb), tween(if (reducedMotion) 0 else 260),
+        label = "body composition")
+    Box(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(AX_SURFACE)
+            .border(1.dp, AX_BORDER, RoundedCornerShape(15.dp))
+            .clickable(role = Role.Button) { expanded = true }.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Canvas(Modifier.size(42.dp)) {
+                val radius = size.minDimension * .31f
+                drawCircle(tint.copy(alpha = .12f), radius * 1.5f)
+                val compact = recipe.nature == CelestialNature.BLACK_HOLE
+                drawCircle(if (compact) Color(0xff080b17) else tint.copy(alpha = .53f), radius)
+                drawCircle(tint.copy(alpha = .88f), radius, style = Stroke(1.dp.toPx()))
+                if (recipe.ringFraction > 0f) {
+                    drawOval(tint.copy(alpha = .83f), center - Offset(radius * 1.6f, radius * .48f),
+                        androidx.compose.ui.geometry.Size(radius * 3.2f, radius * .96f), style = Stroke(1.dp.toPx()))
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(recipe.title, color = AX_WHITE, fontSize = 15.sp)
+                Text(recipe.description, color = AX_GRAY, fontSize = 11.sp, lineHeight = 15.sp)
+            }
+            Text("▾", color = AX_ACCENT)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 320.dp)) {
+            for (option in group.recipes) {
+                DropdownMenuItem(text = { Text(option.title) }, onClick = {
+                    onChoose(option)
+                    expanded = false
+                })
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -366,6 +427,9 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit,onPersist:()
 }
 
 private val manualPhenomena = linkedMapOf(
+    CosmicEventKind.BLAST_SHELL to "Фронт взрыва",
+    CosmicEventKind.REVERSE_SHOCK to "Сходящаяся волна",
+    CosmicEventKind.BIPOLAR_OUTFLOW to "Биполярный выброс",
     CosmicEventKind.COSMIC_SHOCK to "Ударная волна",
     CosmicEventKind.METEORS to "Метеорный поток",
     CosmicEventKind.CRYO_TIDE to "Радиационное охлаждение",
@@ -378,9 +442,6 @@ private val manualPhenomena = linkedMapOf(
     CosmicEventKind.PULSAR to "Импульсы пульсара",
     CosmicEventKind.QUASAR_JET to "Джеты квазара",
     CosmicEventKind.CRYSTALLIZATION to "Кристаллизация",
-    CosmicEventKind.BLAST_SHELL to "Фронт взрыва",
-    CosmicEventKind.REVERSE_SHOCK to "Сходящаяся волна",
-    CosmicEventKind.BIPOLAR_OUTFLOW to "Биполярный выброс",
     CosmicEventKind.NOVA to "Вспышка новой",
     CosmicEventKind.SOLAR_FLARE to "Звёздная вспышка",
     CosmicEventKind.MAGNETAR_FLARE to "Вспышка магнетара",

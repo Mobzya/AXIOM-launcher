@@ -93,12 +93,34 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
     }
 }
 
+private enum class SceneFilter(val title: String) {
+    ALL("Все"), ORBITS("Орбиты"), ENCOUNTERS("Встречи"), EXTREMES("Аномалии"), LIFE("Обитаемые")
+}
+
+private fun CosmicPreset.category(): SceneFilter = when (this) {
+    CosmicPreset.COLLISION_LAB, CosmicPreset.OCEAN_IMPACT, CosmicPreset.ROGUE_ENCOUNTER,
+    CosmicPreset.COMET_PASSAGE, CosmicPreset.GALAXY_PASSAGE, CosmicPreset.NEBULA_CROSSING ->
+        SceneFilter.ENCOUNTERS
+    CosmicPreset.BLACK_HOLE_NURSERY, CosmicPreset.BLACK_HOLE_MERGER, CosmicPreset.GALACTIC_NUCLEUS,
+    CosmicPreset.PULSAR_REEF, CosmicPreset.WHITE_DWARF_RELIC, CosmicPreset.HYPERGIANT_SYSTEM,
+    CosmicPreset.QUANTUM_SHORES -> SceneFilter.EXTREMES
+    CosmicPreset.LIVING_SYSTEM, CosmicPreset.ASTEROID_CORRIDOR -> SceneFilter.LIFE
+    else -> SceneFilter.ORBITS
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
-    var query by rememberSaveable {mutableStateOf("")}
-    val scenes=remember(query) {CosmicPreset.entries.filter {
-        query.isBlank() || it.title.contains(query.trim(),ignoreCase=true) || it.details.contains(query.trim(),ignoreCase=true)
-    }}
+    var query by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf(SceneFilter.ALL) }
+    val scenes = remember(query, filter) {
+        val term = query.trim()
+        CosmicPreset.entries.filter { scene ->
+            if (term.isNotEmpty()) scene.title.contains(term, ignoreCase = true) ||
+                scene.details.contains(term, ignoreCase = true)
+            else filter == SceneFilter.ALL || filter == scene.category()
+        }
+    }
     LazyVerticalGrid(columns=GridCells.Fixed(2),modifier=Modifier.fillMaxSize(),
         contentPadding=PaddingValues(20.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),
         verticalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -108,6 +130,14 @@ private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
                 OutlinedTextField(value=query,onValueChange={query=it},singleLine=true,
                     label={Text("Найти сценарий")},
                     modifier=Modifier.fillMaxWidth().semantics {contentDescription="Поиск сценария"})
+                if (query.isBlank()) FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    for (category in SceneFilter.entries) {
+                        Choice(category.title, filter == category) { filter = category }
+                    }
+                }
             }
         }
         items(scenes,key={it.name}) {preset ->
@@ -294,6 +324,21 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit,onPersist:()
         color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
 }
 
+private val manualPhenomena = linkedMapOf(
+    CosmicEventKind.COSMIC_SHOCK to "Ударная волна",
+    CosmicEventKind.METEORS to "Метеорный поток",
+    CosmicEventKind.CRYO_TIDE to "Радиационное охлаждение",
+    CosmicEventKind.THERMAL_SPIKE to "Ударный нагрев",
+    CosmicEventKind.SOLAR_WIND to "Звёздный ветер",
+    CosmicEventKind.ACCRETION_BURST to "Слипание пыли",
+    CosmicEventKind.TIDAL_PULSE to "Приливный импульс",
+    CosmicEventKind.IONIZATION_FRONT to "Фронт ионизации",
+    CosmicEventKind.MICROLENSING to "Микролинзирование",
+    CosmicEventKind.PULSAR to "Импульсы пульсара",
+    CosmicEventKind.QUASAR_JET to "Джеты квазара",
+    CosmicEventKind.CRYSTALLIZATION to "Кристаллизация"
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
@@ -307,6 +352,17 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     }
     Toggle("Автоматические события","Случайные воздействия и редкие внешние прибытия",world.automaticEvents) {
         world.configureObservation(events=it); onPersist()
+    }
+    if (world.automaticEvents) {
+        Text("Частота обычных событий", color = AX_WHITE, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (cadence in EventCadence.entries) {
+                Choice(cadence.title, world.eventCadence == cadence, Modifier.weight(1f)) {
+                    world.changeEventCadence(cadence)
+                    onPersist()
+                }
+            }
+        }
     }
     Toggle("Спокойное движение","Отрисовка до 30 Гц и короткие переходы",world.reducedMotion) {
         world.configureObservation(motion=it); onPersist()
@@ -351,13 +407,26 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
         CosmicEventIntensity.entries.forEach { level -> Choice(level.label,intensity==level) {intensity=level} }
     }
-    listOf(CosmicEventKind.METEORS to "Метеорный поток",
-        CosmicEventKind.CRYO_TIDE to "Радиационное охлаждение",
-        CosmicEventKind.THERMAL_SPIKE to "Ударный нагрев",
-        CosmicEventKind.SOLAR_WIND to "Звёздный выброс",
-        CosmicEventKind.ACCRETION_BURST to "Слипание пыли",
-        CosmicEventKind.TIDAL_PULSE to "Приливный импульс").forEach { (kind,title) ->
-        Action("↗  $title") {world.trigger(kind,intensity);message="$title · ${intensity.label}"}
+    var event by rememberSaveable { mutableStateOf(CosmicEventKind.COSMIC_SHOCK) }
+    var chooseEvent by remember { mutableStateOf(false) }
+    val title = manualPhenomena.getValue(event)
+    Box {
+        OutlinedButton(onClick = { chooseEvent = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(title, color = AX_WHITE, modifier = Modifier.weight(1f))
+            Text("▾", color = AX_ACCENT)
+        }
+        DropdownMenu(expanded = chooseEvent, onDismissRequest = { chooseEvent = false }) {
+            for ((kind, name) in manualPhenomena) {
+                DropdownMenuItem(text = { Text(name) }, onClick = {
+                    event = kind
+                    chooseEvent = false
+                })
+            }
+        }
+    }
+    Action("Запустить событие") {
+        world.trigger(event, intensity)
+        message = "$title · ${intensity.label}"
     }
     if(message.isNotEmpty()) Text(message,color=AX_ACCENT,fontSize=12.sp)
     PhenomenaPanel(world,onPersist)

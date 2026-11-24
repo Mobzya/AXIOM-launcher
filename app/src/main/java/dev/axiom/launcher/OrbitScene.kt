@@ -4,7 +4,10 @@ import android.content.Context
 import android.os.BatteryManager
 import android.os.PowerManager
 import androidx.compose.ui.platform.LocalContext
+import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -13,7 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalDensity
@@ -26,6 +29,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -37,7 +41,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
-import kotlin.coroutines.coroutineContext
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -60,11 +63,12 @@ private val starLayers = Random(824).let { rng ->
 internal fun CosmicEnvironment(
     world: CosmicWorld,
     interacting: Boolean,
+    searching: Boolean,
     modifier: Modifier = Modifier
 ) {
     val dim by animateFloatAsState(
         targetValue = if (interacting) .45f else 1f,
-        animationSpec = tween(450), label = "particle background"
+        animationSpec = tween(if (world.reducedMotion) 0 else 350), label = "particle background"
     )
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -92,13 +96,24 @@ internal fun CosmicEnvironment(
             style = Paint.Style.FILL
         }
     }
-    // Reuse point buffers and Android's drawPoints() batching rather than
-    // allocating / submitting 4,500 individual Compose drawCircle operations.
     val materials = MatterMaterial.entries
-    val buffers = remember { Array(materials.size) { FloatArray(9600) } }
     val counts = remember { IntArray(materials.size) }
+    val offsets = remember { IntArray(materials.size) }
+    val cursors = remember { IntArray(materials.size) }
+    val capacity = MatterMode.DETAILED.maxParticles
+    val visiblePoints = remember { FloatArray(capacity * 2) }
+    val packedPoints = remember { FloatArray(capacity * 2) }
+    val pointMaterials = remember { IntArray(capacity) }
     val lightPalette = AxiomColors.palette.light
-    var interpolatedFrameFraction by remember { mutableFloatStateOf(1f) }
+    val animate = !searching && world.timeScale > 0f
+    var displayNanos by remember { mutableLongStateOf(0L) }
+    val glowPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
+    val glowMatrix = remember { Matrix() }
+    val stellarGlows = remember {
+        fun radial(near: Int, middle: Int) = RadialGradient(
+            0f, 0f, 1f, intArrayOf(near, middle, 0), floatArrayOf(0f, .52f, 1f), Shader.TileMode.CLAMP)
+        arrayOf(radial(0x354d7294, 0x154d7294), radial(0x35776db5, 0x15776db5))
+    }
     val nativePaints = remember(lightPalette) {
         materials.map { material ->
             val c = material.argb
@@ -115,57 +130,64 @@ internal fun CosmicEnvironment(
         }
     }
     val trailPath = remember { Path() }
-    LaunchedEffect(world, interacting, reducedPower, world.maxBodies, world.matterMode,
+    LaunchedEffect(world, interacting, animate, reducedPower, world.maxBodies, world.matterMode,
         world.reducedMotion, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-        val heavy = interacting || reducedPower || world.maxBodies >= 40 ||
-            world.matterMode == MatterMode.DETAILED
-        // Heavy physics is 30Hz, regular physics is 60Hz. Screen refresh is
-        // independent: phones may redraw interpolated particles at 120Hz
-        // without evaluating a 4600-particle Barnes-Hut tree 120 times.
-        val physicsPeriod = if (heavy) 33_333_333L else 16_666_667L
-        val worker = launch(Dispatchers.Default) {
-            var lastPhysics = System.nanoTime()
-            while (coroutineContext.isActive) {
-                val start = System.nanoTime()
-                val dt = ((start-lastPhysics)/1e9).toFloat().coerceIn(0f,.1f)
-                lastPhysics = start
-                world.step(dt,maxSubsteps=4,budgetNanos=12_000_000L)
-                val spent = System.nanoTime() - start
-                val remaining = physicsPeriod - spent
-                // Never spin or queue up overdue expensive physics steps.
-                // Slow devices run at lower *simulation* throughput, while
-                // the display/input thread can still render native 120Hz.
-                delay((remaining / 1_000_000L).coerceAtLeast(1L))
+        if (!animate) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val heavy = interacting || reducedPower || world.maxBodies >= 40 ||
+                world.matterMode == MatterMode.DETAILED
+            val physicsPeriod = if (heavy) 33_333_333L else 16_666_667L
+            launch(Dispatchers.Default) {
+                var lastPhysics = System.nanoTime()
+                while (isActive) {
+                    val start = System.nanoTime()
+                    val dt = ((start-lastPhysics)/1e9).toFloat().coerceIn(0f,.1f)
+                    lastPhysics = start
+                    world.step(dt, maxSubsteps = 4, budgetNanos = 12_000_000L)
+                    val remaining = physicsPeriod - (System.nanoTime() - start)
+                    delay(((remaining + 500_000L) / 1_000_000L).coerceAtLeast(1L))
+                }
             }
-        }
-        try {
+            val renderPeriod = if (world.reducedMotion) 32_000_000L
+                else if (reducedPower || interacting) 15_500_000L else 0L
             var lastDisplay = 0L
-            val renderPeriod = if (world.reducedMotion) 33_333_333L
-                else if (reducedPower || interacting) 16_666_667L else 8_333_333L
-            while (coroutineContext.isActive) {
+            var shown: GrainRenderPair? = null
+            while (isActive) {
                 val now = withFrameNanos { it }
                 if (now - lastDisplay < renderPeriod) continue
-                lastDisplay = now
-                val frames = world.grainFrames
-                val diff = (now - frames.committedAtNanos)
-                    .coerceAtLeast(0L)
-                interpolatedFrameFraction =
-                    (diff.toFloat() / frames.intervalNanos).coerceIn(0f, 1f)
+                val frame = world.grainFrames
+                if (frame !== shown || frame.blendAt(lastDisplay) < 1f) {
+                    shown = frame
+                    lastDisplay = now
+                    displayNanos = now
+                }
             }
-        } finally {
-            worker.cancel()
-        }
         }
     }
 
-    Canvas(modifier.onGloballyPositioned {coordinates ->
+    val atmosphere = when (world.preset) {
+        CosmicPreset.COLD_NURSERY, CosmicPreset.NEBULA_CROSSING -> Color(0xff557e9f)
+        CosmicPreset.GALACTIC_NUCLEUS, CosmicPreset.GALAXY_PASSAGE,
+        CosmicPreset.BLACK_HOLE_NURSERY -> Color(0xff8062ad)
+        CosmicPreset.COLLISION_LAB, CosmicPreset.OCEAN_IMPACT -> Color(0xffa56a4f)
+        else -> Color.Transparent
+    }
+    val skyModifier = if (atmosphere == Color.Transparent) modifier else {
+        modifier.drawWithCache {
+            val haze = Brush.radialGradient(
+                listOf(atmosphere.copy(alpha = if (lightPalette) .14f else .21f), Color.Transparent),
+                Offset(size.width * .28f, size.height * .34f), (size.maxDimension * .56f).coerceAtLeast(1f))
+            onDrawBehind { drawRect(haze, alpha = dim * sceneFade.value) }
+        }
+    }
+    Canvas(skyModifier.onGloballyPositioned {coordinates ->
         val p=coordinates.positionInRoot()
         world.updateViewport(coordinates.size.width.toFloat(),coordinates.size.height.toFloat(),p.x,p.y,displayDensity)
     }) {
         val dim=dim*sceneFade.value
         val snapshot=world.grainFrames
-        val renderedBodies=interpolateBodies(snapshot,interpolatedFrameFraction)
+        val blend = if (animate) snapshot.blendAt(displayNanos) else 1f
+        val renderedBodies = interpolateBodies(snapshot, blend)
         val viewport = UniverseViewport(size.width,size.height)
         val unit = viewport.side
         val ink = if (AxiomColors.palette.light) Color(0xff526f86) else Color(0xffa4bad1)
@@ -215,25 +237,6 @@ internal fun CosmicEnvironment(
                 (structureRadius(body)*unit+8.dp.toPx()),
                 Offset(viewport.x(body.x),viewport.y(body.y)),style=Stroke(1.dp.toPx()))
         }
-        // A low-cost, soft volumetric light falloff derived from the position
-        // of a PHYSICAL star. This is illumination, never fake particle mass.
-        if (!interacting && !AxiomColors.palette.light) {
-            val luminous = renderedBodies.firstOrNull {
-                it.stellarClass == StellarClass.STAR ||
-                    it.stellarClass == StellarClass.QUASAR
-            }
-            if (luminous != null) {
-                val glow = if (luminous.stellarClass == StellarClass.QUASAR)
-                    Color(0xff776db5) else Color(0xff4d7294)
-                drawRect(brush = Brush.radialGradient(
-                    colors = listOf(
-                        glow.copy(alpha=.21f*dim),
-                        glow.copy(alpha=.085f*dim),
-                        Color.Transparent),
-                    center = Offset(viewport.x(luminous.x),viewport.y(luminous.y)),
-                    radius = min(size.width,size.height)*.53f))
-            }
-        }
         // Educational math remains available; only cosmic silhouettes are removed.
         if (!interacting && world.mathMoment.active && world.episode.kind == CosmicEventKind.QUIET) {
             formulaPaint.color = if (AxiomColors.palette.light)
@@ -246,33 +249,58 @@ internal fun CosmicEnvironment(
         // uses one native drawPoints per material, even at 4800 grains.
         val frame = snapshot.current
         val old = snapshot.previous
-        val blend = interpolatedFrameFraction
-        val canBlend = old.size == frame.size
+        val canBlend = blend < 1f && old.size == frame.size
         java.util.Arrays.fill(counts, 0)
+        var visible = 0
         var i = 0
-        while (i + 3 < frame.size) {
-            val x = if (canBlend)
-                old[i] + (frame[i] - old[i]) * blend else frame[i]
-            val y = if (canBlend)
-                old[i+1] + (frame[i+1] - old[i+1]) * blend
-                else frame[i+1]
-            val material = frame[i+3].toInt()
-            val px=viewport.x(x);val py=viewport.y(y)
-            if (px >= -8f && px <= size.width+8f &&
-                py >= -8f && py <= size.height+8f &&
-                material in buffers.indices) {
-                val k = counts[material]
-                val buffer = buffers[material]
-                if (k + 1 < buffer.size) {
-                    buffer[k] = viewport.x(x)
-                    buffer[k+1] = viewport.y(y)
-                    counts[material] = k + 2
-                }
+        while (i + 3 < frame.size && visible < capacity) {
+            val x = if (canBlend) old[i] + (frame[i] - old[i]) * blend else frame[i]
+            val y = if (canBlend) old[i + 1] + (frame[i + 1] - old[i + 1]) * blend else frame[i + 1]
+            val material = frame[i + 3].toInt()
+            val px = viewport.x(x)
+            val py = viewport.y(y)
+            if (px >= -8f && px <= size.width + 8f && py >= -8f && py <= size.height + 8f &&
+                material in counts.indices) {
+                visiblePoints[visible * 2] = px
+                visiblePoints[visible * 2 + 1] = py
+                pointMaterials[visible++] = material
+                counts[material] += 2
             }
             i += 4
         }
+        var offset = 0
+        for (k in counts.indices) {
+            offsets[k] = offset
+            cursors[k] = offset
+            offset += counts[k]
+        }
+        for (point in 0 until visible) {
+            val material = pointMaterials[point]
+            val write = cursors[material]
+            packedPoints[write] = visiblePoints[point * 2]
+            packedPoints[write + 1] = visiblePoints[point * 2 + 1]
+            cursors[material] = write + 2
+        }
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
+            if (!interacting && !lightPalette) {
+                val luminous = renderedBodies.firstOrNull {
+                    it.nature != CelestialNature.BLACK_HOLE &&
+                        (it.stellarClass == StellarClass.STAR || it.stellarClass == StellarClass.QUASAR)
+                }
+                if (luminous != null) {
+                    val x = viewport.x(luminous.x)
+                    val y = viewport.y(luminous.y)
+                    val radius = unit * .53f
+                    val shader = stellarGlows[if (luminous.stellarClass == StellarClass.QUASAR) 1 else 0]
+                    glowMatrix.setScale(radius, radius)
+                    glowMatrix.postTranslate(x, y)
+                    shader.setLocalMatrix(glowMatrix)
+                    glowPaint.shader = shader
+                    glowPaint.alpha = (dim * 255f).toInt()
+                    native.drawCircle(x, y, radius, glowPaint)
+                }
+            }
             // Faint fronts denote the *radius and strength* of genuine
             // thermodynamic/gravitational events. This ring has no mass.
             val ep = world.episode
@@ -344,10 +372,24 @@ internal fun CosmicEnvironment(
                     density
                 paint.alpha = ((if (materials[k].gas) .75f else .94f) *
                     dim * 255f).toInt().coerceIn(0,255)
-                native.drawPoints(buffers[k], 0, count, paint)
+                native.drawPoints(packedPoints, offsets[k], count, paint)
             }
         }
-        drawCosmicSystems(world,viewport,renderedBodies,dim,System.nanoTime())
+        if (!searching) {
+            for (impact in world.collisionFlashes) {
+                val alpha = (1f - impact.age / .90f).coerceIn(0f, 1f) * impact.strength * dim
+                if (alpha <= 0f) continue
+                val center = Offset(viewport.x(impact.x), viewport.y(impact.y))
+                val ink = if (lightPalette) Color(0xff9e552c) else Color(0xfff0ae79)
+                if (!world.reducedMotion) {
+                    val radius = unit * (.014f + impact.age * .12f)
+                    drawCircle(ink, radius, center, alpha = alpha * .82f, style = Stroke(1.2.dp.toPx()))
+                    drawCircle(ink, radius * .72f, center, alpha = alpha * .32f, style = Stroke(.75.dp.toPx()))
+                }
+                drawCircle(ink, unit * .016f, center, alpha = alpha * .28f)
+            }
+            drawCosmicSystems(world, viewport, renderedBodies, dim, System.nanoTime())
+        }
         world.brushPoint?.let { brush ->
             drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),
                 Offset(viewport.x(brush.x),viewport.y(brush.y)))

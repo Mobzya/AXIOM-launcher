@@ -82,7 +82,13 @@ internal data class GrainRenderPair(
     val intervalNanos: Long = 16_666_667L,
     val bodyPrevious:List<CelestialBody> = emptyList(),
     val bodyCurrent:List<CelestialBody> = emptyList()
-)
+) {
+    val previousBodiesById = bodyPrevious.associateBy { it.id }
+
+    fun blendAt(now: Long): Float =
+        if (intervalNanos <= 0L) 1f
+        else ((now - committedAtNanos).toFloat() / intervalNanos).coerceIn(0f, 1f)
+}
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
@@ -115,22 +121,27 @@ internal class CosmicWorld(
         private set
     private var publishedIds = IntArray(0)
     private var lastCostReading=0L
-    private fun publishGrains() {
+    private fun publishGrains(discontinuity: Boolean = false) {
         val sameParticles = publishedIds.size==sand.grains.size &&
             sand.grains.indices.all { publishedIds[it]==sand.grains[it].id }
         if (!sameParticles) publishedIds = IntArray(sand.grains.size) {sand.grains[it].id}
-        val next = sand.renderFrame(bodies.filter {it.nature==CelestialNature.BLACK_HOLE}.map {it.id}.toSet())
-        val old = grainFrames.current
+        val hiddenOwners = bodies.asSequence().filter { it.nature == CelestialNature.BLACK_HOLE }
+            .map { it.id }.toSet()
+        val next = sand.renderFrame(hiddenOwners)
+        val frame = grainFrames
+        val old = frame.current
         val now = System.nanoTime()
-        val interval = (now-grainFrames.committedAtNanos).coerceIn(8_333_333L,100_000_000L)
+        val gap = now - frame.committedAtNanos
+        val smooth = !discontinuity && sameParticles && old.size == next.size && gap in 1L..100_000_000L
+        val interval = if (smooth) gap.coerceAtLeast(8_333_333L) else 0L
         if(civilization.ships!=shipFrames.current) {
             val shipInterval=(now-shipFrames.committedAtNanos).coerceIn(8_333_333L,400_000_000L)
             shipFrames=ShipRenderPair(shipFrames.current,civilization.ships,now,shipInterval)
         }
         grainFrames = GrainRenderPair(
-            if (sameParticles && old.size == next.size) old else next,
-            next,now,interval,
-            if(sameParticles)grainFrames.bodyCurrent else emptyList(),sand.summarizeBodies(bodies)
+            if (smooth) old else next,
+            next, now, interval,
+            if (smooth) frame.bodyCurrent else emptyList(), sand.summarizeBodies(bodies)
         )
     }
     var matterMode by mutableStateOf(initialMatterMode)
@@ -168,7 +179,23 @@ internal class CosmicWorld(
     private var eventSerial = 0
     // Rare external arrivals: a fresh spherical GROUP of grains, not sprites.
     private var spawnAt = 46f
+    var eventCadence by mutableStateOf(EventCadence.NORMAL)
+        private set
     private var eventAt = 28f
+
+    @Synchronized
+    fun changeEventCadence(value: EventCadence) {
+        if (eventCadence == value) return
+        eventCadence = value
+        scheduleOrdinaryEvent()
+    }
+
+    private fun scheduleOrdinaryEvent() {
+        eventAt = elapsed + eventCadence.wait(random.nextFloat())
+    }
+    var collisionFlashes by mutableStateOf<List<ContactFlash>>(emptyList())
+        private set
+    private var lastFlashAt = -1f
     private var lastBurstAt = -100f
     private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
@@ -225,7 +252,8 @@ internal class CosmicWorld(
         val idSequence: Int, val eventAt: Float, val spawnAt: Float,
         val life:CivilizationSimulation.Snapshot,val quantum:QuantumExperiment.Snapshot,
         val radiation:Map<Int,Float>,val doseSerial:Int,val exposed:Set<Int>,
-        val waves:Int,val waveAt:Float,val mergers:List<CompactMerger>,val mergerCount:Int)
+        val waves:Int,val waveAt:Float,val mergers:List<CompactMerger>,val mergerCount:Int,
+        val flashes: List<ContactFlash>, val lastFlash: Float)
     private val replayMeta = ArrayDeque<ReplayMeta>(32)
 
     @Synchronized
@@ -253,7 +281,7 @@ internal class CosmicWorld(
         quantumReading=quantum.reading
         val totals = sand.totals()
         telemetry = UniverseTelemetry(sand.grains.size, totals.mass,
-            totals.kinetic, totals.internal, sand.totalEnergy(gravity),
+            totals.kinetic, totals.internal, sand.energyAtCurrentCenters(gravity, totals),
             sand.reactions, sand.phaseTransitions,
             sand.grains.count { it.owner < 0 },sand.radiatedHeat,sand.externalRadiationEnergy)
         if (showTrails) trails = current.associate { body ->
@@ -385,10 +413,12 @@ internal class CosmicWorld(
     private fun advanceSystems(h:Float) {
         if(compactMergers.isNotEmpty())compactMergers=compactMergers.map {it.copy(age=it.age+h)}.filter {it.age<it.duration}
         var captured=false
-        val holes=bodies.filter {it.nature==CelestialNature.BLACK_HOLE}
-        val horizons=holes.associate {it.id to horizonRadius(it.mass)}
-        var current=bodies
-        val light=accretionLight.mapValues {it.value*kotlin.math.exp(-h*1.6f)}.filterValues {it>.0001f}.toMutableMap()
+        val holes = if (bodies.any { it.nature == CelestialNature.BLACK_HOLE })
+            bodies.filter { it.nature == CelestialNature.BLACK_HOLE } else emptyList()
+        val horizons = holes.associate { it.id to horizonRadius(it.mass) }
+        var current = bodies
+        val decay = kotlin.math.exp(-h*1.6f)
+        val light = accretionLight.mapValues { it.value * decay }.filterValues { it > .0001f }.toMutableMap()
         for(hole in holes) {
             val result=sand.accrete(hole.id,horizonRadius(hole.mass),horizons)
             if(result.consumedMass>0) {
@@ -408,9 +438,14 @@ internal class CosmicWorld(
         if(captured)bodies=sand.summarizeBodies(current)
         if(light!=accretionLight)accretionLight=light
         if(doseSerial!=episode.serial){doseSerial=episode.serial;exposedBodies.clear()}
-        for(id in radiationDose.keys.toList()) {
-            val value=radiationDose.getValue(id)*kotlin.math.exp(-h*.025f)
-            if(value<.001f)radiationDose.remove(id) else radiationDose[id]=value
+        if (radiationDose.isNotEmpty()) {
+            val attenuation = kotlin.math.exp(-h*.025f)
+            val doses = radiationDose.entries.iterator()
+            while (doses.hasNext()) {
+                val entry = doses.next()
+                val value = entry.value * attenuation
+                if (value < .001f) doses.remove() else entry.setValue(value)
+            }
         }
         for(body in bodies) {
             if(body.id in exposedBodies)continue
@@ -427,10 +462,11 @@ internal class CosmicWorld(
         lifeTimer+=h
         if(lifeTimer>=.05f) {
             val duration=lifeTimer;lifeTimer=0f
+            if (!radiativeClimate && civilizationConfig.mode == LifeMode.OFF) return
             var latest=sand.summarizeBodies(bodies)
             if(radiativeClimate) {
                 sand.exchangeStellarRadiation(latest,duration)
-                latest=sand.summarizeBodies(bodies)
+                if (civilizationConfig.mode != LifeMode.OFF) latest=sand.summarizeBodies(bodies)
             }
             if(civilizationConfig.mode==LifeMode.OFF)return
             val detonations=ecosystem.step(duration,latest,gravity,
@@ -480,6 +516,13 @@ internal class CosmicWorld(
             CosmicPreset.BLACK_HOLE_MERGER -> sand.seedOrbitalDisk(
                 .5f,.5f,28f,if(matterMode==MatterMode.DETAILED)500 else 180,
                 .23f,.39f,rocky=true,gravity=gravity)
+            CosmicPreset.GALAXY_PASSAGE -> bodies.filter { it.nature == CelestialNature.BLACK_HOLE }
+                .forEachIndexed { index, core ->
+                    sand.seedOrbitalDisk(core.x, core.y, core.mass,
+                        if (matterMode == MatterMode.DETAILED) 1240 else 290, .038f, .166f,
+                        rocky = index == 0, gravity = gravity,
+                        driftX = core.vx, driftY = core.vy, retrograde = index == 1, spiral = true)
+                }
             CosmicPreset.WHITE_DWARF_RELIC -> sand.seedOrbitalDisk(
                 .5f,.5f,3f,if(matterMode==MatterMode.DETAILED)650 else 260,
                 .08f,.32f,rocky=true,gravity=gravity)
@@ -489,7 +532,7 @@ internal class CosmicWorld(
             else -> Unit
         }
         previousBodies = bodies
-        publishGrains()
+        publishGrains(discontinuity = true)
         if(civilizationConfig.mode!=LifeMode.OFF &&
             (civilizationConfig.mode==LifeMode.SEEDED || preset==CosmicPreset.LIVING_SYSTEM || preset==CosmicPreset.ASTEROID_CORRIDOR)) {
             ecosystem.seedFavorable(if(preset==CosmicPreset.ASTEROID_CORRIDOR)
@@ -789,7 +832,7 @@ internal class CosmicWorld(
         }
         if (kind == CosmicEventKind.QUIET) {
             episode = CosmicEpisode()
-            eventAt = elapsed + 32f
+            scheduleOrdinaryEvent()
             return
         }
         eventSerial++
@@ -886,7 +929,7 @@ internal class CosmicWorld(
         if(kind==CosmicEventKind.QUANTUM_COHERENCE)quantum.resetSuperposition()
         // The next event starts roughly one minute after this one begins,
         // not one minute *after* its end. Event durations stay much shorter.
-        eventAt = elapsed + 32f + random.nextFloat() * 16f
+        scheduleOrdinaryEvent()
         if (kind == CosmicEventKind.METEORS) {
             // All six templates can witness incoming matter. In curated
             // orbits keep the external impact small unless the user selects
@@ -1010,7 +1053,7 @@ internal class CosmicWorld(
         // An explicitly requested lesson takes priority over ongoing scenery.
         if (episode.kind != CosmicEventKind.QUIET) {
             episode = CosmicEpisode()
-            eventAt = elapsed + 22f
+            scheduleOrdinaryEvent()
         }
         mathPinned = false
         pinnedFor = 0f
@@ -1191,6 +1234,7 @@ internal class CosmicWorld(
         doseSerial=meta.doseSerial;exposedBodies.clear();exposedBodies.addAll(meta.exposed)
         meteorWaves=meta.waves;nextMeteorWave=meta.waveAt
         compactMergers=meta.mergers;compactMergerCount=meta.mergerCount
+        collisionFlashes = meta.flashes; lastFlashAt = meta.lastFlash
         shipFrames=ShipRenderPair(civilization.ships,civilization.ships,System.nanoTime())
         while (replayBuffer.size > index+1) {
             replayBuffer.removeLast(); particleReplay.removeLast(); replayMeta.removeLast()
@@ -1199,7 +1243,7 @@ internal class CosmicWorld(
         trails = emptyMap(); observationBefore = emptyList()
         learner = GravityLearner(); learning = LearningReading()
         mathMoment = MathMoment(); selectedBody = null
-        publishGrains()
+        publishGrains(discontinuity = true)
         observeWorld(.12f)
         return true
     }
@@ -1236,7 +1280,9 @@ internal class CosmicWorld(
         episode = CosmicEpisode()
         depthShift = 0f
         spawnAt = 46f
-        eventAt = 28f
+        eventAt = eventCadence.wait(0f) * .875f
+        collisionFlashes = emptyList()
+        lastFlashAt = -1f
         lastBurstAt = -100f
         tunneled.clear()
         mathMoment = MathMoment()
@@ -1300,9 +1346,11 @@ internal class CosmicWorld(
         }
         if (inspectAge > 4.5f) selectedBody = null
         depthShift *= (1f - .5f * h)
-        ripples = ripples.map { it.copy(age = it.age + h) }
+        if (collisionFlashes.isNotEmpty())
+            collisionFlashes = collisionFlashes.map { it.copy(age = it.age + h) }.filter { it.age < .90f }
+        if (ripples.isNotEmpty()) ripples = ripples.map { it.copy(age = it.age + h) }
             .filter { it.age < 1.7f }
-        remnants = remnants.map { it.copy(age = it.age + h) }
+        if (remnants.isNotEmpty()) remnants = remnants.map { it.copy(age = it.age + h) }
             .filter { it.age < it.lifetime }
 
         if (mathMoment.active) {
@@ -1347,13 +1395,18 @@ internal class CosmicWorld(
         val prior = bodies
         sand.step(h,gravity,episode,wallsEnabled,viewport.screenBounds(),
             if(clockWallsEnabled)clockObstacle else null)
+        val impact = sand.lastImpact
+        if (impact != null && elapsed - lastFlashAt >= .18f) {
+            collisionFlashes = (collisionFlashes + impact).takeLast(4)
+            lastFlashAt = elapsed
+        }
         advanceSystems(h)
         physicsFrameNumber++
         // Grain positions are published EVERY physics frame, but 4500-grain
         // clouds do not need to rebuild the body's Compose State, object
         // ownership and hierarchy at 30Hz. This throttles expensive
         // recompositions without slowing down particle integration.
-        val updateSceneMetadata = physicsFrameNumber % 6L == 0L
+        val updateSceneMetadata = physicsFrameNumber % 6L == 0L || sand.clumpCheckDue
         if (updateSceneMetadata) {
             previousBodies = prior
             var current = sand.summarizeBodies(bodies)
@@ -1370,7 +1423,8 @@ internal class CosmicWorld(
             replayBuffer.addLast(bodies)
             particleReplay.addLast(sand.snapshot())
             replayMeta.addLast(ReplayMeta(elapsed,episode,idSequence,eventAt,spawnAt,ecosystem.snapshot(),quantum.snapshot(),
-                radiationDose.toMap(),doseSerial,exposedBodies.toSet(),meteorWaves,nextMeteorWave,compactMergers,compactMergerCount))
+                radiationDose.toMap(),doseSerial,exposedBodies.toSet(),meteorWaves,nextMeteorWave,compactMergers,compactMergerCount,
+                collisionFlashes,lastFlashAt))
             if (replayBuffer.size > historyCapacity) {
                 replayBuffer.removeFirst(); replayMeta.removeFirst()
             }

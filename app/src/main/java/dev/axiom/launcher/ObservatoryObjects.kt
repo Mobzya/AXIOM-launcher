@@ -50,7 +50,13 @@ internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
     HYPERGIANT("Гипергигант",MatterMaterial.HYDROGEN,150f,14000f,StellarClass.STAR,
         "Очень большое светило: размер не требует миллионов частиц"),
     AMMONIA("Аммиачный мир",MatterMaterial.AMMONIA,1.6f,120f,StellarClass.PLANET,
-        "Мир летучих соединений: необычный, но слишком холодный для здешних колоний");
+        "Холодный мир летучих соединений"),
+    ICE_GIANT("Ледяной гигант", MatterMaterial.AMMONIA, 7.4f, 112f, StellarClass.PLANET,
+        "Массивная холодная атмосфера с аммиаком над каменным ядром"),
+    SULFUR_MOON("Серная луна", MatterMaterial.SULFUR, .23f, 670f, StellarClass.PLANET,
+        "Сера и базальт, ударный нагрев может расплавить кору"),
+    GRAPHITE("Графитовый мир", MatterMaterial.CARBON, 1.4f, 490f, StellarClass.PLANET,
+        "Железное ядро и мантия из углерода и кристаллов");
 
     val maximumMass:Float get()=when(this) {
         SUPERMASSIVE -> 6400f

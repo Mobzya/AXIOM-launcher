@@ -12,9 +12,9 @@ import kotlin.math.*
 private val factionColors=listOf(Color(0xffa6ddbd),Color(0xff9ecbdf),Color(0xffc8b2e4),Color(0xffe0c28d))
 
 internal fun interpolateBodies(frame:GrainRenderPair,fraction:Float):List<CelestialBody> {
-    if(frame.bodyCurrent.isEmpty())return emptyList()
+    if (fraction >= 1f || frame.previousBodiesById.isEmpty()) return frame.bodyCurrent
     return frame.bodyCurrent.map {body ->
-        val old=frame.bodyPrevious.firstOrNull {it.id==body.id}
+        val old=frame.previousBodiesById[body.id]
         if(old==null)body else body.copy(x=old.x+(body.x-old.x)*fraction,
             y=old.y+(body.y-old.y)*fraction)
     }

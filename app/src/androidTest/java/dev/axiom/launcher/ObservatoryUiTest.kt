@@ -104,6 +104,18 @@ class ObservatoryUiTest {
             screenshot("07-supermassive")
         }
     }
+    @Test fun galaxyPassageDrawsAtHomeAndExposesSceneFilters() {
+        prepare(CosmicPreset.GALAXY_PASSAGE)
+        device.setOrientationNatural()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            assertTrue(visible("Пролёт галактик"))
+            screenshot("08-galaxy-passage")
+            click("Космос")
+            assertTrue(visible("Начальные условия"))
+            click("Встречи")
+            assertTrue(device.wait(Until.gone(By.descStartsWith("Сцена: Открытый космос.")), 10_000))
+        }
+    }
     @Test fun collisionFieldUsesTheActualRenderedClockInk() {
         val raster=rasterClock("08:08",108f,-4f)
         val w=raster.bitmap.width;val h=raster.bitmap.height

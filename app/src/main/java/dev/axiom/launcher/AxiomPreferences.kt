@@ -41,6 +41,7 @@ internal object AxiomBackup {
             for ((key,default) in observationDefaults) put(key,prefs.getBoolean(key,default))
             put("lifeMode",prefs.getString("life_mode",LifeMode.EMERGENCE.name))
             put("lifePace",prefs.getFloat("life_pace",1f).toDouble())
+            put("eventCadence",prefs.getString("event_cadence",EventCadence.NORMAL.name))
             put("rareRate",prefs.getString("rare_rate",CatastropheRate.NATURAL.name))
             put("quantumCoupling",prefs.getFloat("quantum_coupling",1f).toDouble())
             put("quantumDephasing",prefs.getFloat("quantum_dephasing",.06f).toDouble())
@@ -107,6 +108,7 @@ internal object AxiomBackup {
                 editor.putBoolean(key,json.optBoolean(key,default)) }
             .putString("life_mode",LifeMode.entries.firstOrNull {it.name==json.optString("lifeMode")}?.name ?: LifeMode.EMERGENCE.name)
             .putFloat("life_pace",pace.coerceIn(.5f,3f))
+            .putString("event_cadence",eventCadenceFromPreference(json.optString("eventCadence")).name)
             .putString("rare_rate",CatastropheRate.entries.firstOrNull {it.name==json.optString("rareRate")}?.name ?: CatastropheRate.NATURAL.name)
             .putFloat("quantum_coupling",coupling.coerceIn(.1f,3f))
             .putFloat("quantum_dephasing",dephasing.coerceIn(0f,2f))
@@ -127,6 +129,7 @@ internal fun loadObservation(prefs: android.content.SharedPreferences, world: Co
         motion=prefs.getBoolean("reduced_motion",false),
         maths=prefs.getBoolean("ambient_math",false),
         ml=prefs.getBoolean("orbit_learning",true))
+    world.changeEventCadence(eventCadenceFromPreference(prefs.getString("event_cadence",null)))
     world.configureCosmos(rare=prefs.getBoolean("rare_events",true),
         rate=CatastropheRate.entries.firstOrNull {it.name==prefs.getString("rare_rate",null)} ?: CatastropheRate.NATURAL,
         hourly=prefs.getBoolean("hourly_scenes",false),
@@ -142,6 +145,7 @@ internal fun loadObservation(prefs: android.content.SharedPreferences, world: Co
 
 internal fun saveObservation(prefs: android.content.SharedPreferences, world: CosmicWorld) {
     prefs.edit().putBoolean("auto_events",world.automaticEvents)
+        .putString("event_cadence",world.eventCadence.name)
         .putBoolean("orbit_trails",world.showTrails)
         .putBoolean("velocity_vectors",world.showVectors)
         .putBoolean("reduced_motion",world.reducedMotion)

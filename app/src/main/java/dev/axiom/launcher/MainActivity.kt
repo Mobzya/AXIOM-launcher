@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                     onBackground = colors.ink, onSurface = colors.ink,
                     primary = colors.ink, onPrimary = colors.background
                 )
-            ) { AxiomScreen(resumeVersion, frameMeter) }
+            ) { AxiomScreen(resumeVersion, lifecycle, frameMeter) }
         }
     }
 

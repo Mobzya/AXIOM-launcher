@@ -22,7 +22,8 @@ internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, S
     MEGASTRUCTURE, GALAXY_COLLISION, VOID_BLOOM, GRAVITATIONAL_CAUSTIC,
     COMET_SWARM, ACCRETION_BURST, CRYSTALLIZATION, PLASMA_STORM, QUASAR_JET,
     COSMIC_SHOCK, THERMAL_SPIKE, CRYO_TIDE, MAGNETAR_FLARE,
-    SOLAR_WIND, TIDAL_PULSE, IONIZATION_FRONT }
+    SOLAR_WIND, TIDAL_PULSE, IONIZATION_FRONT,
+    SUPERNOVA, TIDAL_DISRUPTION, MAGNETIC_RECONNECTION, COMET_FLYBY }
 
 internal enum class CosmicEventIntensity(
     val label: String, val heatFactor: Double, val radius: Float
@@ -40,9 +41,13 @@ internal data class CosmicEpisode(
     val x: Float = .5f,
     val y: Float = .37f,
     val serial: Int = 0,
-    val intensity: CosmicEventIntensity = CosmicEventIntensity.NORMAL
+    val intensity: CosmicEventIntensity = CosmicEventIntensity.NORMAL,
+    val sourceId: Int? = null
 ) {
     val progress: Float get() = (age / duration).coerceIn(0f, 1f)
+    val pressureRadius: Float
+        get() = .026f + (intensity.radius - .026f) *
+            sqrt((age / (duration * .75f)).coerceIn(0f, 1f))
     val alpha: Float get() {
         val t = progress
         return (min(1f, t * 5f) * min(1f, (1f - t) * 5f)).coerceIn(0f, 1f)
@@ -64,14 +69,26 @@ internal data class CelestialBody(
     val sizeFactor: Float = 1f,
     val material: MatterMaterial = MatterMaterial.ROCK,
     val temperature: Float = 300f,
-    val stellarClass: StellarClass = StellarClass.PLANET
+    val stellarClass: StellarClass = StellarClass.PLANET,
+    val isComet: Boolean = false
 )
 
 internal data class GrainRenderPair(
     val previous: FloatArray,
     val current: FloatArray,
-    val committedAtNanos: Long
+    val committedAtNanos: Long,
+    val intervalNanos: Long = 0L
+) {
+    fun blendAt(frameNanos: Long): Float =
+        if (intervalNanos <= 0L) 1f
+        else ((frameNanos - committedAtNanos).toFloat() / intervalNanos).coerceIn(0f, 1f)
+}
+
+internal data class ObservatoryStats(
+    val loose: Int = 0, val bound: Int = 0, val mass: Double = 0.0, val reactions: Int = 0
 )
+
+internal data class ImpactFlash(val x: Float, val y: Float, val energy: Float, val age: Float = 0f)
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
 
@@ -83,7 +100,8 @@ internal data class CosmicRemnant(
 internal class CosmicWorld(
     seed: Int = 42,
     initialMatterMode: MatterMode = MatterMode.BALANCED,
-    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE
+    initialPreset: CosmicPreset = CosmicPreset.DEEP_SPACE,
+    initialFrequency: EventFrequency = EventFrequency.NORMAL
 ) {
     private val random = Random(seed)
     var preset by mutableStateOf(initialPreset)
@@ -101,14 +119,20 @@ internal class CosmicWorld(
     val grainFrame: FloatArray get() = grainFrames.current
     var physicsCostMs by mutableFloatStateOf(0f)
         private set
-    private fun publishGrains() {
+    val particleCount: Int get() = grainFrame.size / 4
+
+    private fun publishGrains(animate: Boolean = false) {
         val next = sand.renderFrame()
-        val old = grainFrames.current
+        val old = grainFrames
+        val now = System.nanoTime()
+        val gap = now - old.committedAtNanos
+        val smooth = animate && old.current.size == next.size && gap <= 100_000_000L
         grainFrames = GrainRenderPair(
-            if (old.size == next.size) old else next,
-            next, System.nanoTime()
+            if (smooth) old.current else next, next, now,
+            if (smooth) gap.coerceIn(8_000_000L, 70_000_000L) else 0L
         )
     }
+
     var matterMode by mutableStateOf(initialMatterMode)
         private set
     @Synchronized
@@ -118,7 +142,7 @@ internal class CosmicWorld(
         sand.updateMode(value)
         // In the curated orbital scenes detail mode actually changes the
         // number of physically independent grains, not just an upper bound.
-        if (preset != CosmicPreset.DEEP_SPACE) reset()
+        if (preset != CosmicPreset.DEEP_SPACE || sand.grains.size > value.maxParticles) reset()
     }
     private val impactMoments = HashMap<Long, Float>()
     private fun newBodyId(): Int = idSequence++
@@ -144,7 +168,23 @@ internal class CosmicWorld(
     private var eventSerial = 0
     // Rare external arrivals: a fresh spherical GROUP of grains, not sprites.
     private var spawnAt = 46f
-    private var eventAt = 28f
+    var eventFrequency by mutableStateOf(initialFrequency)
+        private set
+    private var eventAt = initialFrequency.nextDelay(0f)
+    var impactFlashes by mutableStateOf<List<ImpactFlash>>(emptyList())
+        private set
+    private var lastImpactAt = -1f
+
+    private fun scheduleEvent() {
+        eventAt = elapsed + eventFrequency.nextDelay(random.nextFloat())
+    }
+
+    @Synchronized
+    fun updateEventFrequency(value: EventFrequency) {
+        if (eventFrequency == value) return
+        eventFrequency = value
+        scheduleEvent()
+    }
     private var lastBurstAt = -100f
     private val tunneled = mutableSetOf<Int>()
     private var nextMathAt = 13f
@@ -171,8 +211,10 @@ internal class CosmicWorld(
     private var brushPrevY = 0f
     private var brushGestureDistance = 0f
     private var brushInitialBodyCount = 0
-    private val replayBuffer = ArrayDeque<List<CelestialBody>>(32)
-    private val particleReplay = ArrayDeque<AstronomicalUniverse.Snapshot>(32)
+    private data class ReplayFrame(
+        val time: Float, val bodies: List<CelestialBody>, val particles: AstronomicalUniverse.Snapshot
+    )
+    private val replayBuffer = ArrayDeque<ReplayFrame>(32)
     private var replayTimer = 0f
     private var physicsFrameNumber = 0L
     private var cascadeBudget = 0
@@ -197,6 +239,15 @@ internal class CosmicWorld(
                 .50f, .50f, 10f,
                 if (matterMode == MatterMode.DETAILED) 1800 else 475,
                 .085f, .38f, rocky = true)
+            CosmicPreset.TWIN_GALAXIES -> bodies.forEachIndexed { index, body ->
+                sand.seedOrbitalDisk(body.x, body.y, body.mass,
+                    if (matterMode == MatterMode.DETAILED) 1240 else 285,
+                    .054f, .195f, rocky = index == 0, vx = body.vx, vy = body.vy,
+                    spin = if (index == 0) 1 else -1, spiral = true)
+            }
+            CosmicPreset.WHITE_DWARF -> sand.seedOrbitalDisk(
+                .50f, .53f, 9f, if (matterMode == MatterMode.DETAILED) 600 else 230,
+                .05f, .082f, rocky = true)
             else -> Unit
         }
         previousBodies = bodies
@@ -214,9 +265,11 @@ internal class CosmicWorld(
     @Synchronized
     fun updateMaximumBodies(value: Int) {
         maxBodies=value.coerceIn(12,64)
-        if(bodies.size>maxBodies){
-            bodies=bodies.take(maxBodies)
-            previousBodies=bodies
+        if (bodies.size > maxBodies) {
+            sand.releaseOwners(bodies.drop(maxBodies).map { it.id }.toSet())
+            bodies = bodies.take(maxBodies)
+            previousBodies = bodies
+            clearReplay()
         }
     }
     @Synchronized
@@ -255,15 +308,36 @@ internal class CosmicWorld(
     @Synchronized
     fun createObject(material: MatterMaterial, mass: Float,
         px: Float = .68f, py: Float = .38f): Boolean {
-        if (bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles)
-            return false
-        val m = mass.coerceIn(.04f,24f)
-        val classType = when (material) {
+        val type = when (material) {
             MatterMaterial.HYDROGEN -> StellarClass.STAR
             MatterMaterial.PLASMA -> StellarClass.QUASAR
             MatterMaterial.AMMONIA, MatterMaterial.METHANE -> StellarClass.CLOUD
             else -> StellarClass.PLANET
         }
+        val temperature = when (type) {
+            StellarClass.STAR -> 5300f
+            StellarClass.QUASAR -> 6400f
+            StellarClass.CLOUD -> 175f
+            StellarClass.PLANET -> if (material == MatterMaterial.MAGMA) 2100f else 290f
+        }
+        return createObject(material, type, mass, temperature, 1f, px, py)
+    }
+
+    @Synchronized
+    fun createObject(objectType: ObservatoryObject, mass: Float): Boolean {
+        val angle = idSequence * 2.3999632f
+        return createObject(objectType.material, objectType.type, mass, objectType.temperature,
+            objectType.sizeFactor, .5f + .27f * cos(angle), .5f + .27f * sin(angle),
+            isComet = objectType == ObservatoryObject.COMET)
+    }
+
+    private fun createObject(
+        material: MatterMaterial, classType: StellarClass, mass: Float, temperature: Float,
+        sizeFactor: Float, px: Float, py: Float, isComet: Boolean = false
+    ): Boolean {
+        if (!mass.isFinite() || !px.isFinite() || !py.isFinite() ||
+            bodies.size >= maxBodies || sand.grains.size >= matterMode.maxParticles) return false
+        val m = mass.coerceIn(.04f, 24f)
         val core = bodies.maxByOrNull { it.mass }
         val x = px.coerceIn(.12f,.87f)
         val y = py.coerceIn(.12f,.87f)
@@ -271,7 +345,7 @@ internal class CosmicWorld(
         val dy = y - (core?.y ?: .5f)
         val r = max(hypot(dx,dy),.09f)
         // Tangential orbit relative to the actual dominant body.
-        val speed = sqrt(.000052f * (core?.mass ?: 2f) / r)
+        val speed = circularOrbitSpeed((core?.mass ?: 2f) + m, r, gravity)
             .coerceAtMost(.085f)
         val body = CelestialBody(
             idSequence++, if (classType == StellarClass.STAR) 12 else 2,
@@ -279,16 +353,11 @@ internal class CosmicWorld(
             (core?.vx ?: 0f) -dy/r*speed,
             (core?.vy ?: 0f) +dx/r*speed,
             lifetime = 3600f,
-            sizeFactor = (.65f + .20f*sqrt(m)).coerceIn(.6f,1.7f),
+            sizeFactor = ((.65f + .20f*sqrt(m)) * sizeFactor).coerceIn(.45f, 2.25f),
             material = material,
-            temperature = when (classType) {
-                StellarClass.STAR -> 5300f
-                StellarClass.QUASAR -> 6400f
-                StellarClass.CLOUD -> 175f
-                StellarClass.PLANET -> if (material == MatterMaterial.MAGMA)
-                    2100f else 290f
-            },
-            stellarClass = classType
+            temperature = temperature,
+            stellarClass = classType,
+            isComet = isComet
         )
         val requested = when {
             m < .20f -> 15
@@ -309,8 +378,10 @@ internal class CosmicWorld(
     fun applyObservatoryImpulse(x: Float, y: Float,
         strength: Float): Boolean {
         if (sand.grains.isEmpty()) return false
-        sand.perturb(x.coerceIn(0f,1f), y.coerceIn(0f,1f),
-            strength.coerceIn(.02f,.30f))
+        val px = x.coerceIn(0f, 1f)
+        val py = y.coerceIn(0f, 1f)
+        sand.perturb(px, py, strength.coerceIn(.02f,.30f))
+        ripples = (ripples + SpaceRipple(px, py)).takeLast(4)
         bodies = sand.summarizeBodies(bodies)
         publishGrains()
         return true
@@ -368,6 +439,12 @@ internal class CosmicWorld(
             added++
         }
         publishGrains()
+    }
+
+    @Synchronized
+    fun stats(): ObservatoryStats {
+        val loose = sand.grains.count { it.owner < 0 }
+        return ObservatoryStats(loose, sand.grains.size - loose, sand.totals().mass, sand.reactions)
     }
 
     @Synchronized
@@ -478,19 +555,21 @@ internal class CosmicWorld(
         }
         if (kind == CosmicEventKind.QUIET) {
             episode = CosmicEpisode()
-            eventAt = elapsed + 32f
+            scheduleEvent()
             return
         }
         eventSerial++
         tunneled.clear()
         eventHistory = (eventHistory +
-            (kind.name + " / " + intensity.label)).takeLast(10)
+            (SpaceEvent.titleOf(kind) + " · " + intensity.label)).takeLast(10)
         // Anchor active physics to REAL matter rather than an empty corner.
         // Solar phenomena prefer hot gas, tides prefer a compact massive core.
         val selectedSource = when (kind) {
             CosmicEventKind.SOLAR_WIND, CosmicEventKind.IONIZATION_FRONT,
             CosmicEventKind.MAGNETAR_FLARE, CosmicEventKind.PULSAR,
-            CosmicEventKind.QUASAR_JET, CosmicEventKind.SOLAR_FLARE ->
+            CosmicEventKind.QUASAR_JET, CosmicEventKind.SOLAR_FLARE,
+            CosmicEventKind.SUPERNOVA, CosmicEventKind.MAGNETIC_RECONNECTION,
+            CosmicEventKind.COMET_FLYBY ->
                 bodies.filter { it.stellarClass == StellarClass.STAR ||
                     it.stellarClass == StellarClass.QUASAR }
                     .maxByOrNull { it.mass }
@@ -543,6 +622,10 @@ internal class CosmicWorld(
                 CosmicEventKind.SOLAR_WIND -> 14f
                 CosmicEventKind.TIDAL_PULSE -> 13f
                 CosmicEventKind.IONIZATION_FRONT -> 12f
+                CosmicEventKind.SUPERNOVA -> 8f
+                CosmicEventKind.TIDAL_DISRUPTION -> 11f
+                CosmicEventKind.MAGNETIC_RECONNECTION -> 10f
+                CosmicEventKind.COMET_FLYBY -> 14f
                 else -> 1f
             },
             // Pulsars and quasars act on actual existing hot bodies, not
@@ -550,11 +633,11 @@ internal class CosmicWorld(
             x = selectedSource?.x ?: .5f,
             y = selectedSource?.y ?: .5f,
             serial = eventSerial,
-            intensity = intensity
+            intensity = intensity,
+            sourceId = selectedSource?.id
         )
-        // The next event starts roughly one minute after this one begins,
-        // not one minute *after* its end. Event durations stay much shorter.
-        eventAt = elapsed + 32f + random.nextFloat() * 16f
+        scheduleEvent()
+        if (kind == CosmicEventKind.COMET_FLYBY) spawnComet(intensity, episode.x, episode.y)
         if (kind == CosmicEventKind.METEORS) {
             // All six templates can witness incoming matter. In curated
             // orbits keep the external impact small unless the user selects
@@ -620,32 +703,26 @@ internal class CosmicWorld(
         publishGrains()
     }
 
-    /**
-     * Only events that operate on real grains are scheduled automatically.
-     * Historical names remain valid for terminal commands/old saves, but no
-     * geometric-only anomalies compete with the physical simulation.
-     */
-    private fun chooseEvent(): CosmicEventKind = when (random.nextInt(184)) {
-        in 0..19 -> CosmicEventKind.METEORS
-        in 20..35 -> CosmicEventKind.PULSAR
-        in 36..49 -> CosmicEventKind.QUASAR_JET
-        in 50..63 -> CosmicEventKind.SINGULARITY
-        in 64..75 -> CosmicEventKind.NOVA
-        in 76..87 -> CosmicEventKind.SOLAR_FLARE
-        in 88..97 -> CosmicEventKind.COMET_SWARM
-        in 98..105 -> CosmicEventKind.ACCRETION_BURST
-        in 106..113 -> CosmicEventKind.STELLAR_NURSERY
-        in 114..119 -> CosmicEventKind.PLASMA_STORM
-        in 120..124 -> CosmicEventKind.PARTICLE_CASCADE
-        in 125..132 -> CosmicEventKind.CRYO_TIDE
-        in 133..140 -> CosmicEventKind.MAGNETAR_FLARE
-        in 141..150 -> CosmicEventKind.THERMAL_SPIKE
-        in 151..156 -> CosmicEventKind.COSMIC_SHOCK
-        in 157..165 -> CosmicEventKind.SOLAR_WIND
-        in 166..173 -> CosmicEventKind.TIDAL_PULSE
-        in 174..181 -> CosmicEventKind.IONIZATION_FRONT
-        else -> CosmicEventKind.CRYSTALLIZATION
+    private fun spawnComet(intensity: CosmicEventIntensity, targetX: Float, targetY: Float) {
+        val count = 24 + intensity.ordinal * 15
+        if (bodies.size >= maxBodies || sand.grains.size + count > matterMode.maxParticles) return
+        val fromLeft = targetX >= .5f
+        val x = if (fromLeft) -.05f else 1.05f
+        val y = (targetY + .19f).coerceIn(.15f, .87f)
+        val dx = targetX - x
+        val dy = targetY - y
+        val speed = .13f + .028f * intensity.ordinal
+        val distance = hypot(dx, dy)
+        val comet = CelestialBody(idSequence++, 1, .12f + .14f * intensity.ordinal,
+            1f, x, y, dx * speed / distance, dy * speed / distance,
+            lifetime = 3600f, material = MatterMaterial.ICE, temperature = 90f, isComet = true)
+        sand.seed(comet, count)
+        bodies += comet
+        publishGrains()
     }
+
+    private fun chooseEvent(): CosmicEventKind =
+        SpaceEvent.fromRoll(random.nextInt(SpaceEvent.totalWeight))
 
     /** One-click random cosmic event, or a user-requested power level. */
     @Synchronized
@@ -665,7 +742,7 @@ internal class CosmicWorld(
         // An explicitly requested lesson takes priority over ongoing scenery.
         if (episode.kind != CosmicEventKind.QUIET) {
             episode = CosmicEpisode()
-            eventAt = elapsed + 22f
+            scheduleEvent()
         }
         mathPinned = false
         pinnedFor = 0f
@@ -783,6 +860,12 @@ internal class CosmicWorld(
     }
 
     @Synchronized
+    fun cancelBrush() {
+        brushPoint = null
+        brushMass = 0f
+    }
+
+    @Synchronized
     fun spawnBinary() {
         if (bodies.size > maxBodies-2) return
         val x = .20f + random.nextFloat() * .56f
@@ -805,22 +888,32 @@ internal class CosmicWorld(
      */
     @Synchronized
     fun rewind(seconds: Int = 3): Boolean {
-        if (replayBuffer.isEmpty() || particleReplay.isEmpty()) return false
-        val index = (replayBuffer.size - 1 - seconds.coerceIn(0, 8) *
-            if (sand.grains.size >= 1800) 1 else 4)
-            .coerceAtLeast(0)
-        val snapshot = replayBuffer.elementAt(index)
-        sand.restore(particleReplay.elementAt(index))
+        if (replayBuffer.isEmpty()) return false
+        val target = elapsed - seconds.coerceIn(0, 8)
+        val index = replayBuffer.indexOfLast { it.time <= target }.coerceAtLeast(0)
+        val frame = replayBuffer[index]
+        sand.restore(frame.particles)
+        bodies = frame.bodies
+        previousBodies = frame.bodies
+        elapsed = frame.time
+        episode = CosmicEpisode()
+        impactFlashes = emptyList()
+        ripples = emptyList()
+        lastImpactAt = -1f
+        selectedBody = null
+        mathMoment = MathMoment()
+        mathPinned = false
+        nextMathAt = elapsed + 13f
+        scheduleEvent()
+        while (replayBuffer.lastIndex > index) replayBuffer.removeLast()
+        replayTimer = 0f
         publishGrains()
-        bodies = snapshot
-        previousBodies = snapshot
         return true
     }
 
     @Synchronized
     fun clearReplay() {
         replayBuffer.clear()
-        particleReplay.clear()
         replayTimer = 0f
     }
 
@@ -841,7 +934,9 @@ internal class CosmicWorld(
         episode = CosmicEpisode()
         depthShift = 0f
         spawnAt = 46f
-        eventAt = 28f
+        eventAt = eventFrequency.nextDelay(0f)
+        impactFlashes = emptyList()
+        lastImpactAt = -1f
         lastBurstAt = -100f
         tunneled.clear()
         mathMoment = MathMoment()
@@ -871,9 +966,9 @@ internal class CosmicWorld(
      */
     @Synchronized
     fun step(dt: Float) {
-        if (timeScale == 0f) return
+        if (timeScale == 0f || !dt.isFinite() || dt <= 0f) return
         val startedAt = System.nanoTime()
-        val h = (dt.coerceIn(.004f, .034f) * timeScale).coerceAtMost(.034f)
+        val h = dt.coerceAtMost(1f / 30f) * timeScale
         elapsed += h
         inspectAge += h
         if (mathPinned) {
@@ -882,9 +977,11 @@ internal class CosmicWorld(
         }
         if (inspectAge > 4.5f) selectedBody = null
         depthShift *= (1f - .5f * h)
-        ripples = ripples.map { it.copy(age = it.age + h) }
-            .filter { it.age < 1.7f }
-        remnants = remnants.map { it.copy(age = it.age + h) }
+        if (ripples.isNotEmpty()) ripples = ripples.map { it.copy(age = it.age + h) }
+            .filter { it.age < .8f }
+        if (impactFlashes.isNotEmpty()) impactFlashes = impactFlashes
+            .map { it.copy(age = it.age + h) }.filter { it.age < 1.25f }
+        if (remnants.isNotEmpty()) remnants = remnants.map { it.copy(age = it.age + h) }
             .filter { it.age < it.lifetime }
 
         if (mathMoment.active) {
@@ -894,7 +991,7 @@ internal class CosmicWorld(
                 else mathMoment.copy(age = age)
             }
         } else if (episode.kind == CosmicEventKind.QUIET &&
-            elapsed >= nextMathAt) {
+            elapsed >= nextMathAt && elapsed < eventAt) {
             summonMath()
         }
 
@@ -909,8 +1006,13 @@ internal class CosmicWorld(
                 }
                 episode = CosmicEpisode()
                 // Next start was scheduled when this episode began.
-            } else episode = active.copy(age = active.age + h)
-        } else if (!mathMoment.active && elapsed >= eventAt) {
+            } else {
+                val source = if (active.kind == CosmicEventKind.TIDAL_DISRUPTION)
+                    bodies.firstOrNull { it.id == active.sourceId } else null
+                episode = active.copy(age = active.age + h,
+                    x = source?.x ?: active.x, y = source?.y ?: active.y)
+            }
+        } else if (!mathPinned && elapsed >= eventAt) {
             trigger(chooseEvent(), chooseIntensity())
         }
 
@@ -928,34 +1030,31 @@ internal class CosmicWorld(
         }
         val prior = bodies
         sand.step(h, gravity, episode, wallsEnabled)
-        physicsFrameNumber++
-        // Grain positions are published EVERY physics frame, but 4500-grain
-        // clouds do not need to rebuild the body's Compose State, object
-        // ownership and hierarchy at 30Hz. This throttles expensive
-        // recompositions without slowing down particle integration.
-        val updateSceneMetadata = sand.grains.size < 1600 ||
-            physicsFrameNumber % 4L == 0L
-        if (updateSceneMetadata) {
-            previousBodies = prior
-            var current = sand.summarizeBodies(prior)
-            sand.relabelCaptured(current)
-            val newborns = sand.discoverClumps(current, maxBodies, ::newBodyId)
-            current = sand.mergeCaptureLabels(current + newborns)
-            bodies = sand.summarizeBodies(current)
+        val impact = sand.lastImpact
+        if (impact != null && elapsed - lastImpactAt >= .22f) {
+            impactFlashes = (impactFlashes + impact).takeLast(5)
+            lastImpactAt = elapsed
         }
-        publishGrains()
+
+        physicsFrameNumber++
+        val heavy = sand.grains.size >= 1600
+        val labelsChanged = sand.updateOwnership(prior, maxBodies, ::newBodyId)
+        if (labelsChanged != null || physicsFrameNumber % (if (heavy) 4L else 2L) == 0L) {
+            previousBodies = prior
+            bodies = sand.summarizeBodies(labelsChanged ?: prior)
+        }
+        publishGrains(animate = true)
+
         replayTimer += h
-        val heavy = sand.grains.size >= 1800
         val snapshotInterval = if (heavy) 1f else .25f
         val historyCapacity = if (heavy) 12 else 32
         if (replayTimer >= snapshotInterval) {
-            replayBuffer.addLast(prior)
-            particleReplay.addLast(sand.snapshot())
-            if (replayBuffer.size > historyCapacity) replayBuffer.removeFirst()
-            if (particleReplay.size > historyCapacity) particleReplay.removeFirst()
-            replayTimer = 0f
+            replayBuffer.addLast(ReplayFrame(elapsed, bodies, sand.snapshot()))
+            while (replayBuffer.size > historyCapacity) replayBuffer.removeFirst()
+            replayTimer -= snapshotInterval
         }
-        physicsCostMs = ((System.nanoTime()-startedAt) / 1_000_000.0)
-            .toFloat()
+        if (physicsFrameNumber % 12 == 0L) {
+            physicsCostMs = ((System.nanoTime() - startedAt) / 1_000_000.0).toFloat()
+        }
     }
 }

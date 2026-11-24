@@ -37,6 +37,8 @@ internal object AxiomBackup {
             put("maxBodies", prefs.getInt("max_bodies",23))
             put("walls", prefs.getBoolean("wall_mode",false))
             put("matterMode", prefs.getString("matter_mode", MatterMode.BALANCED.name))
+            put("cosmicPreset", prefs.getString("cosmic_preset", CosmicPreset.SOLAR_SYSTEM.name))
+            put("eventFrequency", prefs.getString("cosmic_frequency", EventFrequency.NORMAL.name))
             put("favorites", JSONArray(
                 prefs.getStringSet("favorites", emptySet())?.sorted() ?: emptyList<String>()
             ))
@@ -81,6 +83,12 @@ internal object AxiomBackup {
             .putBoolean("wall_mode",json.optBoolean("walls",false))
             .putString("matter_mode",matterModeFromPreference(
                 json.optString("matterMode",MatterMode.BALANCED.name)).name)
+            .apply {
+                val preset = CosmicPreset.entries.firstOrNull { it.name == json.optString("cosmicPreset") }
+                if (preset != null) putString("cosmic_preset", preset.name)
+                if (json.has("eventFrequency")) putString("cosmic_frequency",
+                    eventFrequencyFromPreference(json.optString("eventFrequency")).name)
+            }
             .putStringSet("favorites", favorites)
             .putStringSet("space_work", work)
             .putStringSet("space_tools", tools)

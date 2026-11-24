@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 set -uo pipefail
 mkdir -p ui-artifacts
-gradle --no-daemon :app:connectedDebugAndroidTest
-ui_result=$?
-adb pull /sdcard/Download/axiom-ui ui-artifacts/ || true
-adb logcat -d -s AndroidRuntime:E AXIOM_UI:I > ui-artifacts/android-runtime.log || true
-if (( ui_result != 0 )); then exit "$ui_result"; fi
+if [[ ${AXIOM_VERIFY_ONLY:-false} != true ]]; then
+    gradle --no-daemon :app:connectedDebugAndroidTest
+    ui_result=$?
+    adb pull /sdcard/Download/axiom-ui ui-artifacts/ || true
+    adb logcat -d -s AndroidRuntime:E AXIOM_UI:I > ui-artifacts/android-runtime.log || true
+    if (( ui_result != 0 )); then exit "$ui_result"; fi
+fi
 if [[ $# == 0 ]]; then exit 0; fi
 
 # The optimized artifact and debug instrumentation can have different test keys.
 set -e
-adb uninstall dev.axiom.launcher
+if adb shell pm path dev.axiom.launcher | rg -q '^package:'; then
+    adb uninstall dev.axiom.launcher
+fi
 adb install "$1"
 adb logcat -c
 adb shell am start -W -n dev.axiom.launcher/.MainActivity | tee ui-artifacts/optimized-start.txt

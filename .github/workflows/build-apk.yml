@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: 'Existing workflow run ID for a standalone APK launch check'
+        required: false
+        type: string
 
 concurrency:
   group: axiom-${{ github.workflow }}-${{ github.ref }}
@@ -15,6 +20,7 @@ permissions:
 
 jobs:
   android-debug:
+    if: ${{ inputs.artifact_run_id == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -72,6 +78,10 @@ jobs:
   android-ui:
     name: Native Android UI and screenshots
     needs: android-debug
+    if: ${{ always() && (needs.android-debug.result == 'success' || inputs.artifact_run_id != '') }}
+    permissions:
+      actions: read
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -89,6 +99,8 @@ jobs:
         with:
           name: AXIOM-optimized-test-APK
           path: dist
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
       - name: Enable hosted runner KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -96,6 +108,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Run native Android checks
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          AXIOM_VERIFY_ONLY: ${{ inputs.artifact_run_id != '' }}
         with:
           api-level: 30
           target: default

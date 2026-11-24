@@ -689,9 +689,6 @@ internal class AstronomicalUniverse {
     }
 
     private fun accelerations(gravity: Float) {
-        java.util.Arrays.fill(fx, 0, grains.size, 0.0)
-        java.util.Arrays.fill(fy, 0, grains.size, 0.0)
-        gravityVisits = 0
         val g = ASTRONOMICAL_G * gravity
         val event = activeEpisode
         val boost = when (event.kind) {
@@ -701,18 +698,25 @@ internal class AstronomicalUniverse {
             else -> 0.0
         }
         for (c in centers) {
-            val linked = if (event.sourceId != null) c.id == event.sourceId
+            val linked = boost > 0 && if (event.sourceId != null) c.id == event.sourceId
                 else (c.x-event.x)*(c.x-event.x) + (c.y-event.y)*(c.y-event.y) < .055*.055
-            c.fieldMass = g * c.mass * if (boost > 0 && linked)
+            c.fieldMass = g * c.mass * if (linked)
                 1.0 + boost * event.intensity.heatFactor else 1.0
         }
         val beginning = System.nanoTime()
+        var mass = 0.0
+        var momentumX = 0.0
+        var momentumY = 0.0
+        var visits = centers.size.toLong() * grains.size
         // Every source is one MONOPOLE representing the mass of a genuine
         // connected particle cloud, never a second copy of that matter.
         for (i in grains.indices) {
             val p = grains[i]
             val own = ownCenters[i]
+            var ax = 0.0
+            var ay = 0.0
             if (own != null) {
+                visits--
                 val dx = p.x - own.x; val dy = p.y - own.y
                 // Self-gravity + pressure potential in a uniform-density
                 // sphere. The restoring field is linear near the center.
@@ -728,16 +732,16 @@ internal class AstronomicalUniverse {
                     MatterMaterial.WATER, MatterMaterial.MAGMA -> 2.05
                     else -> if (gas) 1.25 else 3.30
                 }
-                fx[i] -= k * dx
-                fy[i] -= k * dy
+                ax -= k * dx
+                ay -= k * dy
                 val damping = when (p.material) {
                     MatterMaterial.MAGMA, MatterMaterial.WATER -> .53
                     MatterMaterial.ICE -> .38
                     MatterMaterial.IRON, MatterMaterial.NICKEL -> .22
                     else -> if (gas) .08 else .28
                 }
-                fx[i] -= damping * (p.vx - own.vx)
-                fy[i] -= damping * (p.vy - own.vy)
+                ax -= damping * (p.vx - own.vx)
+                ay -= damping * (p.vy - own.vy)
             }
             for (j in centers.indices) {
                 val c = centers[j]
@@ -745,21 +749,20 @@ internal class AstronomicalUniverse {
                 val dx = c.x - p.x; val dy = c.y - p.y
                 val r2 = dx*dx+dy*dy+ORBITAL_SOFTENING_SQUARED
                 val inv = 1.0 / (r2 * sqrt(r2))
-                fx[i] += c.fieldMass * dx * inv
-                fy[i] += c.fieldMass * dy * inv
-                gravityVisits++
+                ax += c.fieldMass * dx * inv
+                ay += c.fieldMass * dy * inv
             }
-        }
-        // Correct the global numerical COM drift from the monopole
-        // approximation. It does not change any relative acceleration.
-        var mass = 0.0; var px = 0.0; var py = 0.0
-        for (i in grains.indices) {
-            val m = grains[i].mass.toDouble()
+            fx[i] = ax
+            fy[i] = ay
+            val m = p.mass.toDouble()
             mass += m
-            px += m*fx[i]; py += m*fy[i]
+            momentumX += m * ax
+            momentumY += m * ay
         }
+        gravityVisits = visits
+        // Correct the global numerical COM drift from the monopoles.
         if (mass > 0) {
-            val ax = px / mass; val ay = py / mass
+            val ax = momentumX / mass; val ay = momentumY / mass
             for (i in grains.indices) { fx[i] -= ax; fy[i] -= ay }
         }
         lastGravityMs = (System.nanoTime() - beginning) / 1e6
@@ -785,14 +788,16 @@ internal class AstronomicalUniverse {
                         if (cxCell[other] != cx || cyCell[other] != cy) continue
                         val q = grains[other]
                         var dx = q.x-p.x; var dy = q.y-p.y
+                        val close = abs(dx) <= maxContactRange && abs(dy) <= maxContactRange
+                        if (!close && !swept) continue
+                        val relativeX = p.vx - q.vx
+                        val relativeY = p.vy - q.vy
+                        val eligible = swept && relativeX * relativeX + relativeY * relativeY > .115f*.115f
+                        if (!close && !eligible) continue
                         val radii = p.collisionRadius + q.collisionRadius
                         val contact2 = radii * radii
                         val r2 = dx*dx + dy*dy
                         var impactFraction = 1.0
-                        val close = abs(dx) <= maxContactRange && abs(dy) <= maxContactRange
-                        val eligible = swept &&
-                            ((p.vx-q.vx)*(p.vx-q.vx) + (p.vy-q.vy)*(p.vy-q.vy) > .115f*.115f)
-                        if (!close && !eligible) continue
                         if (eligible) {
                             val priorX = (startX[other] - startX[i]).toDouble()
                             val priorY = (startY[other] - startY[i]).toDouble()
@@ -957,8 +962,13 @@ internal class AstronomicalUniverse {
         val duration = min(dt, 1f / 15f)
         if (tick == 0) speedSquared = grains.maxOf { it.vx * it.vx + it.vy * it.vy }
         val fast = speedSquared > .14f * .14f
-        val baseStep = if (fast && grains.size < 1600) 1f / 90f
-            else if (fast || grains.size < 1000) 1f / 60f else 1f / 30f
+        // Keep a dense simulation on its normal step budget. The local
+        // sweep handles crossings without rerunning gravity for every grain.
+        val baseStep = when {
+            fast && grains.size < 1600 -> 1f / 90f
+            grains.size < 1000 -> 1f / 60f
+            else -> 1f / 30f
+        }
         val substeps = kotlin.math.ceil(duration / baseStep).toInt().coerceIn(1, 5)
         val h = duration.toDouble() / substeps
         speedSquared = 0f
@@ -1115,7 +1125,10 @@ internal class AstronomicalUniverse {
         if (tick % 12 == 0) relabelCaptured()
         val current = summarizeBodies(bodies)
         val newborn = if (tick % 100 == 0) discoverClumps(current, maxBodies, nextId) else emptyList()
-        return if (tick % 42 == 0) mergeCaptureLabels(current + newborn) else current + newborn
+        val updated = current + newborn
+        if (tick % 42 != 0) return updated
+        val merged = mergeCaptureLabels(updated)
+        return if (merged.size < updated.size) summarizeBodies(merged) else updated
     }
 
     private fun relabelCaptured() {

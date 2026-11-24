@@ -1041,7 +1041,7 @@ internal class CosmicWorld(
         val labelsChanged = sand.updateOwnership(prior, maxBodies, ::newBodyId)
         if (labelsChanged != null || physicsFrameNumber % (if (heavy) 4L else 2L) == 0L) {
             previousBodies = prior
-            bodies = sand.summarizeBodies(labelsChanged ?: prior)
+            bodies = labelsChanged ?: sand.summarizeBodies(prior)
         }
         publishGrains(animate = true)
 

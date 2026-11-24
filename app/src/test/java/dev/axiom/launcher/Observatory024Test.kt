@@ -64,6 +64,26 @@ class Observatory024Test {
         assertNotNull(universe.lastImpact)
     }
 
+    @Test fun denseWorldDetectsFastCrossingWithinOneGravityPass() {
+        val universe = AstronomicalUniverse()
+        universe.updateMode(MatterMode.DETAILED)
+        val a = SandGrain(1, .498f, .50f, .24f, 0f, .03f, .001,
+            MatterMaterial.IRON, 1)
+        val b = SandGrain(2, .506f, .50f, -.24f, 0f, .03f, .001,
+            MatterMaterial.ROCK, 2)
+        universe.grains.addAll(listOf(a, b))
+        repeat(1800) { index ->
+            universe.grains.add(SandGrain(index + 10,
+                1.4f + (index % 45) * .02f, 1.4f + (index / 45) * .02f,
+                0f, 0f, .01f, .001, MatterMaterial.ROCK))
+        }
+        val before = universe.totals()
+        universe.step(1f / 30f, 0f)
+        assertEquals(1L, universe.gravityRebuilds)
+        assertTrue(a.vx < 0f && b.vx > 0f)
+        assertEquals(before.momentumX, universe.totals().momentumX, 1e-7)
+    }
+
     @Test fun rewindAndSceneResetDoNotInterpolateUnrelatedParticles() {
         val world = CosmicWorld(initialFrequency = EventFrequency.OFF)
         repeat(30) { world.step(1f / 60f) }

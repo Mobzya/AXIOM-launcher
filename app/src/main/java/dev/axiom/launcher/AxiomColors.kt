@@ -96,9 +96,9 @@ internal object AxiomColors {
         if(!matched){sceneAccent=null;return}
         val color=when(preset) {
             CosmicPreset.LIVING_SYSTEM,CosmicPreset.ASTEROID_CORRIDOR -> Color(0xffa6d8b5)
-            CosmicPreset.BLACK_HOLE_NURSERY,CosmicPreset.PULSAR_REEF -> Color(0xffc5b0e4)
-            CosmicPreset.QUANTUM_SHORES -> Color(0xff9bcfe5)
-            CosmicPreset.COLLISION_LAB,CosmicPreset.WHITE_DWARF_RELIC -> Color(0xffe1bd9a)
+            CosmicPreset.BLACK_HOLE_NURSERY,CosmicPreset.PULSAR_REEF,CosmicPreset.ROCHE_PASSAGE -> Color(0xffc5b0e4)
+            CosmicPreset.QUANTUM_SHORES,CosmicPreset.BLUE_NEBULA,CosmicPreset.FROZEN_OCEANS -> Color(0xff9bcfe5)
+            CosmicPreset.COLLISION_LAB,CosmicPreset.WHITE_DWARF_RELIC,CosmicPreset.GIANT_GRAZE -> Color(0xffe1bd9a)
             else -> Color(0xffa3d5cf)
         }
         sceneAccent=if(palette.light)Color(color.red*.48f,color.green*.48f,color.blue*.48f) else color

@@ -13,8 +13,8 @@ android {
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.26.0-living-cosmos"
+        versionCode = 28
+        versionName = "0.27.0-cosmic-observatory"
     }
 
     compileOptions {

@@ -1,12 +1,14 @@
 package dev.axiom.launcher
 
 internal enum class LaunchStyle(val title: String) {
-    ORBIT("По орбите"), RETROGRADE("Обратно"), REST("Без скорости"), ESCAPE("Пролёт")
+    ORBIT("По орбите"), RETROGRADE("Обратно"), REST("Без скорости"), ESCAPE("Пролёт"),
+    ECCENTRIC("Вытянутая орбита"), INFALL("Падение к центру")
 }
 
 internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
     val mass: Float, val temperature: Float, val classification: StellarClass,
-    val description: String, val nature:CelestialNature=CelestialNature.ORDINARY) {
+    val description: String, val nature:CelestialNature=CelestialNature.ORDINARY,
+    val scale: Float = 1f, val ringFraction: Float = 0f) {
     ROCKY("Каменный мир", MatterMaterial.ROCK, 1f, 290f, StellarClass.PLANET,
         "Железное ядро, силикатная мантия и каменная кора"),
     IRON("Металлическое ядро", MatterMaterial.IRON, 1.8f, 420f, StellarClass.PLANET,
@@ -56,7 +58,19 @@ internal enum class BodyRecipe(val title: String, val material: MatterMaterial,
     SULFUR_MOON("Серная луна", MatterMaterial.SULFUR, .23f, 670f, StellarClass.PLANET,
         "Сера и базальт, ударный нагрев может расплавить кору"),
     GRAPHITE("Графитовый мир", MatterMaterial.CARBON, 1.4f, 490f, StellarClass.PLANET,
-        "Железное ядро и мантия из углерода и кристаллов");
+        "Железное ядро и мантия из углерода и кристаллов"),
+    RING_GIANT("Кольцевой гигант", MatterMaterial.METHANE, 8.5f, 142f, StellarClass.PLANET,
+        "Ледяное кольцо состоит из свободных частиц и меняется при пролётах", scale = 1.15f, ringFraction = .065f),
+    PUFFY_GIANT("Раздутый гигант", MatterMaterial.HYDROGEN, 4.1f, 1080f, StellarClass.PLANET,
+        "Горячая разреженная оболочка слабо удерживает внешние слои", scale = 1.7f),
+    SUPER_EARTH("Каменная суперземля", MatterMaterial.SILICATE, 3.8f, 325f, StellarClass.PLANET,
+        "Массивная каменная мантия над железным ядром", scale = .88f),
+    SUBGLACIAL("Подлёдный океан", MatterMaterial.ICE, .55f, 214f, StellarClass.PLANET,
+        "Ледяная кора, жидкая вода под ней и твёрдое ядро"),
+    METAL_DWARF("Металлический карлик", MatterMaterial.NICKEL, .28f, 480f, StellarClass.PLANET,
+        "Плотный небольшой мир, богатый никелем и железом", scale = .72f),
+    DUST_PROTO("Пылевая протопланета", MatterMaterial.SILICATE, .66f, 210f, StellarClass.PLANET,
+        "Молодое каменное ядро и свободный пояс ледяной пыли", scale = .9f, ringFraction = .12f);
 
     val maximumMass:Float get()=when(this) {
         SUPERMASSIVE -> 6400f

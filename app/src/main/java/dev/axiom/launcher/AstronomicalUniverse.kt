@@ -38,6 +38,12 @@ internal class AstronomicalUniverse {
     private val orbitalSoft2 = OrbitMechanics.SOFTENING * OrbitMechanics.SOFTENING
     private val contactSize = .0072
     private val maxContactRange = .0060
+    // Visit the home cell and its immediate neighbors before the swept fringe.
+    private val contactOffsets = intArrayOf(
+        0, 0, -1, 0, 1, 0, 0, -1, 0, 1, -1, -1, 1, -1, -1, 1, 1, 1,
+        -2, 0, 2, 0, 0, -2, 0, 2, -2, -1, -2, 1, 2, -1, 2, 1,
+        -1, -2, 1, -2, -1, 2, 1, 2, -2, -2, -2, 2, 2, -2, 2, 2
+    )
     private val cellMask = 16383
     private val cellHeads = IntArray(cellMask + 1)
     private var next = IntArray(0)
@@ -56,6 +62,7 @@ internal class AstronomicalUniverse {
     private var impactY = 0f
     private val centralRadius = HashMap<Int, Double>()
     private var nextId = 1
+    fun nextGrainId(): Int = nextId++
     private var tick = 0
     private var pulseKey = -1
     private var activeEpisode = CosmicEpisode()
@@ -74,6 +81,8 @@ internal class AstronomicalUniverse {
     var radiatedHeat = 0.0
         private set
     var externalRadiationEnergy = 0.0
+        private set
+    var externalFrontEnergy = 0.0
         private set
     private var exposureSerial = -1
     private val exposedGrains = HashSet<Int>()
@@ -116,7 +125,8 @@ internal class AstronomicalUniverse {
         val radiatedHeat: Double = 0.0,
         val externalEnergy:Double = 0.0,
         val exposureSerial:Int = -1,
-        val exposedIds:IntArray = IntArray(0)
+        val exposedIds:IntArray = IntArray(0),
+        val externalFrontEnergy: Double = 0.0
     )
 
     fun snapshot(): Snapshot {
@@ -134,7 +144,8 @@ internal class AstronomicalUniverse {
             m[b + 2] = p.material.ordinal
         }
         return Snapshot(v, h, m, tick, pulseKey, centralRadius.toMap(),
-            reactions,phaseTransitions,radiatedHeat,externalRadiationEnergy,exposureSerial,exposedGrains.toIntArray())
+            reactions,phaseTransitions,radiatedHeat,externalRadiationEnergy,exposureSerial,exposedGrains.toIntArray(),
+            externalFrontEnergy)
     }
 
     fun restore(frame: Snapshot) {
@@ -156,6 +167,7 @@ internal class AstronomicalUniverse {
         reactions = frame.reactions; phaseTransitions = frame.phaseTransitions
         radiatedHeat = frame.radiatedHeat
         externalRadiationEnergy=frame.externalEnergy;exposureSerial=frame.exposureSerial
+        externalFrontEnergy = frame.externalFrontEnergy
         exposedGrains.clear();exposedGrains.addAll(frame.exposedIds.toList())
         centralRadius.putAll(frame.radii)
         buildCenters()
@@ -193,6 +205,7 @@ internal class AstronomicalUniverse {
         phaseTransitions = 0
         radiatedHeat = 0.0
         externalRadiationEnergy=0.0;exposureSerial=-1;exposedGrains.clear()
+        externalFrontEnergy = 0.0
     }
 
     /**
@@ -210,7 +223,7 @@ internal class AstronomicalUniverse {
         if (n <= 0) return
         if(body.nature==CelestialNature.BLACK_HOLE) {
             centralRadius[body.id]=.003
-            grains.add(SandGrain(nextId++,body.x,body.y,body.vx,body.vy,
+            grains.add(SandGrain(nextGrainId(),body.x,body.y,body.vx,body.vy,
                 body.mass,body.mass*.000001*body.temperature,MatterMaterial.CARBON,body.id))
             return
         }
@@ -236,6 +249,12 @@ internal class AstronomicalUniverse {
             val material = when {
                 body.nature==CelestialNature.NEUTRON_STAR -> if(portion<15)MatterMaterial.PLASMA else MatterMaterial.NICKEL
                 body.nature==CelestialNature.WHITE_DWARF -> if(portion<60)MatterMaterial.HELIUM else MatterMaterial.CARBON
+                body.subsurfaceOcean -> when {
+                    radial < .30 -> MatterMaterial.IRON
+                    radial < .48 -> MatterMaterial.SILICATE
+                    radial < .78 -> MatterMaterial.WATER
+                    else -> MatterMaterial.ICE
+                }
                 else -> when (body.stellarClass) {
                 StellarClass.STAR -> when {
                     radial < .25 && portion < 24 -> MatterMaterial.PLASMA
@@ -310,10 +329,12 @@ internal class AstronomicalUniverse {
             }
             val mass = body.mass / n
             internalStiffness+=stiffness(material)
-            grains.add(SandGrain(nextId++,
+            val temperature = if (body.subsurfaceOcean && material == MatterMaterial.WATER)
+                max(280f, body.temperature) else body.temperature
+            grains.add(SandGrain(nextGrainId(),
                 body.x + x, body.y + y,
                 body.vx, body.vy,
-                mass, mass * .000001 * max(body.temperature, 1f),
+                mass, mass * .000001 * max(temperature, 1f),
                 material, body.id))
         }
         // Start near a rotating virial equilibrium rather than collapsing every
@@ -673,6 +694,48 @@ internal class AstronomicalUniverse {
         }
     }
 
+    private fun advanceFront(event: CosmicEpisode, dt: Float) {
+        val profile = event.kind.frontProfile ?: return
+        if (exposureSerial != event.serial) {
+            exposureSerial = event.serial
+            exposedGrains.clear()
+        }
+        val from = profile.radius(((event.age - dt) / event.duration).coerceIn(0f, 1f), event.intensity.radius)
+        val to = profile.radius(event.progress, event.intensity.radius)
+        val inner = (min(from, to) - .008f).coerceAtLeast(0f)
+        val outer = max(from, to) + .008f
+        val innerSquared = inner * inner
+        val outerSquared = outer * outer
+        val axisX = cos(event.axis)
+        val axisY = sin(event.axis)
+        val intensity = sqrt(event.intensity.heatFactor)
+        for (p in grains) {
+            // The driver acts on the surrounding medium. A compact source is
+            // never kicked by its own front or transformed by phase changes.
+            if (event.sourceOwner >= 0 && p.owner == event.sourceOwner) continue
+            val x = p.x - event.x
+            val y = p.y - event.y
+            val squared = x*x + y*y
+            if (squared < max(innerSquared, 1e-10f) || squared > outerSquared) continue
+            val distance = sqrt(squared)
+            val nx = x / distance
+            val ny = y / distance
+            val angular = profile.angularStrength(abs(nx * axisX + ny * axisY))
+            if (angular <= 0f || !exposedGrains.add(p.id)) continue
+            val response = angular * intensity / (1.0 + 3.0 * distance)
+            val kick = profile.velocity * response
+            val oldVx = p.vx.toDouble()
+            val oldVy = p.vy.toDouble()
+            p.vx = (oldVx + nx * kick).toFloat()
+            p.vy = (oldVy + ny * kick).toFloat()
+            val kineticChange = .5 * p.mass *
+                (p.vx.toDouble()*p.vx + p.vy.toDouble()*p.vy - oldVx*oldVx - oldVy*oldVy)
+            val heat = p.mass * profile.heating * response
+            p.heat += heat + max(0.0, -kineticChange)
+            externalFrontEnergy += heat + max(0.0, kineticChange)
+        }
+    }
+
     data class Accretion(val consumedMass:Double=0.0,val spin:Double=0.0,
         val removedOwners:Set<Int> = emptySet())
 
@@ -955,9 +1018,10 @@ internal class AstronomicalUniverse {
         contactVisits = 0
         val maxVisits = if (grains.size > 2000) 60 else 125
         val sweep = travel >= .00032f
-        val neighborRange = if (travel > contactSize) 2 else 1
         val sweepSpeedFactor = .35 / (h * h)
         val reach = maxContactRange + travel * 2f
+        val useFringe = reach > contactSize
+        val offsetLimit = if (useFringe) contactOffsets.size else 18
         val stickingDamping = 1.0 - kotlin.math.exp(-.72 * h)
         val overlapCorrection = 1.0 - kotlin.math.exp(-24.0 * h)
         val metalConduction = 1.0 - kotlin.math.exp(-.075 * h * 120.0)
@@ -970,8 +1034,16 @@ internal class AstronomicalUniverse {
             val x = cxCell[i]; val y = cyCell[i]
             var visits = 0
             var hits = 0
-            collisionCells@ for (cy in y - neighborRange..y + neighborRange) {
-                for (cx in x - neighborRange..x + neighborRange) {
+            var offset = 0
+            collisionCells@ while (offset < offsetLimit) {
+                    val cx = x + contactOffsets[offset++]
+                    val cy = y + contactOffsets[offset++]
+                    if (offset > 18) {
+                        val localReach = maxContactRange + travel +
+                            max(abs(p.x - startX[i]), abs(p.y - startY[i]))
+                        if (p.x + localReach < cx * contactSize || p.x - localReach > (cx + 1) * contactSize ||
+                            p.y + localReach < cy * contactSize || p.y - localReach > (cy + 1) * contactSize) continue
+                    }
                     var j = cellHeads[hash(cx, cy)]
                     while (j >= 0) {
                         val other = j; j = next[other]
@@ -986,7 +1058,7 @@ internal class AstronomicalUniverse {
                         val radii = p.collisionRadius+q.collisionRadius
                         val radius2 = radii*radii
                         var fraction = 1.0
-                        if (sweep && (p.owner != q.owner || p.owner < 0 || neighborRange > 1) &&
+                        if (sweep && (p.owner != q.owner || p.owner < 0 || useFringe) &&
                             !interruptedPath[i] && !interruptedPath[other]) {
                             val vx = q.vx - p.vx
                             val vy = q.vy - p.vy
@@ -1113,7 +1185,6 @@ internal class AstronomicalUniverse {
                             reactPair(p,q)
                         if (++hits >= 12) break@collisionCells
                     }
-                }
             }
         }
         lastContactMs = (System.nanoTime()-beginning)/1e6
@@ -1130,6 +1201,7 @@ internal class AstronomicalUniverse {
         activeEpisode = episode
         releaseEventHeat(episode)
         releaseExternalRadiation(episode)
+        advanceFront(episode, dt)
         val h = min(dt, .034f).toDouble() /
             (if (grains.size < 1000) 2 else 1)
         val substeps = if (grains.size < 1000) 2 else 1

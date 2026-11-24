@@ -35,7 +35,13 @@ internal enum class CosmicPreset(val title: String, val details: String) {
     HYPERGIANT_SYSTEM("Владения гипергиганта", "Гигантское светило и крошечные внешние миры: сравни размеры"),
     OCEAN_IMPACT("Удар по океану", "Океанический мир и ледяной спутник встречаются по касательной"),
     GALAXY_PASSAGE("Пролёт галактик", "Два ядра и встречное вращение реальных пылевых дисков"),
-    NEBULA_CROSSING("За пеленой туманности", "Два газовых облака, молодая звезда и холодный спутник")
+    NEBULA_CROSSING("За пеленой туманности", "Два газовых облака, молодая звезда и холодный спутник"),
+    ROCHE_PASSAGE("Приливный разрыв", "Рыхлый ледяной мир проходит у чёрной дыры и теряет вещество"),
+    DOUBLE_PLANET("Двойная планета", "Два мира обращаются вокруг общего центра масс"),
+    COUNTER_ROTATING_RINGS("Встречные кольца", "Ледяной и каменный диски вращаются в разные стороны"),
+    GIANT_GRAZE("Касание гигантов", "Два массивных газовых мира встречаются по касательной"),
+    BLUE_NEBULA("Голубая туманность", "Горячее светило, две газовые дуги и молодые планеты"),
+    FROZEN_OCEANS("Под ледяной корой", "Два подлёдных океана и металлический спутник у красного карлика")
 }
 
 internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<CelestialBody> {
@@ -250,9 +256,50 @@ internal fun presetBodies(preset: CosmicPreset, gravity: Float = 1f): List<Celes
                 vx=-.021f,vy=.016f,temperature=160f),
             body(4,.59f,.74f,.35f,MatterMaterial.ICE,vx=-.026f,temperature=115f)
         )
+        CosmicPreset.ROCHE_PASSAGE -> listOf(
+            body(1, .47f, .5f, 52f, MatterMaterial.CARBON, StellarClass.QUASAR, temperature = 3f)
+                .copy(nature = CelestialNature.BLACK_HOLE),
+            body(2, .68f, .56f, .65f, MatterMaterial.AMMONIA, vx = -.105f, vy = -.055f, temperature = 105f)
+                .copy(sizeFactor = 2.8f),
+            body(3, .28f, .26f, .14f, MatterMaterial.ICE, vx = .072f, vy = -.052f, temperature = 120f)
+        )
+        CosmicPreset.DOUBLE_PLANET -> {
+            val speed = OrbitMechanics.circularSpeed(4.4f, .095f)
+            listOf(
+                body(1, .46f, .5f, 2.55f, MatterMaterial.SILICATE, vy = -speed * (1.85f / 4.4f), temperature = 320f),
+                body(2, .555f, .5f, 1.85f, MatterMaterial.ICE, vy = speed * (2.55f / 4.4f), temperature = 235f)
+                    .copy(subsurfaceOcean = true),
+                body(3, .5f, .78f, .08f, MatterMaterial.NICKEL,
+                    vx = -OrbitMechanics.circularSpeed(4.48f, .28f), temperature = 150f)
+            )
+        }
+        CosmicPreset.COUNTER_ROTATING_RINGS -> listOf(
+            body(1, .5f, .5f, 11f, MatterMaterial.METHANE, temperature = 170f).copy(sizeFactor = 1.28f),
+            body(2, .77f, .52f, .18f, MatterMaterial.BASALT, vx = -.004f, vy = .046f, temperature = 260f)
+        )
+        CosmicPreset.GIANT_GRAZE -> listOf(
+            body(1, .30f, .463f, 9f, MatterMaterial.METHANE, vx = .058f, temperature = 260f).copy(sizeFactor = 1.7f),
+            body(2, .70f, .537f, 6f, MatterMaterial.AMMONIA, vx = -.087f, temperature = 140f).copy(sizeFactor = 1.65f),
+            body(3, .30f, .77f, .16f, MatterMaterial.ICE, vx = -.022f, temperature = 120f)
+        )
+        CosmicPreset.BLUE_NEBULA -> listOf(
+            body(1, .5f, .5f, 18f, MatterMaterial.HYDROGEN, StellarClass.STAR, temperature = 16500f),
+            body(2, .26f, .66f, 2.3f, MatterMaterial.AMMONIA, StellarClass.CLOUD, vx = .036f, vy = .041f, temperature = 112f)
+                .copy(sizeFactor = 2.4f),
+            body(3, .73f, .29f, 1.9f, MatterMaterial.HYDROGEN, StellarClass.CLOUD, vx = -.034f, vy = -.040f, temperature = 290f)
+                .copy(sizeFactor = 2.7f)
+        ) + satellites(18f, .5f, .5f, listOf(.15f, .24f), listOf(.1f, .3f),
+            listOf(MatterMaterial.IRON, MatterMaterial.SILICATE), 4)
+        CosmicPreset.FROZEN_OCEANS -> listOf(
+            body(1, .5f, .5f, 4.6f, MatterMaterial.HYDROGEN, StellarClass.STAR, temperature = 2950f)
+        ) + satellites(4.6f, .5f, .5f, listOf(.14f, .26f, .41f), listOf(.44f, .7f, .16f),
+            listOf(MatterMaterial.ICE, MatterMaterial.ICE, MatterMaterial.NICKEL), 2).map { candidate ->
+                candidate.copy(subsurfaceOcean = candidate.id < 4, temperature = if (candidate.id < 4) 215f else 140f)
+            }
         CosmicPreset.DEEP_SPACE -> emptyList()
     }.map { body ->
-        val factor = if (preset == CosmicPreset.COLLISION_LAB || preset == CosmicPreset.OCEAN_IMPACT) 1f else sqrt(gravity.coerceAtLeast(0f))
+        val factor = if (preset == CosmicPreset.COLLISION_LAB || preset == CosmicPreset.OCEAN_IMPACT ||
+            preset == CosmicPreset.GIANT_GRAZE) 1f else sqrt(gravity.coerceAtLeast(0f))
         body.copy(vx=body.vx*factor,vy=body.vy*factor)
     }
 }
@@ -266,6 +313,9 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
             else (if (detail) 120 else 55)
         CosmicPreset.GALAXY_PASSAGE -> if (detail) 330 else 110
         CosmicPreset.NEBULA_CROSSING -> if (detail) 390 else 170
+        CosmicPreset.GIANT_GRAZE -> if (body.mass > 1f) (if (detail) 560 else 200) else (if (detail) 60 else 24)
+        CosmicPreset.BLUE_NEBULA -> if (body.stellarClass == StellarClass.CLOUD)
+            (if (detail) 420 else 160) else (if (detail) 340 else 125)
         CosmicPreset.TITAN_SYSTEM ->
             if (body.stellarClass == StellarClass.STAR)
                 if (detail) 850 else 270
@@ -282,7 +332,8 @@ internal fun presetGrainCount(preset: CosmicPreset, body: CelestialBody,
         CosmicPreset.ASTEROID_CORRIDOR,CosmicPreset.QUANTUM_SHORES,
         CosmicPreset.RESONANCE, CosmicPreset.COMET_PASSAGE,
         CosmicPreset.TROJAN_GARDEN, CosmicPreset.ROGUE_ENCOUNTER,
-        CosmicPreset.COLLISION_LAB, CosmicPreset.COLD_NURSERY -> when {
+        CosmicPreset.COLLISION_LAB, CosmicPreset.COLD_NURSERY, CosmicPreset.ROCHE_PASSAGE,
+        CosmicPreset.DOUBLE_PLANET, CosmicPreset.COUNTER_ROTATING_RINGS, CosmicPreset.FROZEN_OCEANS -> when {
             body.mass < .01f -> if (detail) 12 else 6
             body.mass < .1f -> if (detail) 42 else 20
             body.stellarClass == StellarClass.STAR -> if (detail) 440 else 190
@@ -311,13 +362,14 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
     cx: Float, cy: Float, centralMass: Float, count: Int,
     innerRadius: Float, outerRadius: Float, owner: Int = -1,
     rocky: Boolean = false, gravity: Float = 1f,
-    driftX: Float = 0f, driftY: Float = 0f, retrograde: Boolean = false, spiral: Boolean = false
+    driftX: Float = 0f, driftY: Float = 0f, retrograde: Boolean = false, spiral: Boolean = false,
+    totalMass: Float? = null
 ) {
     if (count <= 0 || outerRadius <= innerRadius) return
     val n = minOf(count, mode.maxParticles - grains.size)
     val golden = PI * (3.0 - sqrt(5.0))
-    val nBefore = grains.size
     val spin = if (retrograde) -1.0 else 1.0
+    val mass = if (totalMass != null && n > 0) totalMass / n else if (rocky) .0018f else .0009f
     for (i in 0 until n) {
         val f = (i + .5) / n.toDouble()
         // Uniform surface density across an annulus, with discrete gaps.
@@ -325,7 +377,6 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
             outerRadius * outerRadius * f)
         val a = if (spiral) spin * (3.8 * f + (i % 2) * PI + .17 * sin(golden * i))
             else golden * i
-        val mass = if (rocky) .0018f else .0009f
         val speed = OrbitMechanics.circularSpeed(centralMass,r.toFloat(),gravity).toDouble()
         val material = if (rocky) when (i % 7) {
             0 -> MatterMaterial.IRON
@@ -337,8 +388,7 @@ internal fun AstronomicalUniverse.seedOrbitalDisk(
             else -> MatterMaterial.ICE
         }
         grains.add(SandGrain(
-            // Assigned unique IDs after any previously seeded planets.
-            1000000 + nBefore + i,
+            nextGrainId(),
             cx + (r * cos(a)).toFloat(),
             cy + (r * sin(a)).toFloat(),
             driftX + (-spin * speed * sin(a)).toFloat(),

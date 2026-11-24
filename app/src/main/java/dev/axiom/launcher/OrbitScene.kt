@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -33,6 +34,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -148,8 +150,8 @@ internal fun CosmicEnvironment(
                     delay(((remaining + 500_000L) / 1_000_000L).coerceAtLeast(1L))
                 }
             }
-            val renderPeriod = if (world.reducedMotion) 32_000_000L
-                else if (reducedPower || interacting) 15_500_000L else 0L
+            val renderPeriod = if (world.reducedMotion || interacting) 32_000_000L
+                else if (reducedPower) 15_500_000L else 0L
             var lastDisplay = 0L
             var shown: GrainRenderPair? = null
             while (isActive) {
@@ -166,10 +168,11 @@ internal fun CosmicEnvironment(
     }
 
     val atmosphere = when (world.preset) {
-        CosmicPreset.COLD_NURSERY, CosmicPreset.NEBULA_CROSSING -> Color(0xff557e9f)
+        CosmicPreset.COLD_NURSERY, CosmicPreset.NEBULA_CROSSING, CosmicPreset.FROZEN_OCEANS -> Color(0xff557e9f)
+        CosmicPreset.BLUE_NEBULA -> Color(0xff526eba)
         CosmicPreset.GALACTIC_NUCLEUS, CosmicPreset.GALAXY_PASSAGE,
-        CosmicPreset.BLACK_HOLE_NURSERY -> Color(0xff8062ad)
-        CosmicPreset.COLLISION_LAB, CosmicPreset.OCEAN_IMPACT -> Color(0xffa56a4f)
+        CosmicPreset.BLACK_HOLE_NURSERY, CosmicPreset.ROCHE_PASSAGE -> Color(0xff8062ad)
+        CosmicPreset.COLLISION_LAB, CosmicPreset.OCEAN_IMPACT, CosmicPreset.GIANT_GRAZE -> Color(0xffa56a4f)
         else -> Color.Transparent
     }
     val skyModifier = if (atmosphere == Color.Transparent) modifier else {
@@ -177,16 +180,19 @@ internal fun CosmicEnvironment(
             val haze = Brush.radialGradient(
                 listOf(atmosphere.copy(alpha = if (lightPalette) .14f else .21f), Color.Transparent),
                 Offset(size.width * .28f, size.height * .34f), (size.maxDimension * .56f).coerceAtLeast(1f))
-            onDrawBehind { drawRect(haze, alpha = dim * sceneFade.value) }
+            val reflection = Brush.radialGradient(
+                listOf(atmosphere.copy(alpha = if (lightPalette) .08f else .14f), Color.Transparent),
+                Offset(size.width * .82f, size.height * .63f), (size.maxDimension * .47f).coerceAtLeast(1f))
+            onDrawBehind {
+                val opacity = dim * sceneFade.value
+                drawRect(haze, alpha = opacity)
+                drawRect(reflection, alpha = opacity)
+            }
         }
     }
-    Canvas(skyModifier.onGloballyPositioned {coordinates ->
-        val p=coordinates.positionInRoot()
-        world.updateViewport(coordinates.size.width.toFloat(),coordinates.size.height.toFloat(),p.x,p.y,displayDensity)
-    }) {
-        val dim=dim*sceneFade.value
+    val drawScene: DrawScope.(Float, Long) -> Unit = { dim, now ->
         val snapshot=world.grainFrames
-        val blend = if (animate) snapshot.blendAt(displayNanos) else 1f
+        val blend = if (animate && now > 0L) snapshot.blendAt(now) else 1f
         val renderedBodies = interpolateBodies(snapshot, blend)
         val viewport = UniverseViewport(size.width,size.height)
         val unit = viewport.side
@@ -249,13 +255,15 @@ internal fun CosmicEnvironment(
         // uses one native drawPoints per material, even at 4800 grains.
         val frame = snapshot.current
         val old = snapshot.previous
-        val canBlend = blend < 1f && old.size == frame.size
+        val canBlend = blend < 1f
         java.util.Arrays.fill(counts, 0)
         var visible = 0
         var i = 0
         while (i + 3 < frame.size && visible < capacity) {
-            val x = if (canBlend) old[i] + (frame[i] - old[i]) * blend else frame[i]
-            val y = if (canBlend) old[i + 1] + (frame[i + 1] - old[i + 1]) * blend else frame[i + 1]
+            val previous = if (canBlend) snapshot.previousOffset(i) else -1
+            val hasPrevious = previous >= 0 && old[previous + 3] >= 0f
+            val x = if (hasPrevious) old[previous] + (frame[i] - old[previous]) * blend else frame[i]
+            val y = if (hasPrevious) old[previous + 1] + (frame[i + 1] - old[previous + 1]) * blend else frame[i + 1]
             val material = frame[i + 3].toInt()
             val px = viewport.x(x)
             val py = viewport.y(y)
@@ -388,11 +396,23 @@ internal fun CosmicEnvironment(
                 }
                 drawCircle(ink, unit * .016f, center, alpha = alpha * .28f)
             }
-            drawCosmicSystems(world, viewport, renderedBodies, dim, System.nanoTime())
+            drawCosmicSystems(world, viewport, renderedBodies, dim, now.takeIf { it > 0L } ?: System.nanoTime(), trailPath)
         }
         world.brushPoint?.let { brush ->
             drawCircle(White.copy(alpha = .55f * dim), 2.dp.toPx(),
                 Offset(viewport.x(brush.x),viewport.y(brush.y)))
         }
+    }
+    Canvas(skyModifier.onGloballyPositioned { coordinates ->
+        val position = coordinates.positionInRoot()
+        world.updateViewport(coordinates.size.width.toFloat(), coordinates.size.height.toFloat(),
+            position.x, position.y, displayDensity)
+    }) {
+        val opacity = dim * sceneFade.value
+        val now = displayNanos
+        // The presentation clock owns invalidation while running. Physics
+        // state changes may arrive between screen frames or while throttled.
+        if (animate) Snapshot.withoutReadObservation { drawScene(opacity, now) }
+        else drawScene(opacity, 0L)
     }
 }

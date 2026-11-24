@@ -1,6 +1,7 @@
 package dev.axiom.launcher
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -21,10 +22,9 @@ internal fun interpolateBodies(frame:GrainRenderPair,fraction:Float):List<Celest
 }
 
 internal fun DrawScope.drawCosmicSystems(world:CosmicWorld,viewport:UniverseViewport,
-    bodies:List<CelestialBody>,alpha:Float,now:Long) {
+    bodies:List<CelestialBody>,alpha:Float,now:Long,path:Path) {
     fun point(x:Float,y:Float)=Offset(viewport.x(x),viewport.y(y))
     val unit=viewport.side
-    val path=Path()
     val light=AxiomColors.palette.light
     for(body in bodies) {
         val center=point(body.x,body.y)
@@ -124,6 +124,29 @@ internal fun DrawScope.drawCosmicSystems(world:CosmicWorld,viewport:UniverseView
     }
     val event=world.episode
     val envelope=event.alpha*alpha
+    event.kind.frontProfile?.let { profile ->
+        val center = point(event.x, event.y)
+        val radius = profile.radius(event.progress, event.intensity.radius) * unit
+        val ink = Color(profile.color)
+        val strength = (if (light) .65f else 1f) * envelope
+        if (profile == FrontProfile.OUTFLOW) {
+            val azimuth = event.axis * 180f / PI.toFloat()
+            val topLeft = center - Offset(radius, radius)
+            val diameter = Size(radius * 2f, radius * 2f)
+            for (pole in 0..1) {
+                val start = azimuth + pole * 180f - 29f
+                drawArc(ink.copy(alpha = strength * .16f), start, 58f, false,
+                    topLeft, diameter, style = Stroke(9.dp.toPx()))
+                drawArc(ink.copy(alpha = strength * .82f), start, 58f, false,
+                    topLeft, diameter, style = Stroke(1.4.dp.toPx()))
+            }
+        } else {
+            drawCircle(ink.copy(alpha = strength * .13f), radius, center, style = Stroke(8.dp.toPx()))
+            drawCircle(ink.copy(alpha = strength * .84f), radius, center, style = Stroke(1.3.dp.toPx()))
+            val wake = if (profile == FrontProfile.COMPRESSION) radius * 1.06f else radius * .92f
+            drawCircle(ink.copy(alpha = strength * .28f), wake, center, style = Stroke(.7.dp.toPx()))
+        }
+    }
     if(event.kind==CosmicEventKind.GAMMA_BURST) {
         val start=point(event.x,event.y)
         val end=start+Offset(cos(event.axis),sin(event.axis))*event.progress*unit*3f

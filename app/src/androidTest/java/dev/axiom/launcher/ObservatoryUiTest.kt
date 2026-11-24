@@ -116,6 +116,22 @@ class ObservatoryUiTest {
             assertTrue(device.wait(Until.gone(By.descStartsWith("Сцена: Открытый космос.")), 10_000))
         }
     }
+    @Test fun newNebulaAndManualEventControlsAreAccessible() {
+        prepare(CosmicPreset.BLUE_NEBULA)
+        device.setOrientationNatural()
+        ActivityScenario.launch(MainActivity::class.java).use {
+            assertTrue(visible("Голубая туманность"))
+            screenshot("09-blue-nebula")
+            click("Космос")
+            click("Среда")
+            assertTrue(visible("События и среда"))
+            assertTrue(visible("Ручной запуск"))
+            click("Ударная волна")
+            assertTrue(visible("Фронт взрыва"))
+            click("Фронт взрыва")
+            screenshot("10-event-controls")
+        }
+    }
     @Test fun collisionFieldUsesTheActualRenderedClockInk() {
         val raster=rasterClock("08:08",108f,-4f)
         val w=raster.bitmap.width;val h=raster.bitmap.height

@@ -25,7 +25,8 @@ internal enum class CosmicEventKind { QUIET, METEORS, NEURAL, HARMONICS, LENS, S
     COSMIC_SHOCK, THERMAL_SPIKE, CRYO_TIDE, MAGNETAR_FLARE,
     SOLAR_WIND, TIDAL_PULSE, IONIZATION_FRONT,
     GAMMA_BURST, DISTANT_CLUSTER_BURST, COLOSSAL_METEOR_STREAM,
-    KILONOVA, SUPERNOVA, QUANTUM_COHERENCE, MICROLENSING }
+    KILONOVA, SUPERNOVA, QUANTUM_COHERENCE, MICROLENSING,
+    BLAST_SHELL, REVERSE_SHOCK, BIPOLAR_OUTFLOW }
 
 internal enum class CosmicEventIntensity(
     val label: String, val heatFactor: Double, val radius: Float
@@ -72,7 +73,8 @@ internal data class CelestialBody(
     val stellarClass: StellarClass = StellarClass.PLANET,
     val nature:CelestialNature = CelestialNature.ORDINARY,
     val spinAngularMomentum:Double = 0.0,
-    val climateFactor:Float = 1f
+    val climateFactor:Float = 1f,
+    val subsurfaceOcean: Boolean = false
 )
 
 internal data class GrainRenderPair(
@@ -81,13 +83,20 @@ internal data class GrainRenderPair(
     val committedAtNanos: Long,
     val intervalNanos: Long = 16_666_667L,
     val bodyPrevious:List<CelestialBody> = emptyList(),
-    val bodyCurrent:List<CelestialBody> = emptyList()
+    val bodyCurrent:List<CelestialBody> = emptyList(),
+    // Null denotes identical packet order. A negative index marks a new packet.
+    val previousOffsets: IntArray? = null
 ) {
     val previousBodiesById = bodyPrevious.associateBy { it.id }
 
     fun blendAt(now: Long): Float =
         if (intervalNanos <= 0L) 1f
         else ((now - committedAtNanos).toFloat() / intervalNanos).coerceIn(0f, 1f)
+
+    fun previousOffset(offset: Int): Int {
+        if (previousOffsets != null) return previousOffsets[offset / 4]
+        return offset
+    }
 }
 
 internal data class SpaceRipple(val x: Float, val y: Float, val age: Float = 0f)
@@ -122,9 +131,10 @@ internal class CosmicWorld(
     private var publishedIds = IntArray(0)
     private var lastCostReading=0L
     private fun publishGrains(discontinuity: Boolean = false) {
-        val sameParticles = publishedIds.size==sand.grains.size &&
-            sand.grains.indices.all { publishedIds[it]==sand.grains[it].id }
-        if (!sameParticles) publishedIds = IntArray(sand.grains.size) {sand.grains[it].id}
+        val oldIds = publishedIds
+        val sameParticles = oldIds.size == sand.grains.size &&
+            sand.grains.indices.all { oldIds[it] == sand.grains[it].id }
+        if (!sameParticles) publishedIds = IntArray(sand.grains.size) { sand.grains[it].id }
         val hiddenOwners = bodies.asSequence().filter { it.nature == CelestialNature.BLACK_HOLE }
             .map { it.id }.toSet()
         val next = sand.renderFrame(hiddenOwners)
@@ -132,7 +142,8 @@ internal class CosmicWorld(
         val old = frame.current
         val now = System.nanoTime()
         val gap = now - frame.committedAtNanos
-        val smooth = !discontinuity && sameParticles && old.size == next.size && gap in 1L..100_000_000L
+        val smooth = !discontinuity && old.isNotEmpty() && gap in 1L..125_000_000L
+        val previousOffsets = if (smooth && !sameParticles) grainOffsetsById(oldIds, publishedIds) else null
         val interval = if (smooth) gap.coerceAtLeast(8_333_333L) else 0L
         if(civilization.ships!=shipFrames.current) {
             val shipInterval=(now-shipFrames.committedAtNanos).coerceIn(8_333_333L,400_000_000L)
@@ -141,7 +152,7 @@ internal class CosmicWorld(
         grainFrames = GrainRenderPair(
             if (smooth) old else next,
             next, now, interval,
-            if (smooth) frame.bodyCurrent else emptyList(), sand.summarizeBodies(bodies)
+            if (smooth) frame.bodyCurrent else emptyList(), sand.summarizeBodies(bodies), previousOffsets
         )
     }
     var matterMode by mutableStateOf(initialMatterMode)
@@ -261,6 +272,7 @@ internal class CosmicWorld(
         trails: Boolean = showTrails, vectors: Boolean = showVectors,
         motion: Boolean = reducedMotion, maths: Boolean = ambientMath,
         ml: Boolean = learningEnabled) {
+        if (events && !automaticEvents) scheduleOrdinaryEvent()
         automaticEvents = events; showTrails = trails; showVectors = vectors
         reducedMotion = motion; ambientMath = maths; learningEnabled = ml
         if (!trails) this.trails = emptyMap()
@@ -283,7 +295,8 @@ internal class CosmicWorld(
         telemetry = UniverseTelemetry(sand.grains.size, totals.mass,
             totals.kinetic, totals.internal, sand.energyAtCurrentCenters(gravity, totals),
             sand.reactions, sand.phaseTransitions,
-            sand.grains.count { it.owner < 0 },sand.radiatedHeat,sand.externalRadiationEnergy)
+            sand.grains.count { it.owner < 0 },sand.radiatedHeat,sand.externalRadiationEnergy,
+            sand.externalFrontEnergy)
         if (showTrails) trails = current.associate { body ->
             body.id to ((trails[body.id] ?: emptyList()) +
                 OrbitPoint(body.x,body.y)).takeLast(160)
@@ -418,7 +431,11 @@ internal class CosmicWorld(
         val horizons = holes.associate { it.id to horizonRadius(it.mass) }
         var current = bodies
         val decay = kotlin.math.exp(-h*1.6f)
-        val light = accretionLight.mapValues { it.value * decay }.filterValues { it > .0001f }.toMutableMap()
+        val light = HashMap<Int, Float>(accretionLight.size)
+        for ((id, brightness) in accretionLight) {
+            val faded = brightness * decay
+            if (faded > .0001f) light[id] = faded
+        }
         for(hole in holes) {
             val result=sand.accrete(hole.id,horizonRadius(hole.mass),horizons)
             if(result.consumedMass>0) {
@@ -529,6 +546,15 @@ internal class CosmicWorld(
             CosmicPreset.COLD_NURSERY -> sand.seedOrbitalDisk(
                 .5f,.5f,5f,if (matterMode == MatterMode.DETAILED) 1100 else 360,
                 .29f,.40f,gravity=gravity)
+            CosmicPreset.COUNTER_ROTATING_RINGS -> {
+                val count = if (matterMode == MatterMode.DETAILED) 720 else 260
+                sand.seedOrbitalDisk(.5f, .5f, 11f, count, .075f, .18f, gravity = gravity, totalMass = .24f)
+                sand.seedOrbitalDisk(.5f, .5f, 11f, count, .15f, .265f, gravity = gravity,
+                    rocky = true, retrograde = true, totalMass = .31f)
+            }
+            CosmicPreset.BLUE_NEBULA -> sand.seedOrbitalDisk(.5f, .5f, 18f,
+                if (matterMode == MatterMode.DETAILED) 420 else 155, .12f, .32f,
+                gravity = gravity, spiral = true, totalMass = .18f)
             else -> Unit
         }
         previousBodies = bodies
@@ -609,20 +635,26 @@ internal class CosmicWorld(
         val y = py.coerceIn(.06f,.94f)
         val dx = x - (core?.x ?: .5f)
         val dy = y - (core?.y ?: .5f)
-        val r = max(hypot(dx,dy),.09f)
-        // Tangential orbit relative to the actual dominant body.
-        val speed = OrbitMechanics.circularSpeed((core?.mass ?: 2f)+m,r,gravity)
-        val multiplier = when (launch) {
-            LaunchStyle.ORBIT -> 1f
-            LaunchStyle.RETROGRADE -> -1f
-            LaunchStyle.REST -> 0f
-            LaunchStyle.ESCAPE -> 1.5f
+        val separation = hypot(dx, dy)
+        val nx = if (separation > 1e-6f) dx / separation else 0f
+        val ny = if (separation > 1e-6f) dy / separation else 0f
+        val radius = separation.coerceAtLeast(.045f)
+        val pairMass = (core?.mass ?: 2f) + m
+        val circular = OrbitMechanics.circularSpeed(pairMass, radius, gravity)
+        val tangential = when (launch) {
+            LaunchStyle.ORBIT -> circular
+            LaunchStyle.RETROGRADE -> -circular
+            LaunchStyle.ESCAPE -> OrbitMechanics.escapeSpeed(pairMass, radius, gravity) * 1.06f
+            LaunchStyle.ECCENTRIC -> circular * .58f
+            LaunchStyle.REST, LaunchStyle.INFALL -> 0f
         }
+        val radial = if (launch == LaunchStyle.INFALL) -circular * .68f else 0f
+        val ringFraction = recipe?.ringFraction ?: 0f
         val body = CelestialBody(
             idSequence++, if (classType == StellarClass.STAR) 12 else 2,
-            m, 1f, x, y,
-            (core?.vx ?: 0f) -dy/r*speed*multiplier,
-            (core?.vy ?: 0f) +dx/r*speed*multiplier,
+            m * (1f - ringFraction), 1f, x, y,
+            (core?.vx ?: 0f) - ny * tangential + nx * radial,
+            (core?.vy ?: 0f) + nx * tangential + ny * radial,
             lifetime = 3600f,
             material = material,
             temperature = recipe?.temperature ?: when (classType) {
@@ -637,8 +669,9 @@ internal class CosmicWorld(
             sizeFactor = if(recipe==BodyRecipe.HYPERGIANT)2.5f else when(recipe?.nature) {
                 CelestialNature.NEUTRON_STAR -> .25f
                 CelestialNature.WHITE_DWARF -> .5f
-                else -> (.65f+.20f*sqrt(m)).coerceIn(.6f,1.7f)
-            }
+                else -> (.65f+.20f*sqrt(m)).coerceIn(.6f,1.7f) * (recipe?.scale ?: 1f)
+            },
+            subsurfaceOcean = recipe == BodyRecipe.SUBGLACIAL
         )
         val requested = when {
             m < .20f -> 15
@@ -646,9 +679,18 @@ internal class CosmicWorld(
             m < 4f -> 86
             else -> 180
         }
-        val n = min(requested, matterMode.maxParticles - sand.grains.size)
+        val free = matterMode.maxParticles - sand.grains.size
+        val ringCount = if (ringFraction > 0f) (free / 3).coerceAtMost(144) else 0
+        if (ringFraction > 0f && ringCount < 16) return false
+        val n = min(requested, free - ringCount)
         if (n < 8) return false
         sand.seed(body,n)
+        if (ringCount > 0) {
+            val inner = structureRadius(body) * 1.6f
+            sand.seedOrbitalDisk(body.x, body.y, body.mass, ringCount,
+                inner, inner * 1.8f, gravity = gravity, driftX = body.vx, driftY = body.vy,
+                totalMass = m * ringFraction)
+        }
         bodies = bodies + body
         previousBodies = bodies
         publishGrains()
@@ -854,7 +896,7 @@ internal class CosmicWorld(
         }
         episode = CosmicEpisode(
             kind = kind, age = 0f,
-            duration = when (kind) {
+            duration = kind.frontProfile?.duration ?: when (kind) {
                 CosmicEventKind.SINGULARITY -> 17f
                 CosmicEventKind.NEURAL -> 16f
                 CosmicEventKind.HARMONICS -> 17f
@@ -1010,7 +1052,7 @@ internal class CosmicWorld(
                 5 -> CosmicEventKind.CRYSTALLIZATION
                 else -> CosmicEventKind.QUIET
             }
-        return when (random.nextInt(184)) {
+        return when (random.nextInt(204)) {
         in 0..19 -> CosmicEventKind.METEORS
         in 20..35 -> CosmicEventKind.PULSAR
         in 36..49 -> CosmicEventKind.QUASAR_JET
@@ -1031,7 +1073,10 @@ internal class CosmicWorld(
         in 174..178 -> CosmicEventKind.IONIZATION_FRONT
         in 179..180 -> CosmicEventKind.QUANTUM_COHERENCE
         181 -> CosmicEventKind.MICROLENSING
-        else -> CosmicEventKind.CRYSTALLIZATION
+        in 182..183 -> CosmicEventKind.CRYSTALLIZATION
+        in 184..191 -> CosmicEventKind.BLAST_SHELL
+        in 192..197 -> CosmicEventKind.REVERSE_SHOCK
+        else -> CosmicEventKind.BIPOLAR_OUTFLOW
         }
     }
 
@@ -1436,10 +1481,20 @@ internal class CosmicWorld(
 }
 
 internal data class OrbitPoint(val x: Float, val y: Float)
+
+internal fun grainOffsetsById(previous: IntArray, current: IntArray): IntArray {
+    // Grain storage retains creation order after accretion and appends new IDs.
+    var old = 0
+    return IntArray(current.size) { index ->
+        val id = current[index]
+        while (old < previous.size && previous[old] < id) old++
+        if (old < previous.size && previous[old] == id) old * 4 else -1
+    }
+}
 internal data class UniverseTelemetry(val particles: Int = 0, val mass: Double = 0.0,
     val kinetic: Double = 0.0, val heat: Double = 0.0, val energy: Double = 0.0,
     val reactions: Int = 0, val phases: Int = 0, val loose: Int = 0,
-    val radiated: Double = 0.0,val externalRadiation:Double=0.0)
+    val radiated: Double = 0.0,val externalRadiation:Double=0.0, val externalFront: Double = 0.0)
 
 internal data class ShipRenderPair(val previous:List<Starship> = emptyList(),
     val current:List<Starship> = emptyList(),val committedAtNanos:Long=0L,

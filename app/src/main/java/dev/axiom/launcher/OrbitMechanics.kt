@@ -15,6 +15,11 @@ internal object OrbitMechanics {
             (r*r + SOFTENING*SOFTENING).pow(1.5)).toFloat()
     }
 
+    fun escapeSpeed(mass: Float, radius: Float, gravity: Float): Float {
+        val softenedDistance = hypot(radius.toDouble(), SOFTENING)
+        return sqrt(2 * G * gravity * mass / softenedDistance).toFloat()
+    }
+
     fun acceleration(body: CelestialBody, bodies: List<CelestialBody>): Pair<Double, Double> {
         var ax = 0.0; var ay = 0.0
         for (source in bodies) {

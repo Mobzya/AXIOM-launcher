@@ -2,6 +2,7 @@ package dev.axiom.launcher
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -23,11 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -45,22 +49,16 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
     onScene: (CosmicPreset) -> Unit, onLab: (LabKind) -> Unit, onDismiss: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxWidth().fillMaxHeight(.88f)) {
-        Row(Modifier.padding(horizontal=22.dp).fillMaxWidth(),
+        Row(Modifier.padding(horizontal=22.dp, vertical = 3.dp).fillMaxWidth(),
             verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("ОБСЕРВАТОРИЯ",color=AX_ACCENT,fontSize=10.sp,
-                    letterSpacing=2.sp,fontFamily=FontFamily.Monospace)
-                Text("Твоя маленькая вселенная",color=AX_WHITE,fontSize=21.sp,
+                Text("Обсерватория",color=AX_WHITE,fontSize=23.sp,
                     fontWeight=FontWeight.Light)
+                Text(world.preset.title, color=AX_GRAY, fontSize=12.sp)
             }
             TextButton(onClick=onDismiss) { Text("Готово",color=AX_ACCENT) }
         }
-        Row(Modifier.padding(horizontal=22.dp,vertical=12.dp).fillMaxWidth(),
-            horizontalArrangement=Arrangement.SpaceBetween) {
-            Text(world.preset.title,color=AX_GRAY,fontSize=12.sp)
-            Text("${world.telemetry.particles} частиц",color=AX_GRAY,fontSize=11.sp,
-                fontFamily=FontFamily.Monospace)
-        }
+        ObservatoryStatus(world, Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         Row(Modifier.padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
             val speeds = listOf(0f to "Ⅱ", .25f to "¼×", .5f to "½×", 1f to "1×", 2f to "2×")
             speeds.forEach { (speed,label) ->
@@ -93,17 +91,52 @@ internal fun UniverseControlPanel(world: CosmicWorld, onPersist: () -> Unit,
     }
 }
 
+@Composable
+private fun ObservatoryStatus(world: CosmicWorld, modifier: Modifier) {
+    val paused = world.timeScale == 0f
+    val accent = AX_ACCENT
+    val episode by remember(world) { derivedStateOf { world.episode.kind } }
+    val active = episode != CosmicEventKind.QUIET
+    val travel by animateFloatAsState(if (paused) 0f else 1f,
+        tween(if (world.reducedMotion) 0 else 260), label = "observatory status")
+    Row(modifier.fillMaxWidth().background(AX_SURFACE, RoundedCornerShape(12.dp))
+        .padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        Canvas(Modifier.size(29.dp).clearAndSetSemantics { }) {
+            val width = 1.1.dp.toPx()
+            val radius = size.minDimension * .39f
+            drawCircle(accent.copy(alpha = .23f), radius, style = Stroke(width))
+            val phase = if (active && !world.reducedMotion) world.episode.progress else travel
+            val angle = phase * 2f * PI.toFloat() - PI.toFloat() / 2f
+            drawArc(accent.copy(alpha = .75f), -90f, phase * 360f, false,
+                androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius),
+                androidx.compose.ui.geometry.Size(radius * 2, radius * 2), style = Stroke(width, cap = StrokeCap.Round))
+            drawCircle(accent, 2.dp.toPx(), center + Offset(cos(angle), sin(angle)) * radius)
+        }
+        val status = when {
+            paused -> "На паузе"
+            active -> manualPhenomena[episode] ?: extremePhenomena.firstOrNull { it.kind == episode }?.title ?: "Событие в космосе"
+            else -> "Наблюдение"
+        }
+        Text(status, color = if (active && !paused) accent else AX_WHITE, fontSize = 12.sp,
+            modifier = Modifier.weight(1f), maxLines = 1)
+        Text("${world.telemetry.particles} частиц",color=AX_GRAY,fontSize=11.sp,fontFamily=FontFamily.Monospace)
+    }
+}
+
 private enum class SceneFilter(val title: String) {
-    ALL("Все"), ORBITS("Орбиты"), ENCOUNTERS("Встречи"), EXTREMES("Аномалии"), LIFE("Обитаемые")
+    ALL("Все"), ORBITS("Орбиты"), ENCOUNTERS("Встречи"), EXTREMES("Аномалии"),
+    NEBULAE("Туманности"), LIFE("Обитаемые")
 }
 
 private fun CosmicPreset.category(): SceneFilter = when (this) {
     CosmicPreset.COLLISION_LAB, CosmicPreset.OCEAN_IMPACT, CosmicPreset.ROGUE_ENCOUNTER,
-    CosmicPreset.COMET_PASSAGE, CosmicPreset.GALAXY_PASSAGE, CosmicPreset.NEBULA_CROSSING ->
+    CosmicPreset.COMET_PASSAGE, CosmicPreset.GALAXY_PASSAGE, CosmicPreset.GIANT_GRAZE ->
         SceneFilter.ENCOUNTERS
     CosmicPreset.BLACK_HOLE_NURSERY, CosmicPreset.BLACK_HOLE_MERGER, CosmicPreset.GALACTIC_NUCLEUS,
     CosmicPreset.PULSAR_REEF, CosmicPreset.WHITE_DWARF_RELIC, CosmicPreset.HYPERGIANT_SYSTEM,
-    CosmicPreset.QUANTUM_SHORES -> SceneFilter.EXTREMES
+    CosmicPreset.QUANTUM_SHORES, CosmicPreset.ROCHE_PASSAGE -> SceneFilter.EXTREMES
+    CosmicPreset.NEBULA_CROSSING, CosmicPreset.BLUE_NEBULA, CosmicPreset.PROTOPLANETARY -> SceneFilter.NEBULAE
     CosmicPreset.LIVING_SYSTEM, CosmicPreset.ASTEROID_CORRIDOR -> SceneFilter.LIFE
     else -> SceneFilter.ORBITS
 }
@@ -148,7 +181,8 @@ private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
                 .semantics {contentDescription="Сцена: ${preset.title}. ${preset.details}"}
                 .clickable(role=Role.Button) {onScene(preset)}
                 .padding(13.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                ScenarioPreview(preset,Modifier.fillMaxWidth().height(82.dp))
+                ScenarioPreview(preset, world.preset == preset, world.reducedMotion,
+                    Modifier.fillMaxWidth().height(82.dp).clip(RoundedCornerShape(10.dp)))
                 Text(preset.title,color=AX_WHITE,fontSize=14.sp,fontWeight=FontWeight.Medium)
                 Text(preset.details,color=AX_GRAY,fontSize=11.sp,lineHeight=16.sp,
                     modifier=Modifier.heightIn(min=48.dp))
@@ -163,13 +197,17 @@ private fun ScenarioPage(world: CosmicWorld,onScene:(CosmicPreset)->Unit) {
 }
 
 @Composable
-private fun ScenarioPreview(preset: CosmicPreset,modifier:Modifier) {
+private fun ScenarioPreview(preset: CosmicPreset, selected: Boolean, reducedMotion: Boolean, modifier:Modifier) {
     val bodies = remember(preset) { presetBodies(preset) }
     val accent=AX_ACCENT; val lilac=AX_LILAC
+    val selection by animateFloatAsState(if (selected) 1f else 0f, tween(if (reducedMotion) 0 else 350),
+        label = "scene preview selection")
     Canvas(modifier) {
         val side=min(size.width,size.height)*.94f
         val origin=Offset((size.width-side)/2,(size.height-side)/2)
-        for (r in listOf(.19f,.32f,.45f)) drawCircle(accent.copy(alpha=.10f),side*r,center,
+        drawRect(Brush.radialGradient(listOf(lilac.copy(alpha = .10f + .12f * selection), Color.Transparent),
+            center, size.width * .61f))
+        for (r in listOf(.19f,.32f,.45f)) drawCircle(accent.copy(alpha=.10f + .07f * selection),side*r,center,
             style=Stroke(1.dp.toPx()))
         if(bodies.isEmpty()) {
             repeat(16) { i ->
@@ -183,7 +221,7 @@ private fun ScenarioPreview(preset: CosmicPreset,modifier:Modifier) {
             val color=when(body.nature) {
                 CelestialNature.BLACK_HOLE -> lilac
                 CelestialNature.NEUTRON_STAR,CelestialNature.WHITE_DWARF -> Color(0xffb9d1f3)
-                else -> if(body.stellarClass==StellarClass.STAR)Color(0xffe2bb87) else lilac
+                else -> if(body.stellarClass==StellarClass.STAR)Color(0xffe2bb87) else Color(body.material.argb)
             }
             drawCircle(color.copy(alpha=.09f),radius*2.8f,point)
             if(body.nature==CelestialNature.BLACK_HOLE) {
@@ -192,7 +230,8 @@ private fun ScenarioPreview(preset: CosmicPreset,modifier:Modifier) {
             } else drawCircle(color.copy(alpha=.9f),radius,point)
         }
         if(preset==CosmicPreset.SATURN_RINGS || preset==CosmicPreset.PROTOPLANETARY ||
-            preset==CosmicPreset.COLD_NURSERY) repeat(65) { i ->
+            preset==CosmicPreset.COLD_NURSERY || preset==CosmicPreset.COUNTER_ROTATING_RINGS ||
+            preset==CosmicPreset.BLUE_NEBULA) repeat(65) { i ->
             val a=i*2.39996f; val r=(.13f+(i%7)*.018f)*side
             drawCircle(accent.copy(alpha=.55f),.7.dp.toPx(),center+Offset(cos(a)*r,sin(a)*r))
         }
@@ -218,7 +257,7 @@ private fun CreationPage(world:CosmicWorld) {
     // Logarithmic control makes moons and large stars equally easy to tune.
     Slider(value=ln(mass),onValueChange={mass=exp(it)},valueRange=ln(.04f)..ln(recipe.maximumMass))
     Text("Точка появления · коснись карты",color=AX_GRAY,fontSize=12.sp)
-    val bodies=world.bodies; val accent=AX_ACCENT; val border=AX_BORDER
+    val accent=AX_ACCENT; val border=AX_BORDER
     Canvas(Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(16.dp))
         .background(AX_SURFACE).semantics { contentDescription="Карта точки появления нового объекта" }
         .pointerInput(Unit) { detectTapGestures { p ->
@@ -229,7 +268,7 @@ private fun CreationPage(world:CosmicWorld) {
         val viewport=UniverseViewport(size.width,size.height)
         drawRect(border.copy(alpha=.35f),topLeft=Offset(viewport.left,viewport.top),
             size=androidx.compose.ui.geometry.Size(viewport.side,viewport.side),style=Stroke(1.dp.toPx()))
-        bodies.forEach { body -> drawCircle(Color(body.material.argb),
+        world.bodies.forEach { body -> drawCircle(Color(body.material.argb),
             (2f+sqrt(body.mass)).dp.toPx().coerceAtMost(7.dp.toPx()),
             Offset(viewport.x(body.x),viewport.y(body.y))) }
         val p=Offset(viewport.x(point.x),viewport.y(point.y))
@@ -270,6 +309,8 @@ private fun ObservationPage(world:CosmicWorld,onLab:(LabKind)->Unit,onPersist:()
         Text("Eмодели = ${number(t.energy,5)}",color=AX_WHITE,fontSize=13.sp)
         Text("Внешнее излучение +${number(t.externalRadiation,5)} · излучено ${number(t.radiated,5)}",
             color=AX_GRAY,fontSize=11.sp)
+        if (t.externalFront > 0.0)
+            Text("Энергия от волновых фронтов +${number(t.externalFront,5)}", color=AX_GRAY,fontSize=11.sp)
         Text("При ударах движение переходит в тепло. Стены, создание объектов, события и смена G меняют условия эксперимента.",
             color=AX_GRAY,fontSize=12.sp,lineHeight=18.sp)
     }
@@ -336,33 +377,29 @@ private val manualPhenomena = linkedMapOf(
     CosmicEventKind.MICROLENSING to "Микролинзирование",
     CosmicEventKind.PULSAR to "Импульсы пульсара",
     CosmicEventKind.QUASAR_JET to "Джеты квазара",
-    CosmicEventKind.CRYSTALLIZATION to "Кристаллизация"
+    CosmicEventKind.CRYSTALLIZATION to "Кристаллизация",
+    CosmicEventKind.BLAST_SHELL to "Фронт взрыва",
+    CosmicEventKind.REVERSE_SHOCK to "Сходящаяся волна",
+    CosmicEventKind.BIPOLAR_OUTFLOW to "Биполярный выброс",
+    CosmicEventKind.NOVA to "Вспышка новой",
+    CosmicEventKind.SOLAR_FLARE to "Звёздная вспышка",
+    CosmicEventKind.MAGNETAR_FLARE to "Вспышка магнетара",
+    CosmicEventKind.PLASMA_STORM to "Плазменная буря",
+    CosmicEventKind.STELLAR_NURSERY to "Охлаждение туманности",
+    CosmicEventKind.QUANTUM_COHERENCE to "Квантовая когерентность"
 )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
-    SectionIntro("Твой темп наблюдения", "Спокойный домашний экран или активный эксперимент — настрой поведение вселенной.")
+    SectionIntro("События и среда", "Настрой частоту, движение и вид космоса на домашнем экране.")
+    EventControls(world,onPersist)
     UniverseCyclePanel(world,onPersist)
     Toggle("Следы орбит","Показывать историю движения тел",world.showTrails) {
         world.configureObservation(trails=it); onPersist()
     }
     Toggle("Векторы скорости","Направление и величина текущего движения",world.showVectors) {
         world.configureObservation(vectors=it); onPersist()
-    }
-    Toggle("Автоматические события","Случайные воздействия и редкие внешние прибытия",world.automaticEvents) {
-        world.configureObservation(events=it); onPersist()
-    }
-    if (world.automaticEvents) {
-        Text("Частота обычных событий", color = AX_WHITE, fontSize = 13.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (cadence in EventCadence.entries) {
-                Choice(cadence.title, world.eventCadence == cadence, Modifier.weight(1f)) {
-                    world.changeEventCadence(cadence)
-                    onPersist()
-                }
-            }
-        }
     }
     Toggle("Спокойное движение","Отрисовка до 30 Гц и короткие переходы",world.reducedMotion) {
         world.configureObservation(motion=it); onPersist()
@@ -401,7 +438,35 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     Action("Нагрузочная сцена · 4600 частиц") {world.populateStressScene(4600);onPersist()}
     Text("Последний расчёт · ${number(world.physicsCostMs.toDouble(),1)} мс. Частота зависит от нагрузки и телефона.",
         color=AX_GRAY,fontSize=11.sp,lineHeight=17.sp)
-    Text("РУЧНОЙ ЭКСПЕРИМЕНТ",color=AX_GRAY,fontSize=10.sp,letterSpacing=1.5.sp)
+    var message by remember { mutableStateOf("") }
+    Action("↶  Вернуться на 3 секунды") {
+        message=if(world.rewind(3)) "Восстановлено сохранённое состояние" else "Нужно немного истории движения"
+    }
+    Action("↺  Начать текущую сцену заново") { world.reset();message="Сцена перезапущена" }
+    if (message.isNotEmpty()) Text(message,color=AX_ACCENT,fontSize=12.sp)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EventControls(world: CosmicWorld, onPersist: () -> Unit) {
+    Toggle("Автоматические события","Случайные явления и внешние прибытия",world.automaticEvents) {
+        world.configureObservation(events=it); onPersist()
+    }
+    if (world.automaticEvents) {
+        Text("Обычные события · ${world.eventCadence.interval}", color = AX_WHITE, fontSize = 13.sp)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            for (cadence in EventCadence.entries) {
+                Choice(cadence.title, world.eventCadence == cadence,
+                    description = "${cadence.title}, ${cadence.interval}") {
+                    world.changeEventCadence(cadence)
+                    onPersist()
+                }
+            }
+        }
+        Text("Интервал по времени симуляции. Следующее событие ждёт окончания текущего.",
+            color = AX_GRAY, fontSize = 11.sp)
+    }
+    Text("Ручной запуск",color=AX_WHITE,fontSize=14.sp,fontWeight=FontWeight.Medium)
     var intensity by rememberSaveable { mutableStateOf(CosmicEventIntensity.FLICKER) }
     var message by remember { mutableStateOf("") }
     FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
@@ -430,10 +495,6 @@ private fun EnvironmentPage(world:CosmicWorld,onPersist:()->Unit) {
     }
     if(message.isNotEmpty()) Text(message,color=AX_ACCENT,fontSize=12.sp)
     PhenomenaPanel(world,onPersist)
-    Action("↶  Вернуться на 3 секунды") {
-        message=if(world.rewind(3)) "Восстановлено сохранённое состояние" else "Нужно немного истории движения"
-    }
-    Action("↺  Начать текущую сцену заново") { world.reset();message="Сцена перезапущена" }
 }
 
 @Composable
